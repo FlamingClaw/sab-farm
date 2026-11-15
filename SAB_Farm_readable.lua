@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v17 | Delta / Android
+-- SAB BUTTER FARM v18 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v17"
+local VERSION = "v18"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -42,7 +42,11 @@ local S = {
     config = "default", autoload = nil, selfPath = nil, rejoining = false, winPos = nil, togPos = nil, hidden = false,
 }
 local EV = { name = nil, rar = nil, at = now(), seq = 0, init = nil, initAt = 0, gift = nil, giftAt = 0 }
-local CRATE = { on = false, data = nil, at = 0, title = "crate", lastFail = 0, padAt = 0 }
+-- waiting: a crate has landed on your stand (CrateUpdate(data, false)).
+-- on:      its window is open on screen        (CrateUpdate(data, true)).
+-- Both clear on CrateUpdate(nil, false), when it is opened or discarded.
+local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
+    rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0 }
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 local lastDump = ""
@@ -602,7 +606,10 @@ end
 local function onRoll(name, rarity)
     if type(name) ~= "string" then return end
     evlog(("Roll(%s,%s)"):format(name, tostring(rarity)))
-    if name:lower():find("crate", 1, true) then return end
+    if name:lower():find("crate", 1, true) then
+        CRATE.rolled, CRATE.rolledAt = name, now()
+        return
+    end
     EV.seq = EV.seq + 1
     EV.name, EV.at = name, now()
     EV.rar = type(rarity) == "string" and rarity or nil
@@ -632,13 +639,24 @@ local function hookRemotes()
         InitSquishy = function(m) EV.init, EV.initAt = tostring(m), now() evlog("Init(" .. tostring(m) .. ")") end,
         CrateUpdate = function(d, shown)
             pcall(learnCrate, d)
-            if type(d) == "table" and shown ~= false then
-                CRATE.on, CRATE.data, CRATE.at = true, d, now()
+            if type(d) == "table" then
+                -- a closed-window update only means "waiting on YOUR stand" if you just rolled a crate;
+                -- otherwise it is just crate data (which still teaches the order)
+                local mine = shown == true or (CRATE.rolled ~= nil and now() - CRATE.rolledAt < 15) or CRATE.waiting
+                if not mine then return end
+                local first = not CRATE.waiting
+                CRATE.waiting, CRATE.data, CRATE.at = true, d, now()
+                CRATE.on = (shown == true)
                 CRATE.title = tostring(d.title or d.name or "crate")
-                evlog("CrateWindow(" .. CRATE.title .. ")")
+                if CRATE.on then evlog("CrateWindow open(" .. CRATE.title .. ")")
+                elseif first then
+                    evlog("Crate waiting(" .. CRATE.title .. ")")
+                    note(CRATE.title .. " is waiting on your stand")
+                end
             else
-                if CRATE.on then evlog("CrateWindow closed") end
-                CRATE.on, CRATE.data = false, nil
+                if CRATE.waiting then evlog("Crate gone") end
+                CRATE.on, CRATE.waiting, CRATE.data, CRATE.prompt = false, false, nil, nil
+                CRATE.summonFails = 0
             end
         end,
         GiftReceived = onGift,
@@ -889,18 +907,34 @@ local function onScreen(g) -- visible, every ancestor visible, and not one of ou
     end
     return false
 end
+-- What a button says to a player. Styled game buttons are often an ImageButton with the words
+-- in a TextLabel inside it, so look there too, and fall back to the button's own name.
+local function btnWords(g)
+    local t = ""
+    pcall(function() if g:IsA("TextButton") then t = g.Text end end)
+    if not t:find("%a") then
+        for _, d in ipairs(g:GetDescendants()) do
+            if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text:find("%a") then t = d.Text break end
+        end
+    end
+    if not t:find("%a") then t = g.Name end
+    return (t:lower():gsub("[^%a]", ""))
+end
 local function crateButtons()
     local open, disc
     local gui = plr:FindFirstChildOfClass("PlayerGui")
     if not gui then return nil, nil end
     for _, g in ipairs(gui:GetDescendants()) do
-        if g:IsA("TextButton") and onScreen(g) then
-            local t = g.Text:lower():gsub("[^%a]", "")
-            if t:sub(1, 4) == "open" then open = open or g end
+        if g:IsA("GuiButton") and onScreen(g) then
+            local t = btnWords(g)
+            if t:sub(1, 4) == "open" and not t:find("shop", 1, true) then open = open or g end
             if t:sub(1, 7) == "discard" then disc = disc or g end
         end
     end
-    return open, disc
+    -- only trust a pair: Open on its own could be some other menu
+    if open and disc then return open, disc end
+    if CRATE.on then return open, disc end
+    return nil, nil
 end
 -- press a button that belongs to the game's own window. Executors differ, so try each way.
 local VIM = (function() local ok, v = pcall(function() return game:GetService("VirtualInputManager") end) return ok and v or nil end)()
@@ -946,19 +980,62 @@ local function tapGui(b, done)
     end
     return false
 end
--- The window usually appears on its own a couple of seconds after the roll; if it has not,
--- press the pad prompt. This never decides anything, it only gets the window up so we can read it.
+local NOTCRATE = { LimitedSquishyPlaceHolder = 1, Lever = 1, WaxStations = 1, RolledSquishyPlaceHolder = 1, SquishyStack = 1 }
+local function safePrompt(d)
+    local o = d.Parent
+    while o and o ~= S.plot do
+        if NOTCRATE[o.Name] then return false end
+        o = o.Parent
+    end
+    local a = (d.ActionText or ""):lower()
+    if a:find("roll", 1, true) or a:find("place", 1, true) or a:find("sell", 1, true) then return false end
+    return true
+end
+-- The prompt that opens a waiting crate's window: on the CrateStand first, then anything
+-- in the plot that names a crate.
+local function findCratePrompt()
+    if CRATE.prompt and CRATE.prompt.Parent and CRATE.prompt.Enabled then return CRATE.prompt end
+    if not S.plot then return nil end
+    local stand = S.plot:FindFirstChild("CrateStand")
+    local best
+    if stand then
+        for _, d in ipairs(stand:GetDescendants()) do
+            if d:IsA("ProximityPrompt") and d.Enabled and safePrompt(d) then best = d break end
+        end
+    end
+    if not best then
+        for _, d in ipairs(S.plot:GetDescendants()) do
+            if d:IsA("ProximityPrompt") and d.Enabled and safePrompt(d) then
+                local m = d:FindFirstAncestorWhichIsA("Model")
+                local words = ((d.ActionText or "") .. " " .. (d.ObjectText or "") .. " " .. d.Name .. " " ..
+                    (m and m.Name or "")):lower()
+                if words:find("crate", 1, true) then best = d break end
+            end
+        end
+    end
+    CRATE.prompt = best
+    return best
+end
+-- Gets the crate window onto the screen. It never decides anything; the window branch does.
 local function summonCrate()
     if CRATE.on then return true end
-    local bp, pi = buyPrompt(), padInfo()
-    if bp and bp.Enabled and pi and isCrateName(pi.name) then
-        local part = partOf(bp)
-        if part then standNear(part, bp) end
-        activate(bp, function() return CRATE.on end)
+    local cp = findCratePrompt()
+    if not cp then
+        CRATE.summonFails = CRATE.summonFails + 1
+        CRATE.lastFail = now()
+        note("crate: cannot find where to open " .. CRATE.title .. " - open it once by hand, then DUMP")
+        return false
     end
-    if waitFor(function() return CRATE.on end, 2.5) then return true end
+    local part = partOf(cp)
+    if part then standNear(part, cp) end
+    activate(cp, function() return CRATE.on end)
+    if waitFor(function() return CRATE.on end, 3) then
+        CRATE.summonFails = 0
+        return true
+    end
+    CRATE.summonFails = CRATE.summonFails + 1
     CRATE.lastFail = now()
-    note("crate: the window did not come up")
+    note("crate: pressed " .. relPath(cp) .. " but no window came up")
     return false
 end
 local function doCrate(open)
@@ -1159,6 +1236,7 @@ local function doCollect()
 end
 
 ---------------------------------------------------------------- decision
+local setRunning -- defined below; decide() needs it for the unattended retry
 local function decide()
     if S.capHit then
         -- left alone with auto start on, try again now and then instead of staying stopped for ever
@@ -1179,21 +1257,6 @@ local function decide()
     if not next(CFG.Targets) then
         return nil, "nothing ticked - pick a butter in the BUTTERS tab", "bad"
     end
-    -- a crate window blocks the whole roll loop until it is answered
-    if CRATE.on and CFG.Crates then
-        if S.crateFails >= 3 then -- this window is not one we can work: leave it to you
-            CRATE.on = false
-            note("ignoring the " .. CRATE.title .. " window - its buttons do not respond")
-            return nil, ("%s window open - press Open or Discard yourself"):format(CRATE.title), "bad"
-        end
-        if now() - CRATE.lastFail < 8 then
-            return nil, ("%s window open - could not press its buttons"):format(CRATE.title), "bad"
-        end
-        local want, which = crateWanted(CRATE.data)
-        if want then return "crate", ("opening %s for %s"):format(CRATE.title, which), "ok" end
-        if CFG.SellJunk then return "nocrate", ("discarding %s - nothing ticked inside"):format(CRATE.title), "warn" end
-        return nil, ("%s open - nothing ticked inside it"):format(CRATE.title), "idle"
-    end
     local free, total = freeCount()
     local held = carriedName()
     if held then
@@ -1210,6 +1273,66 @@ local function decide()
         return "place", ("waxing %s (%d free)"):format(nice, free), "ok"
     end
     S.holding = false
+    if CFG.Crates and not CRATE.waiting and now() - (CRATE.scanAt or 0) > 1 then
+        CRATE.scanAt = now()
+        local stand = S.plot:FindFirstChild("CrateStand")
+        if stand then
+            for _, m in ipairs(stand:GetChildren()) do
+                if isCrateName(m.Name) then
+                    local has = false
+                    for _, d in ipairs(m:GetDescendants()) do
+                        if d:IsA("ProximityPrompt") and d.Enabled then has = true break end
+                    end
+                    if has then
+                        local base = norm(m.Name):gsub("crate$", "")
+                        local rar
+                        for r in pairs(CAT.members) do if norm(r) == base then rar = r end end
+                        CRATE.waiting, CRATE.at = true, now()
+                        CRATE.title = (rar or m.Name) .. " Crate"
+                        CRATE.data = { name = m.Name, rarity = rar, title = CRATE.title }
+                        note(CRATE.title .. " found sitting on your stand")
+                        break
+                    end
+                end
+            end
+        end
+    end
+    -- Crates. One lands on your stand ~2s after it is rolled and waits there, with the pad's Buy
+    -- prompt switched off, until someone opens its window. That blocks the roll loop, so deal with it.
+    if CFG.Crates and (CRATE.on or CRATE.waiting) then
+        local title = CRATE.title
+        if now() < (CRATE.ignoreUntil or 0) then -- keep saying so; the crate still blocks rolling
+            return nil, ("%s - its buttons do not respond to me, press Open or Discard yourself"):format(title), "bad"
+        end
+        local want, which = crateWanted(CRATE.data)
+        if CRATE.on then
+            if S.crateFails >= 3 then -- this window is not one we can work: leave it to you
+                CRATE.ignoreUntil, S.crateFails = now() + 120, 0
+                note("could not press the " .. title .. " buttons 3 times - leaving it to you for 2 min")
+                return nil, ("%s window open - press Open or Discard yourself"):format(title), "bad"
+            end
+            if now() - CRATE.lastFail < 8 then
+                return nil, ("%s window open - could not press its buttons"):format(title), "bad"
+            end
+            if want then return "crate", ("opening %s for %s"):format(title, which), "ok" end
+            if CFG.SellJunk then return "nocrate", ("discarding %s - nothing ticked inside"):format(title), "warn" end
+            return nil, ("%s open - nothing ticked inside it"):format(title), "idle"
+        end
+        -- waiting, window shut: go and open it (to take it, or to discard it)
+        if not want and not CFG.SellJunk then
+            return nil, ("%s waiting - nothing ticked inside, left alone"):format(title), "idle"
+        end
+        if CRATE.summonFails >= 3 then
+            return nil, ("%s waiting - could not open it, open it by hand then DUMP"):format(title), "bad"
+        end
+        if now() - CRATE.lastFail < 8 then
+            return nil, ("%s waiting - retrying shortly"):format(title), "wait"
+        end
+        return "cratewin", ("%s waiting - going to open it%s"):format(title, want and (" for " .. which) or " to discard"), "ok"
+    end
+    if CRATE.rolled and not CRATE.waiting and now() - CRATE.rolledAt < 6 then
+        return nil, CRATE.rolled .. " rolled - waiting for it to land", "wait"
+    end
     if free < 1 then
         S.matchSince = nil
         return nil, ("0 free stations (%d/%d busy) - waiting for wax"):format(total, total), "wait"
@@ -1254,7 +1377,7 @@ local function step()
     S.reason, S.level = txt, lvl
     if act == "place" then runAction("waxing...", doPlace)
     elseif act == "crate" then runAction("opening crate...", doCrate, true)
-    elseif act == "cratewin" then runAction("checking crate...", summonCrate)
+    elseif act == "cratewin" then runAction("opening the crate window...", summonCrate)
     elseif act == "nocrate" then runAction("discarding crate...", doCrate, false)
     elseif act == "sell" then runAction("selling...", doSell)
     elseif act == "buy" then runAction("buying...", doBuy, false)
@@ -1262,13 +1385,13 @@ local function step()
         runAction("collecting money...", doCollect)
     end
 end
-local function setRunning(v, quiet)
+function setRunning(v, quiet)
     if v == S.running then return end
     S.running = v
     if not quiet then CFG.AutoStart = v end -- so saving the config remembers this
     if v then
         S.capHit, S.placeFails, S.cashFails, S.sellFails, S.crateFails = false, 0, 0, 0, 0
-        CRATE.lastFail = 0
+        CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil = 0, 0, 0
         S.noCashUntil, S.matchSince = 0, nil
         S.lastCollect = now()
         S.plot = findPlot() or S.plot
@@ -1307,10 +1430,46 @@ local function dump()
     local pi = padInfo()
     p("on pad: " .. (pi and ("%s [%s] %s"):format(pi.name, tostring(pi.rar), tostring(pi.price)) or "nothing"))
     p("sell spot: " .. (S.sellSpot and relPath(S.sellSpot) or "none found"))
-    local cob, cdb = crateButtons()
-    p(("crate window: on=%s title=%s open=%s discard=%s tapWay=%s opened=%d fails=%d"):format(
-        tostring(CRATE.on), CRATE.title, tostring(cob and cob.Text), tostring(cdb and cdb.Text),
-        tostring(S.tapWay), S.crates, S.crateFails))
+    p("--- CRATES ---")
+    p(("waiting=%s windowOpen=%s title=%s rolled=%s (%ss ago) opened=%d tapWay=%s fails=%d/%d"):format(
+        tostring(CRATE.waiting), tostring(CRATE.on), CRATE.title, tostring(CRATE.rolled),
+        CRATE.rolledAt > 0 and string.format("%.0f", now() - CRATE.rolledAt) or "-",
+        S.crates, tostring(S.tapWay), S.crateFails, CRATE.summonFails))
+    local cp = findCratePrompt()
+    p("crate prompt: " .. (cp and (relPath(cp) .. " [" .. cp.ActionText .. "|" .. cp.ObjectText .. "]") or "none found"))
+    local stand = S.plot and S.plot:FindFirstChild("CrateStand")
+    if stand then
+        local n = 0
+        for _, d in ipairs(stand:GetDescendants()) do
+            n = n + 1
+            if n > 30 then p("  ...") break end
+            local x = ""
+            if d:IsA("ProximityPrompt") then x = (" [%s|%s|on=%s|hold=%.2f]"):format(d.ActionText, d.ObjectText, tostring(d.Enabled), d.HoldDuration) end
+            p("  CrateStand/" .. relPath(d):gsub("^.-CrateStand%.", "") .. " (" .. d.ClassName .. ")" .. x)
+        end
+    else
+        p("  no CrateStand in the plot")
+    end
+    p("enabled prompts in the plot:")
+    if S.plot then
+        for _, d in ipairs(S.plot:GetDescendants()) do
+            if d:IsA("ProximityPrompt") and d.Enabled then
+                p(("  %s [%s|%s] safe=%s"):format(relPath(d), d.ActionText, d.ObjectText, tostring(safePrompt(d))))
+            end
+        end
+    end
+    local gui = plr:FindFirstChildOfClass("PlayerGui")
+    if gui then
+        p("buttons on screen that say open/discard:")
+        for _, g in ipairs(gui:GetDescendants()) do
+            if g:IsA("GuiButton") and onScreen(g) then
+                local w = btnWords(g)
+                if w:find("open", 1, true) or w:find("discard", 1, true) then
+                    p(("  %s %s -> %q"):format(g.ClassName, relPath(g), w))
+                end
+            end
+        end
+    end
     p("tap tools: getconnections=" .. type(getconnections) .. " firesignal=" .. type(firesignal) .. " VIM=" .. tostring(VIM ~= nil))
     p("--- CATALOG (" .. CAT.n .. " butters, worst rarity first) ---")
     for _, r in ipairs(CAT.rarOrder) do
@@ -1784,7 +1943,7 @@ click(U.crateT, function()
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
 end)
 click(U.crateB, function()
-    CRATE.lastFail = 0
+    CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil, S.crateFails = 0, 0, 0, 0
     task.spawn(runAction, "opening crate...", doCrate, true)
 end)
 click(U.padB, function()

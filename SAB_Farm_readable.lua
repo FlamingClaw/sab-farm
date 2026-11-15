@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v15 | Delta / Android
+-- SAB BUTTER FARM v16 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v15"
+local VERSION = "v16"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -26,6 +26,7 @@ local CFG = {
     SellJunk = true,               -- anything else in hand gets sold, never waxed
     Crates = true,                 -- open a crate when a ticked butter can come out of it
     Rejoin = true,                 -- come back by myself after a disconnect or a restart
+    AutoStart = true,              -- start farming as soon as the script loads, with no tap
     Confirm = 0.35,                -- match must hold this long before buying
     BuyGap = 1.2, PlaceTries = 3, PadDwell = 0.7,
 }
@@ -37,7 +38,7 @@ local S = {
     matchSince = nil, boot = now(), plot = nil, reason = "starting", level = "wait",
     lastCarryDesc = "", padSearchAt = -100, padPart = nil, padCands = {}, manualPad = nil,
     sellSpot = nil, sellSearchAt = -100, noSellSpot = false, catAt = 0,
-    crates = 0, crateFails = 0, tapWay = nil,
+    crates = 0, crateFails = 0, tapWay = nil, capAt = 0,
     config = "default", autoload = nil, selfPath = nil, rejoining = false, winPos = nil, togPos = nil, hidden = false,
 }
 local EV = { name = nil, rar = nil, at = now(), seq = 0, init = nil, initAt = 0, gift = nil, giftAt = 0 }
@@ -378,7 +379,7 @@ end
 local function configText()
     local L = { "V|1" }
     L[#L + 1] = "N|Every|" .. tostring(CFG.Every)
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     if S.winPos then L[#L + 1] = ("W|%d|%d"):format(S.winPos[1], S.winPos[2]) end
@@ -835,7 +836,7 @@ local function doPlace()
     if carriedName() == nil then S.holding = false end
     note("PLACE FAILED (" .. S.placeFails .. ")")
     if S.placeFails >= 2 then
-        S.capHit, S.running = true, false
+        S.capHit, S.running, S.capAt = true, false, now()
         S.capMsg = "STOPPED: place failed twice with free stations (plate full at 100? not holding?)"
         note(S.capMsg)
     end
@@ -1146,7 +1147,16 @@ end
 
 ---------------------------------------------------------------- decision
 local function decide()
-    if S.capHit then return nil, S.capMsg, "bad" end
+    if S.capHit then
+        -- left alone with auto start on, try again now and then instead of staying stopped for ever
+        if CFG.AutoStart and now() - (S.capAt or 0) > 300 then
+            S.capHit, S.placeFails = false, 0
+            note("trying again after being stopped for 5 minutes")
+            setRunning(true, true)
+        else
+            return nil, S.capMsg, "bad"
+        end
+    end
     if S.busy then return nil, S.busyText, "ok" end
     if not char() then return nil, "waiting for character", "wait" end
     if not S.plot or not S.plot.Parent then
@@ -1239,9 +1249,10 @@ local function step()
         runAction("collecting money...", doCollect)
     end
 end
-local function setRunning(v)
+local function setRunning(v, quiet)
     if v == S.running then return end
     S.running = v
+    if not quiet then CFG.AutoStart = v end -- so saving the config remembers this
     if v then
         S.capHit, S.placeFails, S.cashFails, S.sellFails, S.crateFails = false, 0, 0, 0, 0
         CRATE.lastFail = 0
@@ -1297,6 +1308,7 @@ local function dump()
         local bp = buyPrompt()
         p("BuyPrompt: " .. (bp and ("enabled=" .. tostring(bp.Enabled) .. " hold=" .. bp.HoldDuration) or "MISSING"))
     end
+    p("autostart=" .. tostring(CFG.AutoStart) .. " rejoin=" .. tostring(CFG.Rejoin))
     p(("config=%s autoload=%s selfPath=%s hidden=%s"):format(tostring(S.config), tostring(S.autoload),
         tostring(S.selfPath), tostring(S.hidden)))
     p("file tools: writefile=" .. type(writefile) .. " listfiles=" .. type(listfiles) ..
@@ -1518,6 +1530,9 @@ scap("START BY ITSELF")
 rw = srow(26)
 U.autoB = button(rw, "INSTALL F.exec", C.accent, 10, at(0, 1))
 U.autoMsg = lbl(srow(30), "", 10, C.dim, false)
+rw = srow(28)
+U.startT = button(rw, "START FARMING ON LOAD: ON", C.accent, 10, at(0, 1))
+lbl(srow(26), "Pressing START or STOP also sets this, so saving the config keeps whatever you were doing.", 10, C.dim, false)
 scap("IF THE GAME DROPS ME")
 rw = srow(28)
 U.rejT = button(rw, "AUTO REJOIN: ON", C.accent, 11, at(0, 0.55))
@@ -1653,6 +1668,8 @@ local function applyLoaded()
     setToggle(U.sellT, CFG.SellJunk, "SELL THEM: ON", "SELL THEM: OFF")
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
+    setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
+    if CFG.AutoStart ~= S.running then setRunning(CFG.AutoStart, true) end -- a loaded config that was running starts again
     if S.winPos then U.root.Position = UDim2.new(0, S.winPos[1], 0, S.winPos[2]) end
     if S.togPos then U.tgRoot.Position = UDim2.new(0, S.togPos[1], 0, S.togPos[2]) end
     S.lastCollect = now()
@@ -1770,10 +1787,16 @@ local function setAutoBtn()
     U.cfgAuto.Text = on and ("LOAD IT ON LAUNCH: " .. S.autoload) or "LOAD IT ON LAUNCH: OFF"
     U.cfgAuto.BackgroundColor3 = on and C.accent or C.panel2
 end
+-- the name in the box wins; the arrows just fill the box in for you
+local function currentName()
+    local n = U.cfgName.Text:gsub("^%s+", ""):gsub("%s+$", "")
+    if n ~= "" then return n end
+    return (pick > 0 and picks[pick]) or ""
+end
 click(U.cfgSave, function()
     S.winPos = { U.root.Position.X.Offset, U.root.Position.Y.Offset }
     S.togPos = { U.tgRoot.Position.X.Offset, U.tgRoot.Position.Y.Offset }
-    local ok, msg = saveConfig(U.cfgName.Text)
+    local ok, msg = saveConfig(currentName())
     U.cfgMsg.Text = ok and ("saved as " .. msg) or ("could not save: " .. msg)
     U.cfgMsg.TextColor3 = ok and C.good or C.bad
     refreshPicks()
@@ -1789,10 +1812,7 @@ local function doLoad(name)
     end
     note(U.cfgMsg.Text)
 end
-click(U.cfgLoad, function()
-    local n = (pick > 0 and picks[pick]) or U.cfgName.Text
-    doLoad(n)
-end)
+click(U.cfgLoad, function() doLoad(currentName()) end)
 click(U.cfgPick, function()
     refreshPicks()
     if pick > 0 then U.cfgName.Text = picks[pick] end
@@ -1814,14 +1834,16 @@ click(U.cfgAuto, function()
         setAutoload(nil)
         U.cfgMsg.Text = "it will not load a config on launch"
     else
-        local n = (pick > 0 and picks[pick]) or U.cfgName.Text
-        local ok = saveConfig(n)
-        if ok then
+        local n = currentName()
+        local known = false
+        for _, c in ipairs(listConfigs()) do if c == n then known = true end end
+        local ok = known or saveConfig(n) -- never overwrite a config you already saved
+        if ok and n ~= "" then
             setAutoload(n)
             refreshPicks()
             U.cfgMsg.Text = n .. " will load every time the script starts"
         else
-            U.cfgMsg.Text = "save the config first"
+            U.cfgMsg.Text = "name the config and save it first"
         end
     end
     U.cfgMsg.TextColor3 = C.dim
@@ -1835,6 +1857,10 @@ click(U.autoB, function()
     note(U.autoMsg.Text)
 end)
 -- rejoining
+click(U.startT, function()
+    CFG.AutoStart = not CFG.AutoStart
+    setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
+end)
 click(U.rejT, function()
     CFG.Rejoin = not CFG.Rejoin
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
@@ -1886,6 +1912,7 @@ local function refresh()
     U.tgDot.BackgroundColor3 = U.dot.BackgroundColor3
     U.tgRoot.BackgroundColor3 = S.hidden and C.panel2 or C.accent
     U.startB.Text = S.running and "STOP" or "START"
+    setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
     U.startB.BackgroundColor3 = S.running and C.warn or C.good
     local free, total2 = freeCount()
     U.sBought.Text, U.sPlaced.Text, U.sSold.Text = tostring(S.bought), tostring(S.placed), tostring(S.sold)
@@ -1918,6 +1945,7 @@ setToggle(U.colT, CFG.Collect, "COLLECT: ON", "COLLECT: OFF")
 setToggle(U.sellT, CFG.SellJunk, "SELL THEM: ON", "SELL THEM: OFF")
 setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
+setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
 U.secB.Text = tostring(CFG.Every)
 pcall(refresh)
 task.spawn(function()
@@ -1953,6 +1981,22 @@ end)
 if okVU and VU then
     track(plr.Idled:Connect(function() pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end))
 end
+task.spawn(function() -- start by myself, once the character and the plot exist
+    if not CFG.AutoStart then return end
+    S.reason, S.level = "waiting for the game to load, then starting", "wait"
+    for _ = 1, 120 do
+        if not S.alive then return end
+        if S.running then return end -- you got there first
+        S.plot = S.plot or findPlot()
+        if char() and S.plot and next(CFG.Targets) then
+            setRunning(true, true)
+            note("started by itself")
+            return
+        end
+        task.wait(1)
+    end
+    if S.alive and not S.running then note("gave up waiting to start - tap START") end
+end)
 task.spawn(function() -- the farm loop
     S.plot = findPlot()
     S.lastCollect = now()

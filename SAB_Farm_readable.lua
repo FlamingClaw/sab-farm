@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v21 | Delta / Android
+-- SAB BUTTER FARM v22 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v21"
+local VERSION = "v22"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -762,8 +762,9 @@ local function hookRemotes()
             else
                 if CRATE.waiting then evlog("Crate gone") end
                 CRATE.on, CRATE.waiting, CRATE.data, CRATE.prompt = false, false, nil, nil
+                local yours = CRATE.byYou
                 CRATE.summonFails, CRATE.ours, CRATE.byYou = 0, false, false
-                if CRATE.onGone then task.spawn(CRATE.onGone) end
+                if CRATE.onGone then task.spawn(CRATE.onGone, yours) end
                 if CRATE.classify then
                     local at = now()
                     task.spawn(function() pcall(CRATE.classify, at) end)
@@ -1044,14 +1045,27 @@ local function tapGui(b, done)
     -- Each way presses the button the way ONE tap would: a single signal, each handler once,
     -- and never MouseButton1Down on its own. Firing Down with no Up leaves the game thinking the
     -- button is still held, which wedges its window open (and its X) - that was the stuck window.
-    local function fireSig(sig)
+    local function fireSig(sig, ...)
         local ok, cons = pcall(getconnections, sig)
         if not (ok and type(cons) == "table" and #cons > 0) then return false end
-        local any = false
+        local any, args, n = false, { ... }, select("#", ...)
         for _, c in ipairs(cons) do
-            if pcall(function() c:Fire() end) then any = true end
+            if pcall(function() c:Fire(table.unpack(args, 1, n)) end) then any = true end
         end
         return any
+    end
+    -- Activated normally comes with the tap that caused it. Game handlers often read where you
+    -- tapped; firing it with nothing leaves them half done and jams the window, so pass a stand-in.
+    local function fakeTap()
+        local pos = Vector3.new(0, 0, 0)
+        pcall(function()
+            local p, sz = b.AbsolutePosition, b.AbsoluteSize
+            pos = Vector3.new(p.X + sz.X / 2, p.Y + sz.Y / 2, 0)
+        end)
+        local t = { Position = pos, Delta = Vector3.new(0, 0, 0), KeyCode = Enum.KeyCode.Unknown }
+        pcall(function() t.UserInputType = Enum.UserInputType.Touch end)
+        pcall(function() t.UserInputState = Enum.UserInputState.End end)
+        return t
     end
     for _, way in ipairs(ways) do
         local fired = false
@@ -1061,12 +1075,12 @@ local function tapGui(b, done)
                 fired = true
                 if waitFor(done, 1.5) then S.tapWay = way return true, way end
             end
-            fired = fireSig(b.Activated)
+            fired = fireSig(b.Activated, fakeTap(), 1)
         elseif way == "signal" and type(firesignal) == "function" then
             if pcall(firesignal, b.MouseButton1Click) then
                 if waitFor(done, 1.5) then S.tapWay = way return true, way end
             end
-            fired = pcall(firesignal, b.Activated)
+            fired = pcall(firesignal, b.Activated, fakeTap(), 1)
         elseif way == "touch" and VIM then
             fired = pcall(function()
                 local p, sz = b.AbsolutePosition, b.AbsoluteSize
@@ -1193,8 +1207,8 @@ CRATE.onShow = function()
     CRATE.findWin()
 end
 -- The crate is gone. If the game left its window up, close it the game's own way: its X.
-CRATE.onGone = function()
-    task.wait(1.2)
+CRATE.onGone = function(yours)
+    task.wait(yours and 4 or 1.2)
     if CRATE.on or CRATE.waiting then return end -- another crate already arrived
     local w = CRATE.findWin()
     if not w or not onScreen(w) then return end
@@ -1650,26 +1664,25 @@ local function decide()
         return "place", ("waxing %s (%d free)"):format(nice, free), "ok"
     end
     S.holding = false
+    -- A crate already waiting on your stand (e.g. it landed before the script started): the game
+    -- switches on CrateStand.Spot's CratePrompt while one is there, titled with the crate's name.
     if CFG.Crates and not CRATE.waiting and now() - (CRATE.scanAt or 0) > 1 then
         CRATE.scanAt = now()
         local stand = S.plot:FindFirstChild("CrateStand")
         if stand then
-            for _, m in ipairs(stand:GetChildren()) do
-                if isCrateName(m.Name) and CR.wanted(m.Name) then
-                    local has = false
-                    for _, d in ipairs(m:GetDescendants()) do
-                        if d:IsA("ProximityPrompt") and d.Enabled then has = true break end
-                    end
-                    if has then
-                        local base = norm(m.Name):gsub("crate$", "")
+            for _, d in ipairs(stand:GetDescendants()) do
+                if d:IsA("ProximityPrompt") and d.Enabled and safePrompt(d) then
+                    local title = d.ObjectText
+                    if title == "" then title = deepText(stand, "TitleLabel") or "" end
+                    if title ~= "" and CR.wanted(title) then
+                        local base = norm(title):gsub("crate$", "")
                         local rar
                         for r in pairs(CAT.members) do if norm(r) == base then rar = r end end
-                        CRATE.waiting, CRATE.at = true, now()
-                        CRATE.title = (rar or m.Name) .. " Crate"
-                        CRATE.data = { name = m.Name, rarity = rar, title = CRATE.title }
-                        note(CRATE.title .. " found sitting on your stand")
-                        break
+                        CRATE.waiting, CRATE.at, CRATE.title, CRATE.prompt = true, now(), title, d
+                        CRATE.data = { name = (title:gsub("%s", "")), rarity = rar, title = title }
+                        note(title .. " found waiting on your stand")
                     end
+                    break
                 end
             end
         end

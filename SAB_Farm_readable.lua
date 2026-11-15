@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v22 | Delta / Android
+-- SAB BUTTER FARM v23 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v22"
+local VERSION = "v23"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -28,6 +28,8 @@ local CFG = {
     CrateTicks = { picniccrate = true }, -- set of crate keys; anything not ticked is left alone
     Rejoin = true,                 -- come back by myself after a disconnect or a restart
     AutoStart = true,              -- start farming as soon as the script loads, with no tap
+    AutoRoll = false,              -- keep the game's Auto Roll pass switched on (it resets to off on join)
+    ARrules = "", ARstop = "",     -- your Auto Roll choices, put back after a rejoin
     Confirm = 0.35,                -- match must hold this long before buying
     BuyGap = 1.2, PlaceTries = 3, PadDwell = 0.7,
 }
@@ -46,6 +48,8 @@ local EV = { name = nil, rar = nil, at = now(), seq = 0, init = nil, initAt = 0,
 -- waiting: a crate has landed on your stand (CrateUpdate(data, false)).
 -- on:      its window is open on screen        (CrateUpdate(data, true)).
 -- Both clear on CrateUpdate(nil, false), when it is opened or discarded.
+-- The game's Auto Roll pass. Learned by watching AutoRollAction, like the crate call.
+local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", lastCheck = 0 }
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
@@ -236,6 +240,16 @@ local function saveLearn()
             L[#L + 1] = ("A|%d|%s|%d|%s"):format(i, c.m, c.n, table.concat(enc, ";"))
         end
     end
+    local function arLine(kind, i, c)
+        local enc = {}
+        for j = 1, c.n do enc[j] = CRATE.enc(c.args[j]) end
+        L[#L + 1] = ("R|%d|%s|%s|%d|%s"):format(i, kind, c.m, c.n, table.concat(enc, ";"))
+    end
+    if CRATE.enc then
+        for i, c in ipairs(AR.rec.rules) do arLine("rules", i, c) end
+        if AR.rec.on then arLine("on", 0, AR.rec.on) end
+        if AR.rec.off then arLine("off", 0, AR.rec.off) end
+    end
     for _, e in pairs(CR.seen) do
         L[#L + 1] = ("K|%s|%s|%s|%s"):format(e.name, e.title or "", e.rar or "", e.price and string.format("%.0f", e.price) or "")
     end
@@ -265,6 +279,21 @@ local function loadLearn()
                 end
                 CRATE.loadSeq = CRATE.loadSeq or {}
                 CRATE.loadSeq[i] = { m = m, n = n, args = args }
+            end
+        elseif kind == "R" and CRATE.dec then
+            local i = tonumber(rar)
+            local what, m, n, enc = rest:match("^([^|]+)|([^|]+)|(%d+)|(.*)$")
+            if i and what then
+                n = tonumber(n)
+                local args, j = {}, 0
+                for e in (enc .. ";"):gmatch("([^;]*);") do
+                    j = j + 1
+                    if j <= n then args[j] = CRATE.dec(e) end
+                end
+                local c = { m = m, n = n, args = args }
+                if what == "rules" then AR.rec.rules[i] = c
+                elseif what == "on" then AR.rec.on = c
+                elseif what == "off" then AR.rec.off = c end
             end
         elseif kind == "K" then
             local title, rr, pr = rest:match("^([^|]*)|([^|]*)|(.*)$")
@@ -471,8 +500,15 @@ end
 local function configText()
     local L = { "V|1" }
     L[#L + 1] = "N|Every|" .. tostring(CFG.Every)
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
+    end
+    -- your Auto Roll choices as the game holds them right now (if any), else what we had
+    local gr = plr:GetAttribute("AutoRollRules")
+    if type(gr) == "string" and gr ~= "" then CFG.ARrules, CFG.ARstop = gr, tostring(plr:GetAttribute("AutoRollStop") or "") end
+    if CFG.ARrules ~= "" then
+        L[#L + 1] = "S|rules|" .. CFG.ARrules
+        L[#L + 1] = "S|stop|" .. CFG.ARstop
     end
     if S.winPos then L[#L + 1] = ("W|%d|%d"):format(S.winPos[1], S.winPos[2]) end
     if S.togPos then L[#L + 1] = ("G|%d|%d"):format(S.togPos[1], S.togPos[2]) end
@@ -496,6 +532,10 @@ local function applyConfig(raw)
             if n and n >= 1 then CFG.Every = math.floor(n) end
         elseif a == "B" then
             if CFG[b] ~= nil then CFG[b] = (c == "1") end
+        elseif a == "S" and b == "rules" then
+            CFG.ARrules = c
+        elseif a == "S" and b == "stop" then
+            CFG.ARstop = c
         elseif a == "W" then
             S.winPos = { tonumber(b) or 10, tonumber(c) or 44 }
         elseif a == "G" then
@@ -1462,6 +1502,143 @@ function CRATE.smart()
     return doCrate(true) -- by the button; this is also where the call gets learned
 end
 
+-- ---- the game's Auto Roll pass
+-- On every join the game resets it: AutoRollOn false, no choices. The script watches what the
+-- game's own Auto Roll menu sends (AutoRollAction) and what each message changes, so it learns
+-- how to put your choices back and how to switch it on and off, then does that after a rejoin.
+function AR.snap()
+    return { rules = plr:GetAttribute("AutoRollRules"), stop = plr:GetAttribute("AutoRollStop"),
+        on = plr:GetAttribute("AutoRollOn"), main = plr:GetAttribute("AutoRoll") }
+end
+function AR.isOn() return plr:GetAttribute("AutoRollOn") == true end
+function AR.saw(m, ...) -- from the namecall hook: one of YOUR Auto Roll changes
+    local rec = { m = m, n = select("#", ...), args = { ... }, before = AR.snap() }
+    task.delay(1.5, function()
+        if S.alive then pcall(AR.learnOne, rec) end
+    end)
+end
+function AR.learnOne(rec)
+    local a, b = AR.snap(), rec.before
+    local ruleCh = (a.rules ~= b.rules) or (a.stop ~= b.stop)
+    local powCh = (a.on ~= b.on) or (a.main ~= b.main)
+    if not ruleCh and not powCh then return end -- no visible effect: nothing to learn
+    local args = {}
+    for i = 1, rec.n do
+        local v = rec.args[i]
+        local t = type(v)
+        if t == "string" and v ~= "" and v == a.rules then v = { __slot = "rules" }
+        elseif t == "string" and v ~= "" and ruleCh and v == a.stop and a.stop ~= b.stop then v = { __slot = "stop" }
+        elseif t == "table" then
+            local o = {}
+            for k, x in pairs(v) do
+                if type(x) == "table" or (type(x) == "userdata") then
+                    AR.msg = "Auto Roll sends something I cannot repeat" return
+                end
+                o[k] = (type(x) == "string" and x ~= "" and x == a.rules) and { __slot = "rules" } or x
+            end
+            v = o
+        elseif t ~= "string" and t ~= "number" and t ~= "boolean" and t ~= "nil" then
+            if v == plr then v = { __slot = "player" } else AR.msg = "Auto Roll sends something I cannot repeat" return end
+        end
+        args[i] = v
+    end
+    local call = { m = rec.m, n = rec.n, args = args }
+    if ruleCh then
+        local whole = false
+        for i = 1, call.n do
+            local x = call.args[i]
+            if type(x) == "table" and x.__slot == "rules" then whole = true end
+            if type(x) == "table" and not x.__slot then
+                for _, y in pairs(x) do if type(y) == "table" and y.__slot == "rules" then whole = true end end
+            end
+        end
+        if whole then AR.rec.rules = { call } -- one message sets every choice at once
+        else
+            table.insert(AR.rec.rules, call) -- choice by choice: keep them in order
+            if #AR.rec.rules > 60 then table.remove(AR.rec.rules, 1) end
+        end
+    end
+    if powCh then
+        if a.on == true then AR.rec.on = call else AR.rec.off = call end
+        CFG.AutoRoll = (a.on == true) -- the switch follows what you did in the game
+    end
+    if a.rules and a.rules ~= "" then CFG.ARrules, CFG.ARstop = a.rules, a.stop or "" end
+    LEARN.dirty = true
+    AR.msg = ""
+    note(("learned an Auto Roll %s message"):format(ruleCh and "choices" or (a.on and "on" or "off")))
+end
+function AR.resolve(v)
+    if type(v) ~= "table" then return v end
+    if v.__slot == "rules" then return CFG.ARrules ~= "" and CFG.ARrules or plr:GetAttribute("AutoRollRules") end
+    if v.__slot == "stop" then return CFG.ARstop ~= "" and CFG.ARstop or plr:GetAttribute("AutoRollStop") end
+    if v.__slot == "player" then return plr end
+    local o = {}
+    for k, x in pairs(v) do o[k] = AR.resolve(x) end
+    return o
+end
+function AR.replay(r, list)
+    local unpack_ = table.unpack or unpack
+    for _, c in ipairs(list) do
+        local args = {}
+        for i = 1, c.n do args[i] = AR.resolve(c.args[i]) end
+        AR.replaying = true
+        pcall(function()
+            if c.m == "InvokeServer" then
+                task.spawn(function() pcall(function() r:InvokeServer(unpack_(args, 1, c.n)) end) end)
+            else r:FireServer(unpack_(args, 1, c.n)) end
+        end)
+        AR.replaying = false
+        task.wait(0.25)
+    end
+end
+-- Put the game's Auto Roll the way your settings say. forceOff: also switch it OFF if you asked.
+function AR.apply(why, forceOff)
+    if AR.busy or not S.alive then return end
+    AR.busy = true
+    pcall(function()
+        local R = RS:FindFirstChild("Remotes")
+        local r = R and R:FindFirstChild("AutoRollAction")
+        if not r then AR.msg = "this game has no AutoRollAction" return end
+        local want = CFG.AutoRoll
+        if want and CFG.ARrules ~= "" and plr:GetAttribute("AutoRollRules") ~= CFG.ARrules then
+            if #AR.rec.rules == 0 then
+                AR.msg = "pick your Auto Roll choices once in the game's menu so I can learn them"
+            else
+                AR.replay(r, AR.rec.rules)
+                if waitFor(function() return plr:GetAttribute("AutoRollRules") == CFG.ARrules end, 4) then
+                    note("Auto Roll choices put back")
+                else
+                    AR.msg = "Auto Roll choices did not come out the same - set them in the game, then SAVE"
+                    note(AR.msg)
+                end
+            end
+        end
+        if want == AR.isOn() or (not want and not forceOff) then return end
+        local call = want and AR.rec.on or AR.rec.off
+        if not call then -- a plain "toggle" message (no true/false in it) works both ways; it is checked below
+            local other = want and AR.rec.off or AR.rec.on
+            local plain = other ~= nil
+            for j = 1, other and other.n or 0 do
+                if type(other.args[j]) == "boolean" then plain = false end
+            end
+            if plain then call = other end
+        end
+        if not call then
+            AR.msg = ("switch Auto Roll %s once in the game's menu so I can learn it"):format(want and "on" or "off")
+            return
+        end
+        AR.replay(r, { call })
+        if waitFor(function() return AR.isOn() == want end, 4) then
+            AR.msg = ""
+            note(("Auto Roll switched %s%s"):format(want and "ON" or "OFF", why and (" (" .. why .. ")") or ""))
+        else
+            AR.msg = "Auto Roll did not switch - do it once in the game so I can relearn it"
+            note(AR.msg)
+        end
+    end)
+    AR.busy = false
+end
+
 -- Selling an unwanted butter. A capture of the real game shows the client sends
 -- SellSquishy:FireServer() with no arguments at all, so that is the first thing tried.
 local SELLW = { "sell", "trash", "discard", "dispose", "bin" }
@@ -1833,6 +2010,24 @@ local function dump()
         tostring(CRATE.waiting), tostring(CRATE.on), CRATE.title, tostring(CRATE.rolled),
         CRATE.rolledAt > 0 and string.format("%.0f", now() - CRATE.rolledAt) or "-",
         S.crates, tostring(S.tapWay), S.crateFails, CRATE.summonFails))
+    p("--- AUTO ROLL ---")
+    local ar = AR.snap()
+    p(("game: AutoRollOn=%s AutoRoll=%s stop=%s rules=%s"):format(tostring(ar.on), tostring(ar.main),
+        tostring(ar.stop), tostring(ar.rules)))
+    p(("wanted: %s  choices to put back: %s (stop %s)  note: %s"):format(tostring(CFG.AutoRoll),
+        CFG.ARrules ~= "" and CFG.ARrules or "-", CFG.ARstop ~= "" and CFG.ARstop or "-", AR.msg ~= "" and AR.msg or "-"))
+    local function showCall(c)
+        local a = {}
+        for j = 1, c.n do
+            local v = c.args[j]
+            a[j] = type(v) == "table" and (v.__slot and ("<" .. v.__slot .. ">") or "{table}") or ("%q"):format(tostring(v))
+        end
+        return ("AutoRollAction:%s(%s)"):format(c.m, table.concat(a, ", "))
+    end
+    for i, c in ipairs(AR.rec.rules) do p(("  choices %d: %s"):format(i, showCall(c))) end
+    if AR.rec.on then p("  on:  " .. showCall(AR.rec.on)) end
+    if AR.rec.off then p("  off: " .. showCall(AR.rec.off)) end
+    if #AR.rec.rules == 0 and not AR.rec.on and not AR.rec.off then p("  nothing learned yet") end
     p("--- CRATE OPENING ---")
     local function show(v, d)
         d = d or 0
@@ -2158,6 +2353,10 @@ U.sellB = button(rw, "SELL NOW", C.warn, 11, at(0.55, 0.45))
 rw = row(28)
 U.crateT = button(rw, "OPEN CRATES: ON", C.accent, 11, at(0, 0.55))
 U.crateB = button(rw, "OPEN NOW", C.warn, 11, at(0.55, 0.45))
+caption("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")
+rw = row(28)
+U.arT = button(rw, "AUTO ROLL: OFF", C.panel2, 11, at(0, 0.5))
+U.arL = lbl(rw, "", 9, C.dim, false, at(0.52, 0.48))
 caption("TOOLS")
 rw = row(30)
 U.buyB = button(rw, "BUY", C.warn, 10, at(0, 0.2))
@@ -2400,6 +2599,7 @@ local function applyLoaded()
     setToggle(U.colT, CFG.Collect, "COLLECT: ON", "COLLECT: OFF")
     setToggle(U.sellT, CFG.SellJunk, "SELL THEM: ON", "SELL THEM: OFF")
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+    setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
     setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
     if CFG.AutoStart ~= S.running then setRunning(CFG.AutoStart, true) end -- a loaded config that was running starts again
@@ -2462,6 +2662,10 @@ end)
 click(U.sellB, function()
     S.sellFails = 0
     task.spawn(runAction, "selling...", doSell)
+end)
+click(U.arT, function()
+    CFG.AutoRoll = not CFG.AutoRoll
+    task.spawn(AR.apply, "you asked", true)
 end)
 click(U.crateT, function()
     CFG.Crates = not CFG.Crates
@@ -2571,6 +2775,7 @@ local function doLoad(name)
     if ok then
         U.cfgName.Text = name
         applyLoaded()
+        task.spawn(AR.apply, "config " .. name)
     end
     note(U.cfgMsg.Text)
 end
@@ -2701,6 +2906,11 @@ local function refresh()
         if CR.built ~= CR.at then CR.build() else CR.paint() end
     end
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+    setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
+    local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
+    U.arL.Text = AR.msg ~= "" and AR.msg or ("game: %s | learned: %s%s"):format(AR.isOn() and "ON" or "off",
+        learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or "")
+    U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, dump = dump, CAT = CAT, LEARN = LEARN, buildList = buildList }
 note(VERSION .. " loaded")
@@ -2770,11 +2980,12 @@ if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" 
         local wrap = (type(newcclosure) == "function") and newcclosure or function(f) return f end
         local old
         old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
-            if S.alive and not CRATE.replaying then
+            if S.alive then
                 local m = getnamecallmethod()
                 if m == "InvokeServer" or m == "FireServer" then
                     local ok, nm = pcall(function() return self.Name end)
-                    if ok and nm == "CrateAction" then pcall(CRATE.saw, m, ...) end
+                    if ok and nm == "CrateAction" and not CRATE.replaying then pcall(CRATE.saw, m, ...)
+                    elseif ok and nm == "AutoRollAction" and not AR.replaying then pcall(AR.saw, m, ...) end
                 end
             end
             return old(self, ...)
@@ -2785,6 +2996,24 @@ end
 if VU then
     track(plr.Idled:Connect(function() pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end))
 end
+task.spawn(function() -- the game's Auto Roll: back on after a join, and kept on
+    for _ = 1, 90 do -- wait for the game to hand us our Auto Roll state
+        if not S.alive then return end
+        if plr:GetAttribute("AutoRollOn") ~= nil and char() and (S.plot or findPlot()) then break end
+        task.wait(1)
+    end
+    task.wait(2)
+    if CFG.AutoRoll then AR.apply("joined") end
+    while S.alive do
+        task.wait(30)
+        -- the game switched it off on its own: switch it back, but never while something is on the
+        -- pad, in your hands or in a crate, so nothing you want is rolled away
+        if S.alive and CFG.AutoRoll and S.running and not AR.isOn() and not padInfo() and not carriedName()
+            and not CRATE.waiting and not CRATE.on and not S.busy then
+            AR.apply("it was off")
+        end
+    end
+end)
 task.spawn(function() -- start by myself, once the character and the plot exist
     if not CFG.AutoStart then return end
     S.reason, S.level = "waiting for the game to load, then starting", "wait"

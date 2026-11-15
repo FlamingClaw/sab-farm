@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v23 | Delta / Android
+-- SAB BUTTER FARM v24 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v23"
+local VERSION = "v24"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -1510,9 +1510,21 @@ function AR.snap()
     return { rules = plr:GetAttribute("AutoRollRules"), stop = plr:GetAttribute("AutoRollStop"),
         on = plr:GetAttribute("AutoRollOn"), main = plr:GetAttribute("AutoRoll") }
 end
+-- AR.cache mirrors those four flags, updated by the game's own change events. The namecall hook
+-- must read THIS, never call GetAttribute: any method call made inside the hook replaces the call
+-- in progress, so the game's own AutoRollAction would never reach the server (that was v23's bug).
+AR.cache = {}
+function AR.watchCache()
+    AR.cache = AR.snap()
+    for key, attr in pairs({ rules = "AutoRollRules", stop = "AutoRollStop", on = "AutoRollOn", main = "AutoRoll" }) do
+        track(plr:GetAttributeChangedSignal(attr):Connect(function() AR.cache[key] = plr:GetAttribute(attr) end))
+    end
+end
 function AR.isOn() return plr:GetAttribute("AutoRollOn") == true end
-function AR.saw(m, ...) -- from the namecall hook: one of YOUR Auto Roll changes
-    local rec = { m = m, n = select("#", ...), args = { ... }, before = AR.snap() }
+function AR.saw(m, ...) -- runs INSIDE the namecall hook: no method calls allowed here
+    local c = AR.cache
+    local rec = { m = m, n = select("#", ...), args = { ... },
+        before = { rules = c.rules, stop = c.stop, on = c.on, main = c.main } }
     task.delay(1.5, function()
         if S.alive then pcall(AR.learnOne, rec) end
     end)
@@ -1603,6 +1615,7 @@ function AR.apply(why, forceOff)
         if want and CFG.ARrules ~= "" and plr:GetAttribute("AutoRollRules") ~= CFG.ARrules then
             if #AR.rec.rules == 0 then
                 AR.msg = "pick your Auto Roll choices once in the game's menu so I can learn them"
+                note(AR.msg)
             else
                 AR.replay(r, AR.rec.rules)
                 if waitFor(function() return plr:GetAttribute("AutoRollRules") == CFG.ARrules end, 4) then
@@ -1625,6 +1638,7 @@ function AR.apply(why, forceOff)
         end
         if not call then
             AR.msg = ("switch Auto Roll %s once in the game's menu so I can learn it"):format(want and "on" or "off")
+            note(AR.msg)
             return
         end
         AR.replay(r, { call })
@@ -2975,18 +2989,22 @@ task.spawn(function() -- keep what the crates taught us
         pcall(saveLearn)
     end
 end)
+pcall(AR.watchCache)
 if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
     pcall(function()
         local wrap = (type(newcclosure) == "function") and newcclosure or function(f) return f end
         local old
+        -- Rule for this hook: before the game's call is passed on, nothing in here may call a method
+        -- (no :GetAttribute, :FindFirstChild, ...). A method call replaces the call in progress, and the
+        -- game's own message would be lost. Reading .Name and plain tables is fine.
+        local setNC = (type(setnamecallmethod) == "function") and setnamecallmethod or nil
         old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
-            if S.alive then
-                local m = getnamecallmethod()
-                if m == "InvokeServer" or m == "FireServer" then
-                    local ok, nm = pcall(function() return self.Name end)
-                    if ok and nm == "CrateAction" and not CRATE.replaying then pcall(CRATE.saw, m, ...)
-                    elseif ok and nm == "AutoRollAction" and not AR.replaying then pcall(AR.saw, m, ...) end
-                end
+            local m = getnamecallmethod()
+            if S.alive and (m == "InvokeServer" or m == "FireServer") then
+                local ok, nm = pcall(function() return self.Name end)
+                if ok and nm == "CrateAction" and not CRATE.replaying then pcall(CRATE.saw, m, ...)
+                elseif ok and nm == "AutoRollAction" and not AR.replaying then pcall(AR.saw, m, ...) end
+                if setNC then setNC(m) end -- belt and braces: make sure the game's call is the one that goes
             end
             return old(self, ...)
         end))

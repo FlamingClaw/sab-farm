@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v19 | Delta / Android
+-- SAB BUTTER FARM v20 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v19"
+local VERSION = "v20"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -47,7 +47,7 @@ local EV = { name = nil, rar = nil, at = now(), seq = 0, init = nil, initAt = 0,
 -- Both clear on CrateUpdate(nil, false), when it is opened or discarded.
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
-    ours = false, byYou = false, openedAt = 0, win = nil, hidByUs = false }
+    ours = false, byYou = false, openedAt = 0, win = nil }
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 local lastDump = ""
@@ -901,7 +901,7 @@ local function crateWanted(d)
     return false
 end
 local MINE = { SABFarmGui = 1, SABToggle = 1, SABError = 1 }
-local function onScreen(g, strict) -- visible, every ancestor visible, and not one of our own windows
+local function onScreen(g) -- visible, every ancestor visible, and not one of our own windows
     local o = g
     while o do
         if MINE[o.Name] then return false end
@@ -909,9 +909,7 @@ local function onScreen(g, strict) -- visible, every ancestor visible, and not o
             local ok, en = pcall(function() return o.Enabled end)
             return (not ok) or en ~= false
         end
-        -- the crate window we tucked away is still "there" for pressing its buttons, unless strict
-        local ours = (not strict) and o == CRATE.win and CRATE.hidByUs
-        if o:IsA("GuiObject") and not o.Visible and not ours then return false end
+        if o:IsA("GuiObject") and not o.Visible then return false end
         o = o.Parent
     end
     return false
@@ -981,10 +979,6 @@ local function tapGui(b, done)
             end
             fired = pcall(firesignal, b.Activated)
         elseif way == "touch" and VIM then
-            if CRATE.win and CRATE.hidByUs and b:IsDescendantOf(CRATE.win) then
-                CRATE.win.Visible, CRATE.hidByUs = true, false -- a real tap needs it on screen
-                task.wait(0.1)
-            end
             fired = pcall(function()
                 local p, sz = b.AbsolutePosition, b.AbsoluteSize
                 local inset = 0
@@ -1102,41 +1096,28 @@ local function closeBtnOf(win)
         end
     end
 end
--- Only tuck a window away if its buttons can be pressed without being seen.
-local function canHide()
-    return S.tapWay ~= "touch" and (type(getconnections) == "function" or type(firesignal) == "function")
-end
--- A window the script opened is hidden the moment it appears; one you opened is left on show.
+-- The window belongs to the game. Hiding it behind the game's back leaves its menu system
+-- thinking it is still open (dark blurred screen that eats your touches, buttons that ignore
+-- presses), so the script never changes its visibility. It only presses the game's buttons.
 CRATE.onShow = function()
-    if CRATE.ours then
-        if not canHide() then return end
-        local t0 = now()
-        while S.alive and CRATE.on and CRATE.ours and now() - t0 < 6 do
-            local w = CRATE.findWin()
-            if w and w.Visible then w.Visible = false CRATE.hidByUs = true end
-            task.wait(0.03) -- the game may show it a frame after us; keep it down while we work
-        end
-    else
-        local w = CRATE.findWin()
-        if w and CRATE.hidByUs then w.Visible = true CRATE.hidByUs = false end -- yours: give it back
-    end
+    CRATE.win = nil -- found fresh each time
+    CRATE.findWin()
 end
--- The crate is gone. If its window is still on screen, close it the game's way, else hide it.
+-- The crate is gone. If the game left its window up, close it the game's own way: its X.
 CRATE.onGone = function()
-    task.wait(1)
+    task.wait(1.2)
     if CRATE.on or CRATE.waiting then return end -- another crate already arrived
     local w = CRATE.findWin()
-    if not w or not onScreen(w, true) then return end
+    if not w or not onScreen(w) then return end
     local x = closeBtnOf(w)
-    if x then tapGui(x, function() return not onScreen(w, true) end) end
-    if onScreen(w, true) and not (CRATE.on or CRATE.waiting) then
-        w.Visible, CRATE.hidByUs = false, true
-        note("closed a crate window that was left on screen")
-    end
+    if x and tapGui(x, function() return not onScreen(w) end) then return end
+    note("the crate window is still open - tap its X")
 end
 end
 local function doCrate(open)
     if not summonCrate() then return false end
+    local age = now() - (CRATE.openedAt or 0)
+    if age < 0.6 then nap(0.6 - age) end -- let its open animation finish; game buttons often ignore early taps
     local title = CRATE.title
     local ob, db = crateButtons()
     local b = open and ob or db
@@ -1537,8 +1518,8 @@ local function dump()
         CRATE.rolledAt > 0 and string.format("%.0f", now() - CRATE.rolledAt) or "-",
         S.crates, tostring(S.tapWay), S.crateFails, CRATE.summonFails))
     local cw = CRATE.findWin()
-    p(("crate window: %s visible=%s hiddenByMe=%s mine=%s yours=%s"):format(cw and relPath(cw) or "not found",
-        tostring(cw and cw.Visible), tostring(CRATE.hidByUs), tostring(CRATE.ours), tostring(CRATE.byYou)))
+    p(("crate window: %s visible=%s mine=%s yours=%s"):format(cw and relPath(cw) or "not found",
+        tostring(cw and cw.Visible), tostring(CRATE.ours), tostring(CRATE.byYou)))
     local cp = findCratePrompt()
     p("crate prompt: " .. (cp and (relPath(cp) .. " [" .. cp.ActionText .. "|" .. cp.ObjectText .. "]") or "none found"))
     local stand = S.plot and S.plot:FindFirstChild("CrateStand")

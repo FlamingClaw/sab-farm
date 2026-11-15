@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v18 | Delta / Android
+-- SAB BUTTER FARM v19 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v18"
+local VERSION = "v19"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -46,7 +46,8 @@ local EV = { name = nil, rar = nil, at = now(), seq = 0, init = nil, initAt = 0,
 -- on:      its window is open on screen        (CrateUpdate(data, true)).
 -- Both clear on CrateUpdate(nil, false), when it is opened or discarded.
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
-    rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0 }
+    rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
+    ours = false, byYou = false, openedAt = 0, win = nil, hidByUs = false }
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 local lastDump = ""
@@ -645,9 +646,14 @@ local function hookRemotes()
                 local mine = shown == true or (CRATE.rolled ~= nil and now() - CRATE.rolledAt < 15) or CRATE.waiting
                 if not mine then return end
                 local first = not CRATE.waiting
+                local wasOn = CRATE.on
                 CRATE.waiting, CRATE.data, CRATE.at = true, d, now()
                 CRATE.on = (shown == true)
                 CRATE.title = tostring(d.title or d.name or "crate")
+                if CRATE.on and not wasOn then
+                    CRATE.openedAt, CRATE.byYou = now(), not CRATE.ours
+                    if CRATE.onShow then task.spawn(CRATE.onShow) end
+                end
                 if CRATE.on then evlog("CrateWindow open(" .. CRATE.title .. ")")
                 elseif first then
                     evlog("Crate waiting(" .. CRATE.title .. ")")
@@ -656,7 +662,8 @@ local function hookRemotes()
             else
                 if CRATE.waiting then evlog("Crate gone") end
                 CRATE.on, CRATE.waiting, CRATE.data, CRATE.prompt = false, false, nil, nil
-                CRATE.summonFails = 0
+                CRATE.summonFails, CRATE.ours, CRATE.byYou = 0, false, false
+                if CRATE.onGone then task.spawn(CRATE.onGone) end
             end
         end,
         GiftReceived = onGift,
@@ -894,7 +901,7 @@ local function crateWanted(d)
     return false
 end
 local MINE = { SABFarmGui = 1, SABToggle = 1, SABError = 1 }
-local function onScreen(g) -- visible, every ancestor visible, and not one of our own windows
+local function onScreen(g, strict) -- visible, every ancestor visible, and not one of our own windows
     local o = g
     while o do
         if MINE[o.Name] then return false end
@@ -902,7 +909,9 @@ local function onScreen(g) -- visible, every ancestor visible, and not one of ou
             local ok, en = pcall(function() return o.Enabled end)
             return (not ok) or en ~= false
         end
-        if o:IsA("GuiObject") and not o.Visible then return false end
+        -- the crate window we tucked away is still "there" for pressing its buttons, unless strict
+        local ours = (not strict) and o == CRATE.win and CRATE.hidByUs
+        if o:IsA("GuiObject") and not o.Visible and not ours then return false end
         o = o.Parent
     end
     return false
@@ -945,20 +954,37 @@ local function tapGui(b, done)
     for _, n in ipairs({ "conn", "signal", "touch" }) do
         if n ~= S.tapWay then add(n) end
     end
+    -- Each way presses the button the way ONE tap would: a single signal, each handler once,
+    -- and never MouseButton1Down on its own. Firing Down with no Up leaves the game thinking the
+    -- button is still held, which wedges its window open (and its X) - that was the stuck window.
+    local function fireSig(sig)
+        local ok, cons = pcall(getconnections, sig)
+        if not (ok and type(cons) == "table" and #cons > 0) then return false end
+        local any = false
+        for _, c in ipairs(cons) do
+            if pcall(function() c:Fire() end) then any = true end
+        end
+        return any
+    end
     for _, way in ipairs(ways) do
         local fired = false
         if way == "conn" and type(getconnections) == "function" then
-            for _, sig in ipairs({ b.MouseButton1Click, b.Activated, b.MouseButton1Down }) do
-                local ok, cons = pcall(getconnections, sig)
-                if ok and type(cons) == "table" then
-                    for _, c in ipairs(cons) do
-                        if pcall(function() c:Fire() end) then fired = true end
-                    end
-                end
+            -- Click first; Activated only if Click changed nothing, so the action never runs twice
+            if fireSig(b.MouseButton1Click) then
+                fired = true
+                if waitFor(done, 1.5) then S.tapWay = way return true, way end
             end
+            fired = fireSig(b.Activated)
         elseif way == "signal" and type(firesignal) == "function" then
-            fired = pcall(firesignal, b.MouseButton1Click) or pcall(firesignal, b.Activated)
+            if pcall(firesignal, b.MouseButton1Click) then
+                if waitFor(done, 1.5) then S.tapWay = way return true, way end
+            end
+            fired = pcall(firesignal, b.Activated)
         elseif way == "touch" and VIM then
+            if CRATE.win and CRATE.hidByUs and b:IsDescendantOf(CRATE.win) then
+                CRATE.win.Visible, CRATE.hidByUs = true, false -- a real tap needs it on screen
+                task.wait(0.1)
+            end
             fired = pcall(function()
                 local p, sz = b.AbsolutePosition, b.AbsoluteSize
                 local inset = 0
@@ -1028,15 +1054,86 @@ local function summonCrate()
     end
     local part = partOf(cp)
     if part then standNear(part, cp) end
+    CRATE.ours = true -- the window that comes up now is ours, so it is kept out of sight
     activate(cp, function() return CRATE.on end)
     if waitFor(function() return CRATE.on end, 3) then
         CRATE.summonFails = 0
         return true
     end
+    CRATE.ours = false
     CRATE.summonFails = CRATE.summonFails + 1
     CRATE.lastFail = now()
     note("crate: pressed " .. relPath(cp) .. " but no window came up")
     return false
+end
+do -- crate window helpers, kept in their own scope
+-- The crate window: the smallest frame that holds Open, Discard and the crate's own words.
+local function crateWindowOf(btn)
+    local o = btn.Parent
+    while o and o:IsA("GuiObject") do
+        local disc, words = false, false
+        for _, d in ipairs(o:GetDescendants()) do
+            if d ~= btn and d:IsA("GuiButton") and btnWords(d):sub(1, 7) == "discard" then disc = true end
+            if d:IsA("TextLabel") then
+                local t = d.Text:lower()
+                if t:find("crate", 1, true) or t:find("can contain", 1, true) or t:find("cost", 1, true) then words = true end
+            end
+            if disc and words then return o end
+        end
+        o = o.Parent
+    end
+end
+function CRATE.findWin()
+    if CRATE.win and CRATE.win.Parent then return CRATE.win end
+    local gui = plr:FindFirstChildOfClass("PlayerGui")
+    if not gui then return nil end
+    for _, g in ipairs(gui:GetDescendants()) do
+        if g:IsA("GuiButton") and not g:FindFirstAncestor("SABFarmGui") and btnWords(g):sub(1, 4) == "open" then
+            local w = crateWindowOf(g)
+            if w then CRATE.win = w return w end
+        end
+    end
+end
+local function closeBtnOf(win)
+    for _, d in ipairs(win:GetDescendants()) do
+        if d:IsA("GuiButton") then
+            local w, n = btnWords(d), d.Name:lower()
+            if w == "x" or w == "close" or n == "x" or n:find("close", 1, true) or n:find("exit", 1, true) then return d end
+        end
+    end
+end
+-- Only tuck a window away if its buttons can be pressed without being seen.
+local function canHide()
+    return S.tapWay ~= "touch" and (type(getconnections) == "function" or type(firesignal) == "function")
+end
+-- A window the script opened is hidden the moment it appears; one you opened is left on show.
+CRATE.onShow = function()
+    if CRATE.ours then
+        if not canHide() then return end
+        local t0 = now()
+        while S.alive and CRATE.on and CRATE.ours and now() - t0 < 6 do
+            local w = CRATE.findWin()
+            if w and w.Visible then w.Visible = false CRATE.hidByUs = true end
+            task.wait(0.03) -- the game may show it a frame after us; keep it down while we work
+        end
+    else
+        local w = CRATE.findWin()
+        if w and CRATE.hidByUs then w.Visible = true CRATE.hidByUs = false end -- yours: give it back
+    end
+end
+-- The crate is gone. If its window is still on screen, close it the game's way, else hide it.
+CRATE.onGone = function()
+    task.wait(1)
+    if CRATE.on or CRATE.waiting then return end -- another crate already arrived
+    local w = CRATE.findWin()
+    if not w or not onScreen(w, true) then return end
+    local x = closeBtnOf(w)
+    if x then tapGui(x, function() return not onScreen(w, true) end) end
+    if onScreen(w, true) and not (CRATE.on or CRATE.waiting) then
+        w.Visible, CRATE.hidByUs = false, true
+        note("closed a crate window that was left on screen")
+    end
+end
 end
 local function doCrate(open)
     if not summonCrate() then return false end
@@ -1314,6 +1411,10 @@ local function decide()
             if now() - CRATE.lastFail < 8 then
                 return nil, ("%s window open - could not press its buttons"):format(title), "bad"
             end
+            if CRATE.byYou and now() - CRATE.openedAt < 60 then
+                return nil, ("%s window is yours - tap Open or Discard (I step in after %ds)"):format(
+                    title, math.ceil(60 - (now() - CRATE.openedAt))), "idle"
+            end
             if want then return "crate", ("opening %s for %s"):format(title, which), "ok" end
             if CFG.SellJunk then return "nocrate", ("discarding %s - nothing ticked inside"):format(title), "warn" end
             return nil, ("%s open - nothing ticked inside it"):format(title), "idle"
@@ -1435,6 +1536,9 @@ local function dump()
         tostring(CRATE.waiting), tostring(CRATE.on), CRATE.title, tostring(CRATE.rolled),
         CRATE.rolledAt > 0 and string.format("%.0f", now() - CRATE.rolledAt) or "-",
         S.crates, tostring(S.tapWay), S.crateFails, CRATE.summonFails))
+    local cw = CRATE.findWin()
+    p(("crate window: %s visible=%s hiddenByMe=%s mine=%s yours=%s"):format(cw and relPath(cw) or "not found",
+        tostring(cw and cw.Visible), tostring(CRATE.hidByUs), tostring(CRATE.ours), tostring(CRATE.byYou)))
     local cp = findCratePrompt()
     p("crate prompt: " .. (cp and (relPath(cp) .. " [" .. cp.ActionText .. "|" .. cp.ObjectText .. "]") or "none found"))
     local stand = S.plot and S.plot:FindFirstChild("CrateStand")

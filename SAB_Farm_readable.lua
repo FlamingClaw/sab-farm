@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v20 | Delta / Android
+-- SAB BUTTER FARM v21 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v20"
+local VERSION = "v21"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -24,7 +24,8 @@ local CFG = {
     Targets = { applepie = true }, -- set of key(name) -> true. Only these are bought and waxed.
     Collect = true, Every = 60,
     SellJunk = true,               -- anything else in hand gets sold, never waxed
-    Crates = true,                 -- open a crate when a ticked butter can come out of it
+    Crates = true,                 -- master switch: open the crates ticked in the CRATES tab
+    CrateTicks = { picniccrate = true }, -- set of crate keys; anything not ticked is left alone
     Rejoin = true,                 -- come back by myself after a disconnect or a restart
     AutoStart = true,              -- start farming as soon as the script loads, with no tap
     Confirm = 0.35,                -- match must hold this long before buying
@@ -216,6 +217,7 @@ local BASE_ORDER = {
     ["Picnic"] = { "CantaloupeButter", "CinnamonRollButter", "StrawberryShortcakeButter", "BreakfastButter", "ApplePieButter" },
 }
 local LEARN = { order = {}, price = {}, dirty = false }
+local CR = { seen = {}, at = 0, boxes = {}, built = 0 } -- crates; filled in below
 local CAT = { rar = {}, pretty = {}, members = {}, rarOrder = {}, n = 0, at = 0 }
 local ORDFILE = "SAB_order.txt"
 -- Tiny line format, so this never depends on HttpService being reachable:
@@ -226,6 +228,17 @@ local function saveLearn()
     local L = {}
     for r, p in pairs(LEARN.price) do L[#L + 1] = "P|" .. r .. "|" .. string.format("%.0f", p) end
     for r, o in pairs(LEARN.order) do L[#L + 1] = "O|" .. r .. "|" .. table.concat(o, ",") end
+    if CRATE.learned and CRATE.enc then
+        L[#L + 1] = "M|mode|" .. tostring(CRATE.learned.mode or "")
+        for i, c in ipairs(CRATE.learned.seq) do
+            local enc = {}
+            for j = 1, c.n do enc[j] = CRATE.enc(c.args[j]) end
+            L[#L + 1] = ("A|%d|%s|%d|%s"):format(i, c.m, c.n, table.concat(enc, ";"))
+        end
+    end
+    for _, e in pairs(CR.seen) do
+        L[#L + 1] = ("K|%s|%s|%s|%s"):format(e.name, e.title or "", e.rar or "", e.price and string.format("%.0f", e.price) or "")
+    end
     if pcall(writefile, ORDFILE, table.concat(L, "\n")) then LEARN.dirty = false end
 end
 local function loadLearn()
@@ -238,6 +251,25 @@ local function loadLearn()
         local kind, rar, rest = line:match("^(%a)|([^|]+)|(.*)$")
         if kind == "P" then
             LEARN.price[rar] = tonumber(rest)
+        elseif kind == "M" then
+            CRATE.loadMode = (rest ~= "" and rest ~= "nil") and rest or nil
+        elseif kind == "A" and CRATE.dec then
+            local i = tonumber(rar)
+            local m, n, enc = rest:match("^([^|]+)|(%d+)|(.*)$")
+            if i and m then
+                n = tonumber(n)
+                local args, j = {}, 0
+                for e in (enc .. ";"):gmatch("([^;]*);") do
+                    j = j + 1
+                    if j <= n then args[j] = CRATE.dec(e) end
+                end
+                CRATE.loadSeq = CRATE.loadSeq or {}
+                CRATE.loadSeq[i] = { m = m, n = n, args = args }
+            end
+        elseif kind == "K" then
+            local title, rr, pr = rest:match("^([^|]*)|([^|]*)|(.*)$")
+            CR.seen[CR.key(rar)] = { name = rar, title = title ~= "" and title or nil,
+                rar = rr ~= "" and rr or nil, price = tonumber(pr) }
         elseif kind == "O" and rest ~= "" then
             local list = {}
             for nm in rest:gmatch("[^,]+") do list[#list + 1] = nm end
@@ -280,6 +312,61 @@ local function deepText(m, n)
     return (ok and type(t) == "string" and t ~= "") and t or nil
 end
 local function prettyOf(k) return CAT.pretty[k] or k end
+-- Every crate: the ten the game has today (one per rarity, as in its Auto Roll menu), anything
+-- CrateUpdate tells us about, and a guessed "<Rarity>Crate" for any rarity with no crate yet.
+CR.base = {
+    { "SnackCrate", "Snack Crate", "Common" }, { "BerryCrate", "Berry Crate", "Rare" },
+    { "BakeryCrate", "Bakery Crate", "Epic" }, { "GourmetCrate", "Gourmet Crate", "Legendary" },
+    { "RoyalCrate", "Royal Crate", "Mythic" }, { "CelestialCrate", "Celestial Crate", "Celestial" },
+    { "DivineCrate", "Divine Crate", "Divine" }, { "DreamCrate", "Dream Crate", "Dream" },
+    { "SugarRushCrate", "Sugar Rush Crate", "Sugar Rush" }, { "PicnicCrate", "Picnic Crate", "Picnic" } }
+function CR.key(n) return norm(n or "") end -- "Picnic Crate" and "PicnicCrate" are the same crate
+function CR.learn(d)
+    if type(d) ~= "table" or type(d.name) ~= "string" then return end
+    local k = CR.key(d.name)
+    local e = CR.seen[k] or {}
+    local changed = (CR.seen[k] == nil) or (tonumber(d.price) and e.price ~= tonumber(d.price))
+    e.name, e.title = d.name, d.title or e.title
+    e.rar, e.price = d.rarity or e.rar, tonumber(d.price) or e.price
+    CR.seen[k] = e
+    if changed then CR.at, LEARN.dirty = now(), true end
+end
+function CR.wanted(n) return n ~= nil and CFG.CrateTicks[CR.key(n)] == true end
+function CR.list() -- every known crate, cheapest (worst) first
+    local all = {}
+    for i, b in ipairs(CR.base) do all[CR.key(b[1])] = { name = b[1], title = b[2], rar = b[3], i = i } end
+    for _, r in ipairs(CAT.rarOrder) do -- a rarity with no crate we know of: guess its name
+        local covered = false
+        for _, a in pairs(all) do if a.rar == r then covered = true break end end
+        if not covered and r ~= "?" then
+            local nm = r:gsub("[^%w]", "") .. "Crate"
+            all[CR.key(nm)] = { name = nm, title = r .. " Crate", rar = r, i = 50, guess = true }
+        end
+    end
+    for k, e in pairs(CR.seen) do
+        local a = all[k] or { i = 100 }
+        a.name, a.title, a.rar = e.name or a.name, e.title or a.title, e.rar or a.rar
+        a.price, a.guess = e.price or a.price, nil
+        all[k] = a
+    end
+    local rank, out = {}, {}
+    for i, r in ipairs(BASE_RAR) do rank[r] = i end
+    for i, r in ipairs(CAT.rarOrder) do rank[r] = rank[r] or (20 + i) end
+    for k, a in pairs(all) do
+        a.k = k
+        a.price = a.price or LEARN.price[a.rar or ""]
+        out[#out + 1] = a
+    end
+    table.sort(out, function(x, y)
+        if x.price and y.price and x.price ~= y.price then return x.price < y.price end
+        local rx, ry = rank[x.rar or ""] or 99, rank[y.rar or ""] or 99
+        if rx ~= ry then return rx < ry end
+        if (x.i or 100) ~= (y.i or 100) then return (x.i or 100) < (y.i or 100) end
+        return x.k < y.k
+    end)
+    return out
+end
+
 -- read every squishy asset, group by its own RarityText, then sort worst to best
 local function buildCat()
     local a = RS:FindFirstChild("Assets")
@@ -389,15 +476,19 @@ local function configText()
     end
     if S.winPos then L[#L + 1] = ("W|%d|%d"):format(S.winPos[1], S.winPos[2]) end
     if S.togPos then L[#L + 1] = ("G|%d|%d"):format(S.togPos[1], S.togPos[2]) end
-    local t = {}
-    for k, on in pairs(CFG.Targets) do if on then t[#t + 1] = k end end
-    table.sort(t)
-    for _, k in ipairs(t) do L[#L + 1] = "T|" .. k end
+    -- "-" marks the list as present, so a config saved with nothing ticked loads as nothing ticked
+    for _, pair in ipairs({ { "T", CFG.Targets }, { "K", CFG.CrateTicks } }) do
+        local t = {}
+        for k, on in pairs(pair[2]) do if on then t[#t + 1] = k end end
+        table.sort(t)
+        L[#L + 1] = pair[1] .. "|-"
+        for _, k in ipairs(t) do L[#L + 1] = pair[1] .. "|" .. k end
+    end
     return table.concat(L, "\n")
 end
 local function applyConfig(raw)
     if type(raw) ~= "string" or raw == "" then return false end
-    local tg, got = {}, false
+    local tg, got, kt, gotK = {}, false, {}, false
     for line in raw:gmatch("[^\n]+") do
         local a, b, c = line:match("^(%a)|([^|]*)|?(.*)$")
         if a == "N" and b == "Every" then
@@ -410,11 +501,15 @@ local function applyConfig(raw)
         elseif a == "G" then
             S.togPos = { tonumber(b) or 10, tonumber(c) or 300 }
         elseif a == "T" and b ~= "" then
-            tg[b] = true
+            if b ~= "-" then tg[b] = true end
             got = true
+        elseif a == "K" and b ~= "" then
+            if b ~= "-" then kt[b] = true end
+            gotK = true
         end
     end
     if got then CFG.Targets = tg end
+    if gotK then CFG.CrateTicks = kt end -- an older config without crates keeps the default
     return true
 end
 local function saveConfig(name)
@@ -573,12 +668,12 @@ local function knownButter(n)
 end
 local function carriedName()
     local m = holderChild("SquishyEquipped")
-    if m then S.carrySrc = "model" return m.Name, m end
+    if m then S.carrySrc, CRATE.heldAt = "model", now() return m.Name, m end
     local c = plr.Character
     if c then
         for _, d in ipairs(c:GetDescendants()) do
             if (d:IsA("Model") or d:IsA("Tool")) and knownButter(d.Name) then
-                S.carrySrc = "character"
+                S.carrySrc, CRATE.heldAt = "character", now()
                 return d.Name, d
             end
         end
@@ -635,11 +730,16 @@ local function hookRemotes()
     local R = RS:WaitForChild("Remotes", 30)
     if not S.alive then return end
     if not R then note("Remotes folder missing - no roll events") return end
+    track(plr:GetAttributeChangedSignal("SquishyEquipped"):Connect(function()
+        local a = plr:GetAttribute("SquishyEquipped")
+        if type(a) == "string" and a ~= "" then CRATE.heldAt = now() end
+    end))
     local map = {
         SquishyRollAnimation = onRoll,
         InitSquishy = function(m) EV.init, EV.initAt = tostring(m), now() evlog("Init(" .. tostring(m) .. ")") end,
         CrateUpdate = function(d, shown)
             pcall(learnCrate, d)
+            pcall(CR.learn, d)
             if type(d) == "table" then
                 -- a closed-window update only means "waiting on YOUR stand" if you just rolled a crate;
                 -- otherwise it is just crate data (which still teaches the order)
@@ -664,6 +764,10 @@ local function hookRemotes()
                 CRATE.on, CRATE.waiting, CRATE.data, CRATE.prompt = false, false, nil, nil
                 CRATE.summonFails, CRATE.ours, CRATE.byYou = 0, false, false
                 if CRATE.onGone then task.spawn(CRATE.onGone) end
+                if CRATE.classify then
+                    local at = now()
+                    task.spawn(function() pcall(CRATE.classify, at) end)
+                end
             end
         end,
         GiftReceived = onGift,
@@ -885,21 +989,6 @@ end
 local function isCrateName(n)
     return type(n) == "string" and n:lower():find("crate", 1, true) ~= nil
 end
-local function crateWanted(d)
-    if type(d) ~= "table" then return false end
-    local c = d.contents
-    if type(c) == "table" and #c > 0 then
-        for _, e in ipairs(c) do
-            if type(e) == "table" and isTarget(e.butter) then return true, prettyOf(key(e.butter)) end
-        end
-        return false
-    end
-    local mem = d.rarity and CAT.members[d.rarity] -- no contents listed: judge by the rarity
-    if mem then
-        for _, k in ipairs(mem) do if CFG.Targets[k] then return true, prettyOf(k) end end
-    end
-    return false
-end
 local MINE = { SABFarmGui = 1, SABToggle = 1, SABError = 1 }
 local function onScreen(g) -- visible, every ancestor visible, and not one of our own windows
     local o = g
@@ -949,7 +1038,7 @@ local function tapGui(b, done)
     local ways = {}
     local function add(n) ways[#ways + 1] = n end
     if S.tapWay then add(S.tapWay) end
-    for _, n in ipairs({ "conn", "signal", "touch" }) do
+    for _, n in ipairs({ "touch", "conn", "signal" }) do
         if n ~= S.tapWay then add(n) end
     end
     -- Each way presses the button the way ONE tap would: a single signal, each handler once,
@@ -1147,6 +1236,216 @@ local function doCrate(open)
         note("discarded " .. title .. " (nothing ticked in it)")
     end
     return true
+end
+
+-- ---- opening a crate straight on the server, with no window at all
+-- The game's Open! button sends CrateAction to the server. The script watches for that the first
+-- time a crate opens (whether you tapped Open or the script pressed it), keeps it, and from then on
+-- sends the same thing itself - so the game's window never comes up and cannot get stuck. A crate's
+-- own name, title or rarity inside that message is swapped for the next crate's.
+CRATE.calls = {}
+function CRATE.saw(method, ...) -- called from the namecall hook for every CrateAction call
+    local n = select("#", ...)
+    CRATE.calls[#CRATE.calls + 1] = { t = now(), m = method, n = n, args = { ... }, data = CRATE.data,
+        crate = CRATE.data and CRATE.data.name, title = CRATE.title, rar = CRATE.data and CRATE.data.rarity }
+    if #CRATE.calls > 12 then table.remove(CRATE.calls, 1) end
+end
+function CRATE.slot(v, c)
+    local t = type(v)
+    if (t == "string" or t == "number") and type(c.data) == "table" then
+        for fk, fv in pairs(c.data) do
+            if fv == v and type(fk) == "string" and (type(fv) == "string" or type(fv) == "number") then
+                return { __slot = "f:" .. fk }
+            end
+        end
+    end
+    if t == "string" then
+        if c.crate and v == c.crate then return { __slot = "crate" } end
+        if c.title and v == c.title then return { __slot = "title" } end
+        if c.rar and v == c.rar then return { __slot = "rarity" } end
+        return v
+    end
+    if t == "number" or t == "boolean" or t == "nil" then return v end
+    if t == "table" then
+        local o = {}
+        for k, x in pairs(v) do
+            if type(x) == "table" then return nil, "nested table" end
+            local y, err = CRATE.slot(x, c)
+            if err then return nil, err end
+            o[k] = y
+        end
+        return o
+    end
+    local ok, inst = pcall(function() return v:IsA("Instance") end)
+    if ok and inst then
+        if v == plr then return { __slot = "player" } end
+        if S.plot and v == S.plot then return { __slot = "plot" } end
+        local stand = S.plot and S.plot:FindFirstChild("CrateStand")
+        if stand and v == stand then return { __slot = "stand" } end
+        if stand and v.Parent == stand then return { __slot = "model" } end
+    end
+    return nil, "a value it cannot rebuild (" .. t .. ")"
+end
+function CRATE.resolve(v)
+    if type(v) ~= "table" then return v end
+    local s = v.__slot
+    if s and s:sub(1, 2) == "f:" then return CRATE.data and CRATE.data[s:sub(3)] end
+    if s == "crate" then return CRATE.data and CRATE.data.name end
+    if s == "title" then return (CRATE.data and CRATE.data.title) or CRATE.title end
+    if s == "rarity" then return CRATE.data and CRATE.data.rarity end
+    if s == "player" then return plr end
+    if s == "plot" then return S.plot end
+    if s == "stand" or s == "model" then
+        local stand = S.plot and S.plot:FindFirstChild("CrateStand")
+        if s == "stand" or not stand then return stand end
+        for _, m in ipairs(stand:GetChildren()) do if isCrateName(m.Name) then return m end end
+        return nil
+    end
+    local o = {}
+    for k, x in pairs(v) do o[k] = CRATE.resolve(x) end
+    return o
+end
+-- after a crate went: if a butter landed in hand, the calls made just before were "open"
+function CRATE.classify(goneAt)
+    if CRATE.directOff then return end
+    local seq = {}
+    for _, c in ipairs(CRATE.calls) do
+        if c.t <= goneAt + 0.05 and goneAt - c.t <= 6 then seq[#seq + 1] = c end
+    end
+    if #seq == 0 then return end
+    -- a butter landing in hand around then means it was opened (no butter = discarded). Judged from
+    -- the game's own pickup signal, which cannot be missed even if the butter is sold a moment later.
+    if not waitFor(function() return (CRATE.heldAt or 0) >= goneAt - 1 end, 2.5) then return end
+    local out = {}
+    for _, c in ipairs(seq) do
+        local args = {}
+        for i = 1, c.n do
+            local v, err = CRATE.slot(c.args[i], c)
+            if err then
+                note("crate call has " .. err .. " - keeping the button method")
+                return
+            end
+            args[i] = v
+        end
+        out[#out + 1] = { m = c.m, n = c.n, args = args }
+    end
+    local was = CRATE.learned
+    CRATE.learned = { seq = out, mode = was and was.mode or nil }
+    LEARN.dirty = true
+    if not was then note(("learned how to open crates directly (%d call%s)"):format(#out, #out == 1 and "" or "s")) end
+end
+function CRATE.replay()
+    local L = CRATE.learned
+    local R = RS:FindFirstChild("Remotes")
+    local r = R and R:FindFirstChild("CrateAction")
+    if not (L and r) then return false end
+    local unpack_ = table.unpack or unpack
+    CRATE.replaying = true
+    for _, c in ipairs(L.seq) do
+        local args = {}
+        for i = 1, c.n do args[i] = CRATE.resolve(c.args[i]) end
+        -- InvokeServer waits for the server's answer; never let that freeze the farm
+        task.spawn(function()
+            pcall(function()
+                if c.m == "InvokeServer" then r:InvokeServer(unpack_(args, 1, c.n))
+                else r:FireServer(unpack_(args, 1, c.n)) end
+            end)
+        end)
+        task.wait(0.2)
+    end
+    CRATE.replaying = false
+    return true
+end
+-- line format for keeping it: one "A" line per call, "M" for the mode
+function CRATE.esc(x) return (x:gsub("[%%|;=,\n]", function(ch) return ("%%%02X"):format(ch:byte()) end)) end
+function CRATE.enc(v)
+    local t = type(v)
+    if t == "string" then return "s" .. CRATE.esc(v) end
+    if t == "number" then return "n" .. tostring(v) end
+    if t == "boolean" then return v and "b1" or "b0" end
+    if t == "nil" then return "z" end
+    if v.__slot then return "k" .. v.__slot end
+    local parts = {}
+    for k, x in pairs(v) do parts[#parts + 1] = CRATE.enc(k) .. "=" .. CRATE.enc(x) end
+    return "t" .. table.concat(parts, ",")
+end
+function CRATE.dec(e)
+    local c, rest = e:sub(1, 1), e:sub(2)
+    local function un(x) return (x:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)) end
+    if c == "s" then return un(rest) end
+    if c == "n" then return tonumber(rest) end
+    if c == "b" then return rest == "1" end
+    if c == "k" then return { __slot = rest } end
+    if c == "t" then
+        local o = {}
+        for item in rest:gmatch("[^,]+") do
+            local a, b = item:match("^(.-)=(.*)$")
+            if a then
+                local kk = CRATE.dec(a)
+                if kk ~= nil then o[kk] = CRATE.dec(b) end
+            end
+        end
+        return o
+    end
+    return nil
+end
+-- open the waiting crate the best way we know: directly, or with its window up, or by its button
+function CRATE.goneOrNew(held0)
+    return function()
+        if not CRATE.waiting then return true end
+        local h = carriedName()
+        return h ~= nil and h ~= held0
+    end
+end
+function CRATE.smart()
+    local title = CRATE.title
+    local L = CRATE.learned
+    if L then
+        local held0 = carriedName()
+        if CRATE.on then -- its window is already up: send the call rather than tap the button
+            CRATE.replay()
+            if waitFor(CRATE.goneOrNew(held0), 3.5) then
+                S.crates = S.crates + 1
+                note("OPENED " .. title .. " (direct)")
+                return true
+            end
+        else
+            if L.mode ~= "window" then
+                CRATE.replay()
+                if waitFor(CRATE.goneOrNew(held0), 3.5) then
+                    S.crates, CRATE.fails = S.crates + 1, 0
+                    if L.mode ~= "direct" then
+                        L.mode, LEARN.dirty = "direct", true
+                        note("crates now open directly - the window never comes up")
+                    end
+                    note("OPENED " .. title .. " (direct, no window)")
+                    return true
+                end
+            end
+            -- the server wants the window up first: bring it up, then send the call
+            if summonCrate() then
+                CRATE.replay()
+                if waitFor(CRATE.goneOrNew(held0), 3.5) then
+                    S.crates, CRATE.fails = S.crates + 1, 0
+                    if L.mode ~= "window" then
+                        L.mode, LEARN.dirty = "window", true
+                        note("crates need their window up first - it shows briefly")
+                    end
+                    note("OPENED " .. title .. " (direct, window up)")
+                    return true
+                end
+            end
+        end
+        CRATE.fails = (CRATE.fails or 0) + 1
+        CRATE.lastBad, CRATE.learned, LEARN.dirty = L, nil, true
+        if CRATE.fails >= 3 then
+            CRATE.directOff = true
+            note("direct crate opening failed 3 times - using the button for now (see DUMP)")
+        else
+            note("the learned crate call did not work - back to pressing Open")
+        end
+    end
+    return doCrate(true) -- by the button; this is also where the call gets learned
 end
 
 -- Selling an unwanted butter. A capture of the real game shows the client sends
@@ -1356,7 +1655,7 @@ local function decide()
         local stand = S.plot:FindFirstChild("CrateStand")
         if stand then
             for _, m in ipairs(stand:GetChildren()) do
-                if isCrateName(m.Name) then
+                if isCrateName(m.Name) and CR.wanted(m.Name) then
                     local has = false
                     for _, d in ipairs(m:GetDescendants()) do
                         if d:IsA("ProximityPrompt") and d.Enabled then has = true break end
@@ -1377,17 +1676,18 @@ local function decide()
     end
     -- Crates. One lands on your stand ~2s after it is rolled and waits there, with the pad's Buy
     -- prompt switched off, until someone opens its window. That blocks the roll loop, so deal with it.
-    if CFG.Crates and (CRATE.on or CRATE.waiting) then
+    -- only crates ticked in the CRATES tab are touched; any other crate is left for the game to clear
+    local cticked = CR.wanted(CRATE.data and CRATE.data.name) or CR.wanted(CRATE.title)
+    if CFG.Crates and (CRATE.on or CRATE.waiting) and cticked then
         local title = CRATE.title
         if now() < (CRATE.ignoreUntil or 0) then -- keep saying so; the crate still blocks rolling
-            return nil, ("%s - its buttons do not respond to me, press Open or Discard yourself"):format(title), "bad"
+            return nil, ("%s - its buttons do not respond to me, press Open yourself"):format(title), "bad"
         end
-        local want, which = crateWanted(CRATE.data)
         if CRATE.on then
             if S.crateFails >= 3 then -- this window is not one we can work: leave it to you
                 CRATE.ignoreUntil, S.crateFails = now() + 120, 0
                 note("could not press the " .. title .. " buttons 3 times - leaving it to you for 2 min")
-                return nil, ("%s window open - press Open or Discard yourself"):format(title), "bad"
+                return nil, ("%s window open - press Open yourself"):format(title), "bad"
             end
             if now() - CRATE.lastFail < 8 then
                 return nil, ("%s window open - could not press its buttons"):format(title), "bad"
@@ -1396,13 +1696,7 @@ local function decide()
                 return nil, ("%s window is yours - tap Open or Discard (I step in after %ds)"):format(
                     title, math.ceil(60 - (now() - CRATE.openedAt))), "idle"
             end
-            if want then return "crate", ("opening %s for %s"):format(title, which), "ok" end
-            if CFG.SellJunk then return "nocrate", ("discarding %s - nothing ticked inside"):format(title), "warn" end
-            return nil, ("%s open - nothing ticked inside it"):format(title), "idle"
-        end
-        -- waiting, window shut: go and open it (to take it, or to discard it)
-        if not want and not CFG.SellJunk then
-            return nil, ("%s waiting - nothing ticked inside, left alone"):format(title), "idle"
+            return "cratesmart", ("opening %s"):format(title), "ok"
         end
         if CRATE.summonFails >= 3 then
             return nil, ("%s waiting - could not open it, open it by hand then DUMP"):format(title), "bad"
@@ -1410,9 +1704,17 @@ local function decide()
         if now() - CRATE.lastFail < 8 then
             return nil, ("%s waiting - retrying shortly"):format(title), "wait"
         end
-        return "cratewin", ("%s waiting - going to open it%s"):format(title, want and (" for " .. which) or " to discard"), "ok"
+        return "cratesmart", ("%s waiting - opening it%s"):format(title,
+            (CRATE.learned and CRATE.learned.mode ~= "window") and " directly" or ""), "ok"
     end
-    if CRATE.rolled and not CRATE.waiting and now() - CRATE.rolledAt < 6 then
+    if (CRATE.on or CRATE.waiting) and not cticked then
+        local tag = CRATE.title .. tostring(CRATE.rolledAt)
+        if CRATE.told ~= tag then
+            CRATE.told = tag
+            note(CRATE.title .. " is not ticked - leaving it to the game")
+        end
+    end
+    if CRATE.rolled and not CRATE.waiting and now() - CRATE.rolledAt < 6 and CR.wanted(CRATE.rolled) then
         return nil, CRATE.rolled .. " rolled - waiting for it to land", "wait"
     end
     if free < 1 then
@@ -1459,6 +1761,7 @@ local function step()
     S.reason, S.level = txt, lvl
     if act == "place" then runAction("waxing...", doPlace)
     elseif act == "crate" then runAction("opening crate...", doCrate, true)
+    elseif act == "cratesmart" then runAction("opening crate...", CRATE.smart)
     elseif act == "cratewin" then runAction("opening the crate window...", summonCrate)
     elseif act == "nocrate" then runAction("discarding crate...", doCrate, false)
     elseif act == "sell" then runAction("selling...", doSell)
@@ -1517,7 +1820,64 @@ local function dump()
         tostring(CRATE.waiting), tostring(CRATE.on), CRATE.title, tostring(CRATE.rolled),
         CRATE.rolledAt > 0 and string.format("%.0f", now() - CRATE.rolledAt) or "-",
         S.crates, tostring(S.tapWay), S.crateFails, CRATE.summonFails))
+    p("--- CRATE OPENING ---")
+    local function show(v, d)
+        d = d or 0
+        local t = type(v)
+        if t == "string" then return ("%q"):format(v) end
+        if t == "table" then
+            if v.__slot then return "<" .. v.__slot .. ">" end
+            if d > 1 then return "{...}" end
+            local o = {}
+            for k, x in pairs(v) do o[#o + 1] = tostring(k) .. "=" .. show(x, d + 1) end
+            return "{" .. table.concat(o, ",") .. "}"
+        end
+        local ok, cn = pcall(function() return v.ClassName end)
+        if ok and cn then return "<" .. cn .. " " .. relPath(v) .. ">" end
+        return tostring(v)
+    end
+    p("watching CrateAction: " .. tostring(CRATE.oldNC ~= nil) .. "  hookmetamethod=" .. type(hookmetamethod))
+    if CRATE.learned then
+        p("learned (mode " .. tostring(CRATE.learned.mode or "untried") .. "):")
+        for i, c in ipairs(CRATE.learned.seq) do
+            local a = {}
+            for j = 1, c.n do a[j] = show(c.args[j]) end
+            p(("  %d. CrateAction:%s(%s)"):format(i, c.m, table.concat(a, ", ")))
+        end
+    else
+        p("not learned yet - it learns from the next crate that opens")
+    end
+    if CRATE.directOff then p("direct opening is OFF for this session after 3 failures") end
+    if CRATE.lastBad then
+        p("last call that failed:")
+        for i, c in ipairs(CRATE.lastBad.seq) do
+            local a = {}
+            for j = 1, c.n do a[j] = show(c.args[j]) end
+            p(("  %d. CrateAction:%s(%s)"):format(i, c.m, table.concat(a, ", ")))
+        end
+    end
+    p("CrateAction calls seen:")
+    for _, c in ipairs(CRATE.calls or {}) do
+        local a = {}
+        for j = 1, c.n do a[j] = show(c.args[j]) end
+        p(("  %.0fs ago  %s(%s)  [crate=%s]"):format(now() - c.t, c.m, table.concat(a, ", "), tostring(c.crate)))
+    end
     local cw = CRATE.findWin()
+    if cw and type(getconnections) == "function" then
+        p("how the game wired its crate window buttons (handler counts):")
+        for _, b in ipairs(cw:GetDescendants()) do
+            if b:IsA("GuiButton") then
+                local parts = {}
+                for _, sn in ipairs({ "MouseButton1Click", "MouseButton1Down", "MouseButton1Up", "Activated",
+                    "InputBegan", "InputEnded", "TouchTap" }) do
+                    local ok, cons = pcall(function() return getconnections(b[sn]) end)
+                    local n = (ok and type(cons) == "table") and #cons or -1
+                    if n ~= 0 then parts[#parts + 1] = sn .. "=" .. n end
+                end
+                p(("  %s %s %q: %s"):format(b.ClassName, b.Name, btnWords(b), table.concat(parts, " ")))
+            end
+        end
+    end
     p(("crate window: %s visible=%s mine=%s yours=%s"):format(cw and relPath(cw) or "not found",
         tostring(cw and cw.Visible), tostring(CRATE.ours), tostring(CRATE.byYou)))
     local cp = findCratePrompt()
@@ -1731,9 +2091,10 @@ round(U.bar, 2)
 U.reason = lbl(U.strip, "starting", 12, C.text, false, UDim2.new(0, 20, 0, 2), UDim2.new(1, -28, 1, -4))
 -- tabs
 U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip), Size = UDim2.new(1, 0, 0, Z.tabs), BackgroundTransparency = 1 }, U.root)
-U.tabFarm = button(U.tabs, "FARM", C.accent, 11, UDim2.new(0, 8, 0, 0), UDim2.new(0.34, -10, 1, -4))
-U.tabBut = button(U.tabs, "BUTTERS", C.panel2, 11, UDim2.new(0.34, 2, 0, 0), UDim2.new(0.33, -6, 1, -4))
-U.tabSet = button(U.tabs, "SETUP", C.panel2, 11, UDim2.new(0.67, 2, 0, 0), UDim2.new(0.33, -10, 1, -4))
+U.tabFarm = button(U.tabs, "FARM", C.accent, 10, UDim2.new(0, 8, 0, 0), UDim2.new(0.25, -9, 1, -4))
+U.tabBut = button(U.tabs, "BUTTERS", C.panel2, 10, UDim2.new(0.25, 2, 0, 0), UDim2.new(0.25, -4, 1, -4))
+U.tabCrt = button(U.tabs, "CRATES", C.panel2, 10, UDim2.new(0.5, 2, 0, 0), UDim2.new(0.25, -4, 1, -4))
+U.tabSet = button(U.tabs, "SETUP", C.panel2, 10, UDim2.new(0.75, 2, 0, 0), UDim2.new(0.25, -10, 1, -4))
 local function pane()
     local f = mk("ScrollingFrame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip + Z.tabs), Size = UDim2.new(1, 0, 1, -(Z.head + Z.strip + Z.tabs)),
         BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.line,
@@ -1742,8 +2103,8 @@ local function pane()
     mk("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) }, f)
     return f
 end
-U.farm, U.but, U.set = pane(), pane(), pane()
-U.but.Visible, U.set.Visible = false, false
+U.farm, U.but, U.set, U.crt = pane(), pane(), pane(), pane()
+U.but.Visible, U.set.Visible, U.crt.Visible = false, false, false
 
 -- ---- FARM tab
 local order, total, rw = 0, 12, nil
@@ -1786,10 +2147,11 @@ U.crateT = button(rw, "OPEN CRATES: ON", C.accent, 11, at(0, 0.55))
 U.crateB = button(rw, "OPEN NOW", C.warn, 11, at(0.55, 0.45))
 caption("TOOLS")
 rw = row(30)
-U.buyB = button(rw, "BUY NOW", C.warn, 11, at(0, 0.28))
-U.plB = button(rw, "WAX", C.good, 11, at(0.28, 0.24))
-U.dumpB = button(rw, "DUMP", C.accent, 11, at(0.52, 0.24))
-U.copyB = button(rw, "COPY", C.panel2, 11, at(0.76, 0.24))
+U.buyB = button(rw, "BUY", C.warn, 10, at(0, 0.2))
+U.plB = button(rw, "WAX", C.good, 10, at(0.2, 0.2))
+U.dumpB = button(rw, "DUMP", C.accent, 10, at(0.4, 0.2))
+U.copyB = button(rw, "COPY", C.panel2, 10, at(0.6, 0.2))
+U.linkB = button(rw, "LINK", C.good, 10, at(0.8, 0.2))
 caption("LOG")
 U.log = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
     TextSize = 10, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
@@ -1940,10 +2302,74 @@ buildList = function(force)
     U.but.CanvasSize = UDim2.new(0, 0, 0, y + 10)
     LST.built, LST.at = true, CAT.at
 end
+function CR.paint()
+    for k, b in pairs(CR.boxes) do
+        local on = CFG.CrateTicks[k] == true
+        b.Text = on and "X" or ""
+        b.BackgroundColor3 = on and C.good or C.panel2
+    end
+    if U.crtInfo then
+        local n, t = 0, 0
+        for _ in pairs(CR.boxes) do n = n + 1 end
+        for _, on in pairs(CFG.CrateTicks) do if on then t = t + 1 end end
+        U.crtInfo.Text = ("%d crates, %d ticked"):format(n, t)
+    end
+    if U.crtAll then
+        U.crtAll.Text = CFG.Crates and "OPEN TICKED CRATES: ON" or "OPEN TICKED CRATES: OFF"
+        U.crtAll.BackgroundColor3 = CFG.Crates and C.accent or C.panel2
+    end
+end
+function CR.build()
+    for _, ch in ipairs(U.crt:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextButton") then ch:Destroy() end
+    end
+    CR.boxes = {}
+    local y, ord = 12, 0
+    local function add(h)
+        ord = ord + 1
+        y = y + h + 6
+        return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.crt)
+    end
+    local hf = add(28)
+    U.crtInfo = lbl(hf, "", 10, C.dim, false, at(0, 0.5))
+    local cl = button(hf, "CLEAR", C.panel2, 10, at(0.5, 0.24))
+    local rf = button(hf, "REFRESH", C.panel2, 10, at(0.74, 0.26))
+    track(cl.MouseButton1Click:Connect(function() CFG.CrateTicks = {} CR.paint() end))
+    track(rf.MouseButton1Click:Connect(function() CR.build() end))
+    U.crtAll = button(add(28), "", C.accent, 11, at(0, 1))
+    track(U.crtAll.MouseButton1Click:Connect(function() CFG.Crates = not CFG.Crates CR.paint() end))
+    lbl(add(30), "Only ticked crates are opened. Any other crate is left alone - the game spins it away by itself.", 10, C.dim, false)
+    for _, c in ipairs(CR.list()) do
+        local row = add(24)
+        local b = mk("TextButton", { Text = "", Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, AutoButtonColor = true }, row)
+        round(b, 5)
+        lbl(b, "  " .. (c.title or c.name) .. (c.guess and "  (?)" or ""), 11, RC[c.rar or ""] or C.text, true,
+            UDim2.new(0, 4, 0, 0), UDim2.new(0.62, 0, 1, 0))
+        lbl(b, c.price and ("$" .. fmt(c.price)) or (c.rar or ""), 9, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0.25, 0, 1, 0))
+        local tick = mk("TextButton", { Text = "", Size = UDim2.new(0, 22, 0, 16), Position = UDim2.new(1, -28, 0.5, -8),
+            BackgroundColor3 = C.panel2, BorderSizePixel = 0, Font = Enum.Font.GothamBold, TextSize = 10,
+            TextColor3 = C.text, AutoButtonColor = false }, b)
+        round(tick, 4)
+        CR.boxes[c.k] = tick
+        local kk = c.k
+        local function toggle()
+            CFG.CrateTicks[kk] = (not CFG.CrateTicks[kk]) or nil
+            CR.paint()
+        end
+        track(b.MouseButton1Click:Connect(toggle))
+        track(tick.MouseButton1Click:Connect(toggle))
+    end
+    U.crt.CanvasSize = UDim2.new(0, 0, 0, y + 10)
+    CR.built = CR.at
+    CR.paint()
+end
 local tab = "farm"
 local function showTab(which)
     tab = which
     U.farm.Visible, U.but.Visible, U.set.Visible = (which == "farm"), (which == "but"), (which == "set")
+    U.crt.Visible = (which == "crt")
+    U.tabCrt.BackgroundColor3 = (which == "crt") and C.accent or C.panel2
+    if which == "crt" and (CR.built ~= CR.at or not next(CR.boxes)) then CR.build() end
     U.tabFarm.BackgroundColor3 = (which == "farm") and C.accent or C.panel2
     U.tabBut.BackgroundColor3 = (which == "but") and C.accent or C.panel2
     U.tabSet.BackgroundColor3 = (which == "set") and C.accent or C.panel2
@@ -1970,6 +2396,7 @@ local function applyLoaded()
     clampIn(U.tgRoot)
     S.lastCollect = now()
     refreshTicks()
+    CR.paint()
 end
 local function flash(box)
     task.spawn(function()
@@ -2050,9 +2477,34 @@ click(U.plB, function()
 end)
 click(U.dumpB, doDump)
 click(U.copyB, copyOut)
+click(U.linkB, function()
+    task.spawn(function()
+        local ok0, r0 = pcall(dump)
+        lastDump = ok0 and r0 or lastDump
+        if lastDump == "" then lastDump = "(empty dump)" end
+        local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
+            or (syn and syn.request) or (http and http.request)
+        if type(req) ~= "function" then U.out.Text = "this executor cannot upload - use COPY instead" return end
+        U.out.Text = "uploading..."
+        local ok, res = pcall(req, { Url = "https://paste.rs/", Method = "POST",
+            Headers = { ["Content-Type"] = "text/plain" }, Body = lastDump })
+        local code = ok and type(res) == "table" and (res.StatusCode or res.status_code) or 0
+        local body = ok and type(res) == "table" and (res.Body or res.body) or ""
+        local url = (code >= 200 and code < 300) and tostring(body):match("https?://[%w%./%-_]+") or nil
+        if not url then
+            U.out.Text = "upload failed (" .. tostring(code) .. ") - use COPY instead"
+            note("LINK failed")
+            return
+        end
+        local copied = clip(url)
+        U.out.Text = "SEND THIS LINK TO CLAUDE:\n" .. url .. (copied and "\n(copied)" or "")
+        note("dump uploaded" .. (copied and ", link copied" or ""))
+    end)
+end)
 click(U.tabFarm, function() showTab("farm") end)
 click(U.tabBut, function() showTab("but") end)
 click(U.tabSet, function() showTab("set") end)
+click(U.tabCrt, function() showTab("crt") end)
 
 -- the floating button: tap to hide or show, drag to move
 local function setHidden(v)
@@ -2168,7 +2620,7 @@ click(U.minB, function()
     minimized = not minimized
     U.tabs.Visible = not minimized
     if minimized then
-        U.farm.Visible, U.but.Visible, U.set.Visible = false, false, false
+        U.farm.Visible, U.but.Visible, U.set.Visible, U.crt.Visible = false, false, false, false
     else
         showTab(tab)
     end
@@ -2181,6 +2633,7 @@ local function kill()
     S.alive, S.running = false, false
     pcall(saveLearn)
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+    if CRATE.oldNC then pcall(function() hookmetamethod(game, "__namecall", CRATE.oldNC) end) end
     pcall(function() sg:Destroy() end)
     pcall(function() tg:Destroy() end)
     if genv.SAB_KILL == kill then genv.SAB_KILL = nil end
@@ -2231,6 +2684,10 @@ local function refresh()
         U.butInfo.Text = ("%d butters, %d rarities\n%d ticked"):format(CAT.n, #CAT.rarOrder, #tn)
     end
     if U.but.Visible and LST.at ~= CAT.at then buildList(false) end
+    if U.crt.Visible then
+        if CR.built ~= CR.at then CR.build() else CR.paint() end
+    end
+    setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, dump = dump, CAT = CAT, LEARN = LEARN, buildList = buildList }
 note(VERSION .. " loaded")
@@ -2277,6 +2734,14 @@ task.spawn(function()
 end)
 task.spawn(function()
     pcall(loadLearn)
+    if CRATE.loadSeq and not CRATE.learned then
+        local seq = {}
+        for i = 1, 20 do if CRATE.loadSeq[i] then seq[#seq + 1] = CRATE.loadSeq[i] end end
+        if #seq > 0 then
+            CRATE.learned = { seq = seq, mode = CRATE.loadMode }
+            note("remembered how to open crates directly")
+        end
+    end
     if catReady() then note(("catalog: %d butters in %d rarities"):format(CAT.n, #CAT.rarOrder)) end
     local ok, cf = pcall(loadPad)
     if ok and cf and S.alive and not S.manualPad then S.manualPad = cf end
@@ -2287,6 +2752,23 @@ task.spawn(function() -- keep what the crates taught us
         pcall(saveLearn)
     end
 end)
+if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
+    pcall(function()
+        local wrap = (type(newcclosure) == "function") and newcclosure or function(f) return f end
+        local old
+        old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
+            if S.alive and not CRATE.replaying then
+                local m = getnamecallmethod()
+                if m == "InvokeServer" or m == "FireServer" then
+                    local ok, nm = pcall(function() return self.Name end)
+                    if ok and nm == "CrateAction" then pcall(CRATE.saw, m, ...) end
+                end
+            end
+            return old(self, ...)
+        end))
+        CRATE.oldNC = old
+    end)
+end
 if VU then
     track(plr.Idled:Connect(function() pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end))
 end

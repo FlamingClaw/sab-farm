@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v16 | Delta / Android
+-- SAB BUTTER FARM v17 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v16"
+local VERSION = "v17"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -19,7 +19,7 @@ local UIS = game:GetService("UserInputService")
 local genv = (type(getgenv) == "function" and getgenv()) or _G
 if type(genv.SAB_KILL) == "function" then pcall(genv.SAB_KILL) end -- replace an older instance
 local now = (type(tick) == "function") and tick or os.clock
-local okVU, VU = pcall(function() return game:GetService("VirtualUser") end)
+local VU = (function() local ok, v = pcall(function() return game:GetService("VirtualUser") end) return ok and v or nil end)()
 local CFG = {
     Targets = { applepie = true }, -- set of key(name) -> true. Only these are bought and waxed.
     Collect = true, Every = 60,
@@ -38,7 +38,7 @@ local S = {
     matchSince = nil, boot = now(), plot = nil, reason = "starting", level = "wait",
     lastCarryDesc = "", padSearchAt = -100, padPart = nil, padCands = {}, manualPad = nil,
     sellSpot = nil, sellSearchAt = -100, noSellSpot = false, catAt = 0,
-    crates = 0, crateFails = 0, tapWay = nil, capAt = 0,
+    crates = 0, crateFails = 0, tapWay = nil, capAt = 0, carrySrc = nil, carryBlind = 0, attrStale = 0,
     config = "default", autoload = nil, selfPath = nil, rejoining = false, winPos = nil, togPos = nil, hidden = false,
 }
 local EV = { name = nil, rar = nil, at = now(), seq = 0, init = nil, initAt = 0, gift = nil, giftAt = 0 }
@@ -485,7 +485,7 @@ local function installAutoexec()
     return true, p and ("it will load " .. p) or "now save this script in Delta so the loader can find it"
 end
 -- rejoining after a disconnect or a server restart
-local okTP, TPS = pcall(function() return game:GetService("TeleportService") end)
+local TPS = (function() local ok, v = pcall(function() return game:GetService("TeleportService") end) return ok and v or nil end)()
 local function queueSelf()
     if type(queueonteleport) ~= "function" and type(queue_on_teleport) ~= "function" then return false end
     local q = queueonteleport or queue_on_teleport
@@ -503,7 +503,7 @@ local function rejoin(why)
     note(queued and "queued the script for the new server" or "no saved copy found - set up autoexec for a clean restart")
     task.spawn(function()
         for _ = 1, 30 do
-            if not okTP or not TPS then break end
+            if not TPS then break end
             pcall(function() TPS:Teleport(game.PlaceId, plr) end)
             task.wait(10)
         end
@@ -533,7 +533,7 @@ local function watchDisconnect()
             if tostring(st):find("Started") then queueSelf() end
         end))
     end)
-    if okTP and TPS then
+    if TPS then
         pcall(function()
             track(TPS.TeleportInitFailed:Connect(function()
                 S.rejoining = false
@@ -560,20 +560,30 @@ local function padInfo()
     return { model = m, name = m.Name, pretty = deepText(m, "NameText") or prettyOf(key(m.Name)),
         rar = deepText(m, "RarityText") or rarityOf(m.Name), price = deepText(m, "PriceText") }
 end
--- what is in my hands, by name. The holder model is the truth; the attribute is only a backup.
+-- What is in my hands, by name. Three sources, because the plot's SquishyEquipped model stays
+-- empty while you carry: the butter is attached to the character and the server records the
+-- name on the SquishyEquipped attribute, which it clears again when you put the butter down.
+local function knownButter(n)
+    return type(n) == "string" and (CAT.rar[key(n)] ~= nil or butterish(n))
+end
 local function carriedName()
-    local m, holderOK = holderChild("SquishyEquipped")
-    if m then return m.Name, m end
-    if holderOK then return nil end
-    local a = plr:GetAttribute("SquishyEquipped")
-    if type(a) == "string" and a ~= "" then return a, nil end
-    for _, root in ipairs({ plr.Character, plr:FindFirstChildOfClass("Backpack") }) do
-        if root then
-            for _, d in ipairs(root:GetChildren()) do
-                if (d:IsA("Tool") or d:IsA("Model")) and butterish(d.Name) then return d.Name, d end
+    local m = holderChild("SquishyEquipped")
+    if m then S.carrySrc = "model" return m.Name, m end
+    local c = plr.Character
+    if c then
+        for _, d in ipairs(c:GetDescendants()) do
+            if (d:IsA("Model") or d:IsA("Tool")) and knownButter(d.Name) then
+                S.carrySrc = "character"
+                return d.Name, d
             end
         end
     end
+    local a = plr:GetAttribute("SquishyEquipped")
+    if type(a) == "string" and a ~= "" and knownButter(a) and now() >= (S.carryBlind or 0) then
+        S.carrySrc = "attribute"
+        return a, nil
+    end
+    S.carrySrc = nil
 end
 local function carried() local _, inst = carriedName() return inst end
 -- price shown on the pad vs cash. Only a clear shortfall counts.
@@ -824,6 +834,7 @@ local function doPlace()
                 local ok, how = activate(pp, function() return not pp.Enabled end, function() return pp.Enabled end)
                 if ok then
                     S.holding, S.placed, S.placeFails = false, S.placed + 1, 0
+                    S.carryBlind, S.attrStale = now() + 2.5, 0
                     EV.name, EV.rar, EV.at = nil, nil, now()
                     note(("WAXED %s #%d at %s via %s"):format(prettyOf(key(held)), S.placed, pp.Parent.Parent.Name, how))
                     return true
@@ -837,7 +848,8 @@ local function doPlace()
     note("PLACE FAILED (" .. S.placeFails .. ")")
     if S.placeFails >= 2 then
         S.capHit, S.running, S.capAt = true, false, now()
-        S.capMsg = "STOPPED: place failed twice with free stations (plate full at 100? not holding?)"
+        S.capMsg = ("STOPPED: waxing %s failed twice with free stations (plate full at 100?)"):format(
+            tostring(carriedName()))
         note(S.capMsg)
     end
     return false
@@ -891,7 +903,7 @@ local function crateButtons()
     return open, disc
 end
 -- press a button that belongs to the game's own window. Executors differ, so try each way.
-local okVIM, VIM = pcall(function() return game:GetService("VirtualInputManager") end)
+local VIM = (function() local ok, v = pcall(function() return game:GetService("VirtualInputManager") end) return ok and v or nil end)()
 local function tapGui(b, done)
     local ways = {}
     local function add(n) ways[#ways + 1] = n end
@@ -912,7 +924,7 @@ local function tapGui(b, done)
             end
         elseif way == "signal" and type(firesignal) == "function" then
             fired = pcall(firesignal, b.MouseButton1Click) or pcall(firesignal, b.Activated)
-        elseif way == "touch" and okVIM and VIM then
+        elseif way == "touch" and VIM then
             fired = pcall(function()
                 local p, sz = b.AbsolutePosition, b.AbsoluteSize
                 local inset = 0
@@ -1023,6 +1035,7 @@ local function doSell()
     local nice = prettyOf(key(held))
     if sellRemoteCall() then
         S.sold, S.holding, S.sellFails = S.sold + 1, false, 0
+        S.carryBlind, S.attrStale = now() + 2.5, 0
         note("SOLD " .. nice)
         return true
     end
@@ -1278,7 +1291,19 @@ local function dump()
     p(("bought=%d waxed=%d sold=%d collected=%d rolls=%d gifts=%d"):format(S.bought, S.placed, S.sold, S.collected, S.rolls, S.gifts))
     p("cash=" .. fmt(cash()))
     local held, inst = carriedName()
-    p("in hands: " .. tostring(held) .. (inst and (" (" .. inst.ClassName .. ")") or ""))
+    p("in hands: " .. tostring(held) .. (inst and (" (" .. inst.ClassName .. ")") or "") ..
+        "  via " .. tostring(S.carrySrc) .. "  blind=" .. string.format("%.1f", math.max(0, (S.carryBlind or 0) - now())))
+    p("  attribute SquishyEquipped = " .. tostring(plr:GetAttribute("SquishyEquipped")))
+    local hm = S.plot and S.plot:FindFirstChild("SquishyEquipped")
+    p("  plot.SquishyEquipped = " .. (hm and (#hm:GetChildren() .. " children") or "missing"))
+    local cc = plr.Character
+    if cc then
+        local names = {}
+        for _, d in ipairs(cc:GetDescendants()) do
+            if (d:IsA("Model") or d:IsA("Tool")) and d.Name ~= cc.Name then names[#names + 1] = d.ClassName .. ":" .. d.Name end
+        end
+        p("  on the character: " .. (table.concat(names, ", "):sub(1, 300)))
+    end
     local pi = padInfo()
     p("on pad: " .. (pi and ("%s [%s] %s"):format(pi.name, tostring(pi.rar), tostring(pi.price)) or "nothing"))
     p("sell spot: " .. (S.sellSpot and relPath(S.sellSpot) or "none found"))
@@ -1286,7 +1311,7 @@ local function dump()
     p(("crate window: on=%s title=%s open=%s discard=%s tapWay=%s opened=%d fails=%d"):format(
         tostring(CRATE.on), CRATE.title, tostring(cob and cob.Text), tostring(cdb and cdb.Text),
         tostring(S.tapWay), S.crates, S.crateFails))
-    p("tap tools: getconnections=" .. type(getconnections) .. " firesignal=" .. type(firesignal) .. " VIM=" .. tostring(okVIM and VIM ~= nil))
+    p("tap tools: getconnections=" .. type(getconnections) .. " firesignal=" .. type(firesignal) .. " VIM=" .. tostring(VIM ~= nil))
     p("--- CATALOG (" .. CAT.n .. " butters, worst rarity first) ---")
     for _, r in ipairs(CAT.rarOrder) do
         local names = {}
@@ -1369,8 +1394,8 @@ local pg = plr:FindFirstChildOfClass("PlayerGui") or plr:WaitForChild("PlayerGui
 local oldGui = pg:FindFirstChild("SABFarmGui")
 if oldGui then oldGui:Destroy() end
 local sg = mk("ScreenGui", { Name = "SABFarmGui", ResetOnSpawn = false, DisplayOrder = 999, IgnoreGuiInset = true }, pg)
-local W, H, HEAD, STRIP, TABS = 320, 330, 30, 38, 26
-U.root = mk("Frame", { Name = "Root", Size = UDim2.new(0, W, 0, H),
+local Z = { w = 320, h = 330, head = 30, strip = 38, tabs = 26 }
+U.root = mk("Frame", { Name = "Root", Size = UDim2.new(0, Z.w, 0, Z.h),
     Position = UDim2.new(0, S.winPos and S.winPos[1] or 10, 0, S.winPos and S.winPos[2] or 44),
     BackgroundColor3 = C.bg, BorderSizePixel = 0, Active = true, ClipsDescendants = true }, sg)
 round(U.root, 10)
@@ -1390,6 +1415,31 @@ local function textbox(parent, text, ph, pos, size)
     round(b, 6)
     mk("UIPadding", { PaddingLeft = UDim.new(0, 8) }, b)
     return b
+end
+-- Phones rotate, and a spot that was fine in portrait can be off the bottom in landscape,
+-- so every panel is pulled back inside the viewport whenever the screen changes shape.
+local cam = WS.CurrentCamera
+local function viewport()
+    local ok, vp = pcall(function() return cam and cam.ViewportSize end)
+    if ok and vp and vp.X > 50 and vp.Y > 50 then return vp end
+end
+local function clampIn(frame)
+    local vp = viewport()
+    if not (vp and frame and frame.Parent) then return end
+    local ok = pcall(function()
+        local ap, as = frame.AbsolutePosition, frame.AbsoluteSize
+        local keep = 70 -- always leave this much of it reachable
+        local x = math.clamp(ap.X, keep - as.X, vp.X - keep)
+        local y = math.clamp(ap.Y, 0, vp.Y - math.min(as.Y, keep))
+        if math.abs(x - ap.X) > 0.5 or math.abs(y - ap.Y) > 0.5 then
+            frame.Position = UDim2.new(0, math.floor(x), 0, math.floor(y))
+        end
+    end)
+    return ok
+end
+local function remember(frame)
+    local ok, ap = pcall(function() return frame.AbsolutePosition end)
+    if ok and ap then return { math.floor(ap.X), math.floor(ap.Y) } end
 end
 local dragging = {}
 local function makeDraggable(handle, target, onDrop)
@@ -1424,24 +1474,24 @@ local function lbl(parent, text, ts, color, bold, pos, size)
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, TextWrapped = true }, parent)
 end
 -- header
-U.title = mk("Frame", { Size = UDim2.new(1, 0, 0, HEAD), BackgroundColor3 = C.panel, BorderSizePixel = 0, Active = true }, U.root)
+U.title = mk("Frame", { Size = UDim2.new(1, 0, 0, Z.head), BackgroundColor3 = C.panel, BorderSizePixel = 0, Active = true }, U.root)
 U.dot = mk("Frame", { Size = UDim2.new(0, 9, 0, 9), Position = UDim2.new(0, 11, 0.5, -4), BackgroundColor3 = C.dim, BorderSizePixel = 0 }, U.title)
 round(U.dot, 5)
 lbl(U.title, "SAB  BUTTER FARM  " .. VERSION, 12, C.text, true, UDim2.new(0, 28, 0, 0), UDim2.new(1, -120, 1, 0))
 U.minB = button(U.title, "-", C.panel2, 14, UDim2.new(1, -78, 0.5, -10), UDim2.new(0, 34, 0, 20))
 U.xB = button(U.title, "X", C.bad, 12, UDim2.new(1, -40, 0.5, -10), UDim2.new(0, 34, 0, 20))
 -- reason strip, always visible
-U.strip = mk("Frame", { Position = UDim2.new(0, 0, 0, HEAD), Size = UDim2.new(1, 0, 0, STRIP), BackgroundColor3 = C.bg, BorderSizePixel = 0 }, U.root)
+U.strip = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head), Size = UDim2.new(1, 0, 0, Z.strip), BackgroundColor3 = C.bg, BorderSizePixel = 0 }, U.root)
 U.bar = mk("Frame", { Size = UDim2.new(0, 4, 1, -10), Position = UDim2.new(0, 9, 0, 5), BackgroundColor3 = C.warn, BorderSizePixel = 0 }, U.strip)
 round(U.bar, 2)
 U.reason = lbl(U.strip, "starting", 12, C.text, false, UDim2.new(0, 20, 0, 2), UDim2.new(1, -28, 1, -4))
 -- tabs
-U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, HEAD + STRIP), Size = UDim2.new(1, 0, 0, TABS), BackgroundTransparency = 1 }, U.root)
+U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip), Size = UDim2.new(1, 0, 0, Z.tabs), BackgroundTransparency = 1 }, U.root)
 U.tabFarm = button(U.tabs, "FARM", C.accent, 11, UDim2.new(0, 8, 0, 0), UDim2.new(0.34, -10, 1, -4))
 U.tabBut = button(U.tabs, "BUTTERS", C.panel2, 11, UDim2.new(0.34, 2, 0, 0), UDim2.new(0.33, -6, 1, -4))
 U.tabSet = button(U.tabs, "SETUP", C.panel2, 11, UDim2.new(0.67, 2, 0, 0), UDim2.new(0.33, -10, 1, -4))
 local function pane()
-    local f = mk("ScrollingFrame", { Position = UDim2.new(0, 0, 0, HEAD + STRIP + TABS), Size = UDim2.new(1, 0, 1, -(HEAD + STRIP + TABS)),
+    local f = mk("ScrollingFrame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip + Z.tabs), Size = UDim2.new(1, 0, 1, -(Z.head + Z.strip + Z.tabs)),
         BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.line,
         CanvasSize = UDim2.new(0, 0, 0, 100) }, U.root)
     mk("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, f)
@@ -1544,10 +1594,10 @@ U.set.CanvasSize = UDim2.new(0, 0, 0, total)
 
 -- ---- the floating button: hides and brings back the whole window, drag it anywhere
 local tg = mk("ScreenGui", { Name = "SABToggle", ResetOnSpawn = false, DisplayOrder = 1000, IgnoreGuiInset = true }, pg)
-U.tgRoot = mk("Frame", { Size = UDim2.new(0, 46, 0, 46),
-    Position = UDim2.new(0, S.togPos and S.togPos[1] or 10, 0, S.togPos and S.togPos[2] or 380),
+U.tgRoot = mk("Frame", { Size = UDim2.new(0, 52, 0, 52),
+    Position = S.togPos and UDim2.new(0, S.togPos[1], 0, S.togPos[2]) or UDim2.new(0, 10, 0.45, -26),
     BackgroundColor3 = C.accent, BorderSizePixel = 0, Active = true }, tg)
-round(U.tgRoot, 23)
+round(U.tgRoot, 26)
 mk("UIStroke", { Color = C.line, Thickness = 1 }, U.tgRoot)
 U.tgBtn = mk("TextButton", { Text = "SAB", Size = FILL, BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
     TextSize = 13, TextColor3 = C.text, AutoButtonColor = false }, U.tgRoot)
@@ -1556,17 +1606,17 @@ U.tgDot = mk("Frame", { Size = UDim2.new(0, 8, 0, 8), Position = UDim2.new(1, -1
 round(U.tgDot, 4)
 
 -- ---- BUTTERS tab: worst at the top, best at the bottom, built the first time you open it
-local rowsBuilt, tickBoxes, builtAt = false, {}, 0
+local LST = { built = false, boxes = {}, at = 0 }
 local function setTick(k, on)
     CFG.Targets[k] = on or nil
-    local b = tickBoxes[k]
+    local b = LST.boxes[k]
     if b then
         b.Text = on and "X" or ""
         b.BackgroundColor3 = on and C.good or C.panel2
     end
 end
 local function refreshTicks()
-    for k, b in pairs(tickBoxes) do
+    for k, b in pairs(LST.boxes) do
         local on = CFG.Targets[k] == true
         b.Text = on and "X" or ""
         b.BackgroundColor3 = on and C.good or C.panel2
@@ -1598,11 +1648,11 @@ buildList = function(force)
         end
         return
     end
-    if rowsBuilt and not force and builtAt == CAT.at then return end
+    if LST.built and not force and LST.at == CAT.at then return end
     for _, ch in ipairs(U.but:GetChildren()) do
         if ch:IsA("Frame") or ch:IsA("TextButton") then ch:Destroy() end
     end
-    tickBoxes, U.butEmpty = {}, nil
+    LST.boxes, U.butEmpty = {}, nil
     butHead()
     local y, ord = 36, 1
     local function add(h)
@@ -1635,7 +1685,7 @@ buildList = function(force)
                 BackgroundColor3 = C.panel2, BorderSizePixel = 0, Font = Enum.Font.GothamBold, TextSize = 10,
                 TextColor3 = C.text, AutoButtonColor = false }, b)
             round(tick, 4)
-            tickBoxes[k] = tick
+            LST.boxes[k] = tick
             local kk = k
             local function toggle() setTick(kk, not CFG.Targets[kk]) end
             b.MouseButton1Click:Connect(toggle)
@@ -1644,7 +1694,7 @@ buildList = function(force)
     end
     refreshTicks()
     U.but.CanvasSize = UDim2.new(0, 0, 0, y + 10)
-    rowsBuilt, builtAt = true, CAT.at
+    LST.built, LST.at = true, CAT.at
 end
 local tab = "farm"
 local function showTab(which)
@@ -1672,6 +1722,8 @@ local function applyLoaded()
     if CFG.AutoStart ~= S.running then setRunning(CFG.AutoStart, true) end -- a loaded config that was running starts again
     if S.winPos then U.root.Position = UDim2.new(0, S.winPos[1], 0, S.winPos[2]) end
     if S.togPos then U.tgRoot.Position = UDim2.new(0, S.togPos[1], 0, S.togPos[2]) end
+    clampIn(U.root)
+    clampIn(U.tgRoot)
     S.lastCollect = now()
     refreshTicks()
 end
@@ -1765,7 +1817,8 @@ local function setHidden(v)
     U.tgBtn.Text = v and "SAB+" or "SAB"
 end
 makeDraggable(U.tgRoot, U.tgRoot, function(moved)
-    S.togPos = { U.tgRoot.Position.X.Offset, U.tgRoot.Position.Y.Offset }
+    clampIn(U.tgRoot)
+    S.togPos = remember(U.tgRoot) or S.togPos
     if moved < 8 then setHidden(not S.hidden) end -- a tap, not a drag
 end)
 click(U.tgBtn, function() setHidden(not S.hidden) end)
@@ -1794,8 +1847,8 @@ local function currentName()
     return (pick > 0 and picks[pick]) or ""
 end
 click(U.cfgSave, function()
-    S.winPos = { U.root.Position.X.Offset, U.root.Position.Y.Offset }
-    S.togPos = { U.tgRoot.Position.X.Offset, U.tgRoot.Position.Y.Offset }
+    S.winPos = remember(U.root) or S.winPos
+    S.togPos = remember(U.tgRoot) or S.togPos
     local ok, msg = saveConfig(currentName())
     U.cfgMsg.Text = ok and ("saved as " .. msg) or ("could not save: " .. msg)
     U.cfgMsg.TextColor3 = ok and C.good or C.bad
@@ -1875,7 +1928,7 @@ click(U.minB, function()
     else
         showTab(tab)
     end
-    U.root.Size = UDim2.new(0, W, 0, minimized and (HEAD + STRIP) or H)
+    U.root.Size = UDim2.new(0, Z.w, 0, minimized and (Z.head + Z.strip) or Z.h)
     U.minB.Text = minimized and "+" or "-"
 end)
 -- KILL: stops both loops and any action in progress, disconnects every event, removes the window
@@ -1893,7 +1946,8 @@ click(U.killB, kill)
 click(U.xB, kill)
 -- drag the window by its header, and remember where you left it
 makeDraggable(U.title, U.root, function()
-    S.winPos = { U.root.Position.X.Offset, U.root.Position.Y.Offset }
+    clampIn(U.root)
+    S.winPos = remember(U.root) or S.winPos
 end)
 
 ---------------------------------------------------------------- loops (the window already exists at this point)
@@ -1932,12 +1986,23 @@ local function refresh()
     if U.butInfo then
         U.butInfo.Text = ("%d butters, %d rarities\n%d ticked"):format(CAT.n, #CAT.rarOrder, #tn)
     end
-    if U.but.Visible and builtAt ~= CAT.at then buildList(false) end
+    if U.but.Visible and LST.at ~= CAT.at then buildList(false) end
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, dump = dump, CAT = CAT, LEARN = LEARN, buildList = buildList }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
+clampIn(U.root)
+clampIn(U.tgRoot)
+if cam then
+    pcall(function()
+        track(cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+            task.wait(0.2) -- let the new size settle before measuring
+            clampIn(U.root)
+            clampIn(U.tgRoot)
+        end))
+    end)
+end
 refreshPicks()
 setAutoBtn()
 if S.config and S.config ~= "" then U.cfgName.Text = S.config end
@@ -1978,7 +2043,7 @@ task.spawn(function() -- keep what the crates taught us
         pcall(saveLearn)
     end
 end)
-if okVU and VU then
+if VU then
     track(plr.Idled:Connect(function() pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end))
 end
 task.spawn(function() -- start by myself, once the character and the plot exist

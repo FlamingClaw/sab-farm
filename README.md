@@ -31,3 +31,14 @@ It reacts to the Auto Roll pass. It never pulls the lever, never rolls, and neve
 | `loader.lua` | the one-line loader, for reference |
 
 Both Lua files compile to identical bytecode; the compact one is just smaller to download.
+
+## Bridge (for debugging with Claude)
+
+Lets Claude run investigation code in your game and read the results through a **private** repo (`FlamingClaw/sab-bridge`).
+Your GitHub token is pasted once in-game and stored only in Delta's workspace (`SAB_bridge_token.txt`).
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/FlamingClaw/sab-farm/main/bridge.lua?t=" .. tick()))()
+```
+
+A small "Bridge:" bar appears at the top (drag it anywhere; X stops it). Only run it while working with Claude.

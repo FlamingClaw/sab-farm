@@ -1075,7 +1075,8 @@ local function doPlace()
     return false
 end
 
--- placing with the WAX team on: wax time is worked out by the server the moment the butter is placed
+-- placing with the WAX team on: head starts ("X% of waxes start half done") are decided the moment a
+-- butter is placed. Wax speed is not: it follows whatever you wear afterwards.
 function TM.place()
     local tw = now()
     while S.alive and TM.editing and now() - tw < 25 do nap(0.2) end -- a team rebuild in progress
@@ -1084,10 +1085,7 @@ function TM.place()
         local t0 = now()
         while S.alive and TM.current() ~= CFG.TeamWax and now() - t0 < 5 do nap(0.1) end
         if TM.current() == CFG.TeamWax then
-            -- social pets (Elephant) reach your stats 1-2 s after a switch; wax time is fixed at placing
-            local exp, t1 = TM.expectSocialWax(CFG.TeamWax), now()
-            while S.alive and exp > 0 and (tonumber(plr:GetAttribute("PetSocialWax")) or 0) < exp - 1e-6 and now() - t1 < 4 do nap(0.1) end
-            nap(0.25)
+            nap(0.3)
         else
             note("wax team did not come on in time - placing anyway")
         end
@@ -1821,11 +1819,14 @@ function PX.nice(name, var)
     local p = I and I.Pets[name]
     return ((var and var ~= "") and (var .. " ") or "") .. (p and p.displayName or tostring(name))
 end
-function PX.data()
+function PX.data() -- read-only: decoded again only when the game changes it (the team loop asks 4x a second)
     local raw = plr:GetAttribute("PetsData")
     if type(raw) ~= "string" then return nil end
+    if raw == PX.rawD then return PX.lastD end
     local ok, d = pcall(function() return PX.HS:JSONDecode(raw) end)
-    return (ok and type(d) == "table") and d or nil
+    d = (ok and type(d) == "table") and d or nil
+    PX.rawD, PX.lastD = raw, d
+    return d
 end
 function PX.pen() return RS:FindFirstChild("PetMeadowSpawns") end
 function PX.srv() return WS:GetServerTimeNow() end
@@ -1861,6 +1862,46 @@ function PX.call(...) -- PetRequest:InvokeServer, never waiting more than 6 s fo
     return nil
 end
 function PX.want(name) return CFG.Pets[name] end
+-- After an adopt the game shows its card for ~2.6 s, then opens "Name your pet" with the keyboard up and
+-- leaves it there. For pets adopted here it is shut the way the game's own Later button does it
+-- (Naming.close), so it never sits on the screen; name them any time from the pet menu.
+function PX.closeNaming(g)
+    local ok = pcall(function()
+        local ps = plr:FindFirstChild("PlayerScripts")
+        local m = ps and ps:FindFirstChild("Naming", true)
+        require(m).close()
+    end)
+    nap(0.5) -- its close tween is 0.15 s
+    if g.Visible then
+        pcall(function() local b = g:FindFirstChild("NameBox", true) if b then b:ReleaseFocus() end end)
+        g.Visible = false
+        ok = false
+    end
+    return ok
+end
+function PX.skipNaming()
+    -- a burst of adopts opens one window (for the last pet); one close per burst, within 10 s of it
+    PX.namingUntil = now() + 10
+    if PX.namingOn then return end
+    PX.namingOn = true
+    task.spawn(function()
+        while S.alive and now() < PX.namingUntil do
+            local pg = plr:FindFirstChildOfClass("PlayerGui")
+            local mg = pg and pg:FindFirstChild("MainGui")
+            local g = mg and mg:FindFirstChild("PetNameGui")
+            if g and g.Visible then
+                nap(0.4) -- let it finish opening first
+                if g.Visible then
+                    PX.namingShut = (PX.namingShut or 0) + 1
+                    pcall(PX.closeNaming, g)
+                    break
+                end
+            end
+            nap(0.25)
+        end
+        PX.namingOn = false
+    end)
+end
 function PX.buyTick()
     if not CFG.PetBuy then PX.buyMsg = "auto adopt is off" return end
     local I, pen, d = PX.info(), PX.pen(), PX.data()
@@ -1892,6 +1933,7 @@ function PX.buyTick()
                     table.insert(PX.recent, { id = tostring(got.id or ("?" .. now())), name = name, variant = var, at = now() })
                     if #PX.recent > 30 then table.remove(PX.recent, 1) end
                     note("ADOPTED " .. nice)
+                    PX.skipNaming()
                     msg = "adopted " .. nice
                 else
                     local why = type(r) == "table" and tostring(r.reason or "no reason given") or "no answer"
@@ -1959,10 +2001,12 @@ function PX.wishTick()
 end
 
 -- ---- pet teams: the saved loadouts from the game's Teams page, switched with PetRequest("teamEquip", n)
--- Wax time is fixed the moment a butter is placed, and the glaze is rolled the moment a wax finishes,
--- so: WAX team while placing, GLAZE team from GlazeLead s before a wax finishes until it has, NORMAL
--- team the rest of the time. A help can never leave a wax with under 60 s, so a 45 s lead is safe.
+-- Every running wax goes at the speed of the pets worn right now; head starts are decided when a butter
+-- is placed and the glaze is rolled the moment a wax finishes. So: WAX team (head starts) while placing,
+-- GLAZE team from GlazeLead s before a wax finishes until it has, FULL (money + wax speed) while every
+-- station is busy, NORMAL the rest of the time. A help never leaves a wax under 60 s, so 45 s is safe.
 TM.switches, TM.glazed, TM.finished = 0, 0, 0
+TM.done, TM.doneN, TM.later = {}, 0, {}
 function TM.teams()
     local d = PX.data()
     return (d and d.teams) or {}, d
@@ -1996,20 +2040,41 @@ function TM.equip(name)
     end
     return false
 end
+-- A running wax speeds up and slows down with the pets you wear RIGHT NOW (measured Nov 17: switching
+-- to the wax team cut every station's time by x1.71 at once). PourEnd is only the guess made when the
+-- butter was placed and goes stale after any team change, so the time left is read from the station's
+-- own countdown, which the server writes ("103:44"; "0-1:59" once done).
+function TM.left(st)
+    local ph = st:FindFirstChild("SquishyPlaceHolder")
+    local tg = ph and ph:FindFirstChild("TimerGui")
+    local tl = tg and tg:FindFirstChildWhichIsA("TextLabel", true)
+    local s = tl and tl.Text
+    if type(s) ~= "string" or s:find("-", 1, true) then return nil end
+    local a, b, c = s:match("^%s*(%d+):(%d+):?(%d*)%s*$")
+    if not a then return nil end
+    local v = c ~= "" and (tonumber(a) * 3600 + tonumber(b) * 60 + tonumber(c)) or (tonumber(a) * 60 + tonumber(b))
+    return v > 0 and v or nil -- 0 or a leftover "done" text: not a time to act on
+end
 function TM.waxes() -- your running waxes, soonest first
     local out = {}
     local ws = S.plot and S.plot:FindFirstChild("WaxStations")
     if not ws then return out end
+    local t = PX.srv()
     for _, st in ipairs(ws:GetChildren()) do
         local e = tonumber(st:GetAttribute("PourEnd"))
         local own = st:GetAttribute("PourOwner")
-        if st:GetAttribute("HasSquishy") and e and (own == nil or own == PX.uid) then
-            local ph, nm = st:FindFirstChild("SquishyPlaceHolder"), "?"
-            if ph then for _, c in ipairs(ph:GetChildren()) do if c:IsA("Model") then nm = c.Name break end end end
-            local helpers = tostring(st:GetAttribute("Helpers") or "")
-            local nh = 0
-            for _ in helpers:gmatch("%d+") do nh = nh + 1 end
-            out[#out + 1] = { st = st, ends = e, id = st:GetAttribute("PourId"), name = nm, helps = nh }
+        if st:GetAttribute("HasSquishy") and st:GetAttribute("PourId") and (own == nil or own == PX.uid) then
+            local l = TM.left(st)
+            local ends = l and (t + l) or ((e and e > t) and e or nil) -- no countdown yet (just placed): the placing guess
+            if ends then
+                local ph, nm = st:FindFirstChild("SquishyPlaceHolder"), "?"
+                if ph then for _, c in ipairs(ph:GetChildren()) do if c:IsA("Model") then nm = c.Name break end end end
+                local helpers = tostring(st:GetAttribute("Helpers") or "")
+                local nh = 0
+                for _ in helpers:gmatch("%d+") do nh = nh + 1 end
+                out[#out + 1] = { st = st, ends = ends, sure = l ~= nil, id = st:GetAttribute("PourId"), name = nm, helps = nh,
+                    long = st:GetAttribute("PourLong") == true }
+            end
         end
     end
     table.sort(out, function(a, b) return a.ends < b.ends end)
@@ -2052,17 +2117,29 @@ function TM.tick()
     if g then
         local st = g.st
         local still = st.Parent and st:GetAttribute("HasSquishy") and st:GetAttribute("PourId") == g.id
-        if not still or t > g.ends + 40 then
+        local l = still and TM.left(st)
+        if l then g.ends = t + l end -- the glaze team's own speed, helps included
+        if not still then
             TM.glazeFor, TM.afterUntil = nil, now() + 1.5
-            local before = g.before
-            task.spawn(function() pcall(TM.finishedOne, g, before) end)
-        else
-            g.ends = tonumber(st:GetAttribute("PourEnd")) or g.ends -- a help moved it
+            if not TM.done[g.id or "?"] then -- each wax is counted once
+                TM.done[g.id or "?"], TM.doneN = true, TM.doneN + 1
+                if TM.doneN > 400 then TM.done, TM.doneN = { [g.id or "?"] = true }, 1 end
+                local before = g.before
+                task.spawn(function() pcall(TM.finishedOne, g, before) end)
+            end
+        elseif g.ends - t > CFG.GlazeLead * 3 + 60 or t > g.ends + 90 then
+            -- it is not finishing after all (or its countdown stopped): let it go, look again in 2 min
+            TM.glazeFor, TM.afterUntil = nil, now() + 1.5
+            TM.later[g.id or "?"] = now() + 120
+            note(("station %s is not finishing yet (%s left) - glaze team off again"):format(st.Name, TM.clock(g.ends - t)))
         end
     end
     if CFG.TeamGlaze ~= "" and not TM.glazeFor then
+        local r = TM.speedRatio(CFG.TeamGlaze)
         for _, w in ipairs(TM.list) do
-            if w.ends - t <= CFG.GlazeLead then
+            -- the lead is in glaze-team time: a wax with 30 s left on fast pets has ~50 s once they come off
+            if w.sure and (w.ends - t) * r[w.long and 2 or 1] <= CFG.GlazeLead and now() >= (TM.later[w.id or "?"] or 0)
+                and not TM.done[w.id or "?"] then
                 TM.glazeFor = w
                 task.spawn(function() w.before = TM.glazeCount() end)
                 break
@@ -2070,7 +2147,7 @@ function TM.tick()
         end
     end
     -- 1 glaze at a finish, 2 wax while placing (or holding a ticked butter with a station free),
-    -- 3 FULL while every station is busy (only stir pets speed up running waxes), 4 NORMAL
+    -- 3 FULL while every station is busy (money + the wax speed every running wax goes at), 4 NORMAL
     local want, why = "", ""
     if CFG.TeamGlaze ~= "" and (TM.glazeFor or now() < (TM.afterUntil or 0)) then
         want, why = CFG.TeamGlaze, TM.glazeFor and (" - station " .. TM.glazeFor.st.Name .. " finishes soon") or ""
@@ -2113,25 +2190,31 @@ function TM.aboutToPlace() -- a ticked butter in hand and somewhere to put it: p
     local free = freeCount()
     return free > 0
 end
-function TM.expectSocialWax(name) -- the best social wax pet in that team (only the best one counts)
+function TM.mult(ws, lw, so) return { (1 + ws) * (1 + so), (1 + ws + lw) * (1 + so) } end -- short wax, long wax
+function TM.speedNow()
+    local function a(k) return tonumber(plr:GetAttribute(k)) or 0 end
+    return TM.mult(a("PetWaxSpeed"), a("PetLongWax"), a("PetSocialWax"))
+end
+function TM.speedOf(name) -- the wax speed a saved team gives, from its pets
     local list, d = TM.teams()
-    local I = PX.info()
-    local best = 0
-    if not (I and d) then return 0 end
-    for _, t in ipairs(list) do
-        if t.name == name then
-            for _, id in ipairs(t.pets or {}) do
-                for _, p in ipairs(d.pets or {}) do
-                    local info = I.Pets[p.name]
-                    if tostring(p.id) == tostring(id) and info and info.boost and info.boost.kind == "socialWax" then
-                        local ok, v = pcall(function() return I.boostValue(p.name, (p.variant ~= "" and p.variant) or nil) end)
-                        best = math.max(best, (ok and tonumber(v)) or info.boost.value or 0)
-                    end
-                end
+    if not d then return nil end
+    for _, tm in ipairs(list) do
+        if tm.name == name then
+            local pets = {}
+            for _, id in ipairs(tm.pets or {}) do
+                for _, p in ipairs(d.pets or {}) do if tostring(p.id) == tostring(id) then pets[#pets + 1] = p break end end
             end
+            local c = FU.caps()
+            local s, soc = FU.stats(pets)
+            return TM.mult(math.min(s.waxSpeed or 0, c.waxSpeed or 0.25), math.min(s.longWax or 0, c.longWax or 0.3), soc.socialWax or 0)
         end
     end
-    return best
+    return nil
+end
+function TM.speedRatio(name) -- time left now x this = time left once that team is on
+    local a, b = TM.speedNow(), TM.speedOf(name)
+    if not b then return { 1, 1 } end
+    return { a[1] / b[1], a[2] / b[2] }
 end
 function TM.glazeSoon() -- placing waits while the glaze team is covering a finish
     return CFG.Teams and CFG.TeamGlaze ~= "" and (TM.glazeFor ~= nil or now() < (TM.afterUntil or 0))
@@ -2141,10 +2224,10 @@ end
 -- Each ticked pet can have a goal of Big copies; buying and wishing stop once there is enough for it,
 -- and the fuse happens as soon as the copies are there. A fuse can use up pets your teams wear, so the
 -- teams are then worked out again from everything you own, one role at a time:
---   farm  (stations free)      money and Apple Pie supply (luck, social luck, Eagle)
---   full  (every station busy) money and wax stir (the only thing that speeds a running wax)
+--   farm  (stations free)      money and Apple Pie supply (luck, social luck, Eagle), then wax speed
+--   full  (every station busy) money and wax speed: every running wax goes at the speed worn right now
 --   glaze (at a finish)        the glaze gain per finish, money to break ties
---   wax   (while placing)      the shortest wax, money to break ties
+--   wax   (while placing)      head starts (decided at the drop), then money
 FU.CAPS = { income = 0.5, price = 0.25, waxSpeed = 0.25, offline = 1, luck = 3, waxStirPerMinute = 30, cratePulls = 4,
     glaze = 0.25, glazeUp = 0.5, headStart = 0.4, cashGiftPerMinute = 9, newFind = 2, longWax = 0.3 }
 FU.ROUND = { luck = true, luckyPull = true, crate = true, waxStir = true, socialLuck = true, cashGift = true }
@@ -2202,20 +2285,18 @@ function FU.score(role, list)
     local rolls = 1 + cap("luck") + (s.luckyPull or 0) + (soc.socialLuck or 0)
     local pie = rolls * (1 + cap("newFind"))
     local lm = math.log(money)
-    -- weights: money a little ahead of Apple Pie supply while stations are free; while every station is
-    -- busy, a stir pet only speeds one wax at a time (+30 s a minute is ~3% more finishes over 18 stations)
-    if role == "farm" then return lm + 0.7 * math.log(pie) end
-    if role == "full" then
-        local st = math.max(tonumber(plr:GetAttribute("WaxStations")) or 18, 1)
-        local stir = math.min(s.waxStir or 0, c.waxStirPerMinute or 30)
-        return lm + math.log(1 + stir / 60 / st) + 0.1 * math.log(pie)
-    end
+    local st = math.max(tonumber(plr:GetAttribute("WaxStations")) or 18, 1)
+    -- a stir pet works on one wax at a time: +30 s a minute is ~3% more speed spread over 18 stations
+    local speed = (1 + cap("waxSpeed") + cap("longWax")) * (1 + (soc.socialWax or 0))
+        + math.min(s.waxStir or 0, c.waxStirPerMinute or 30) / 60 / st
+    local hs = 1 - (1 - cap("headStart")) * (1 - (soc.socialHeadStart or 0))
+    -- weights: with the stack full of Apple Pie a finish only pays through its glaze (~0.08% more income
+    -- for good per finish with the glaze team), so wax speed counts for about a quarter of money while
+    -- every station is busy, and a little while stations wait for Apple Pies (luck fills them)
+    if role == "farm" then return lm + 0.7 * math.log(pie) + 0.1 * math.log(speed) end
+    if role == "full" then return lm + 0.25 * math.log(speed) + 0.02 * math.log(pie) end
     if role == "glaze" then return FU.glazeGain(cap("glaze"), cap("glazeUp")) + 0.001 * lm end
-    if role == "wax" then
-        local speed = (1 + cap("waxSpeed") + cap("longWax")) * (1 + (soc.socialWax or 0))
-        local hs = 1 - (1 - cap("headStart")) * (1 - (soc.socialHeadStart or 0))
-        return math.log(speed) - math.log(1 - 0.5 * hs) + 0.001 * lm
-    end
+    if role == "wax" then return -math.log(1 - 0.5 * hs) + 0.001 * lm + 0.001 * math.log(speed) end
     return lm
 end
 function FU.best(role, pets, slots, keep) -- greedy fill, then swaps until nothing improves
@@ -2586,6 +2667,18 @@ function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
     if CFG.Lite and q and #q > 0 then
         PF.queue = {}
         for i, d in ipairs(q) do pcall(PF.muteOne, d) if i % 300 == 0 then task.wait() end end
+    end
+    -- the station timers once more, by hand: one was seen on near a finish (18 lookups a second)
+    local ws = CFG.Lite and S.plot and S.plot:FindFirstChild("WaxStations")
+    if ws then
+        for _, st in ipairs(ws:GetChildren()) do
+            local ph = st:FindFirstChild("SquishyPlaceHolder")
+            local tg = ph and ph:FindFirstChild("TimerGui")
+            if tg and tg:IsA("BillboardGui") then
+                if PF.bb[tg] == nil then pcall(PF.muteOne, tg)
+                elseif tg.Enabled then PF.bb[tg] = true tg.Enabled = false end
+            end
+        end
     end
     local ok, mb = pcall(function() return game:GetService("Stats"):GetTotalMemoryUsageMb() end)
     if ok and type(mb) == "number" then
@@ -3611,7 +3704,7 @@ function TM.build()
     end)
     cap("NORMAL TEAM  (worn the rest of the time)")
     picker("TeamNormal")
-    cap("FULL TEAM  (worn while every station is busy)")
+    cap("FULL TEAM  (every station busy: money + wax speed)")
     picker("TeamFull")
     cap("GLAZE TEAM  (worn just before a wax finishes)")
     picker("TeamGlaze")
@@ -3624,7 +3717,7 @@ function TM.build()
         if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) else U.tmLead.Text = tostring(CFG.GlazeLead) end
         TM.paint()
     end)
-    cap("WAX TEAM  (worn while a butter is placed)")
+    cap("WAX TEAM  (worn while a butter is placed: head starts)")
     picker("TeamWax")
     cap("YOUR WAXES  (time left, helps)")
     U.tmList = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
@@ -3632,7 +3725,7 @@ function TM.build()
         TextWrapped = false, Text = "" }, add(150))
     round(U.tmList, 6)
     mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 4) }, U.tmList)
-    lbl(add(92), "Teams are the loadouts you saved in the game's Teams page. A wax's time is fixed when it is placed and its glaze is rolled when it finishes, so the WAX team only needs to be on while placing and the GLAZE team only at the finish. While every station is busy only wax-stir pets (Seal, Koala) still help, so the FULL team can be money + stir. A help never leaves a wax under 60 s, so 45 s is enough. While AUTO TEAMS is on it keeps putting the right team back.", 9, C.dim, false)
+    lbl(add(92), "Teams are the loadouts you saved in the game's Teams page. Every running wax goes at the speed of the pets you wear right now (the times below are the stations' own countdowns), head starts are decided when a butter is placed, and the glaze is rolled when a wax finishes. So: WAX team (head starts) while placing, GLAZE team at a finish, FULL (money + wax speed) while every station is busy, NORMAL (money + luck) while stations wait for Apple Pies. The lead counts in glaze-team time. While AUTO TEAMS is on it keeps putting the right team back.", 9, C.dim, false)
     U.team.CanvasSize = UDim2.new(0, 0, 0, y + 10)
     TM.built = true
     TM.paint()

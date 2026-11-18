@@ -60,7 +60,6 @@ local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate"
 local PX, TM = {}, {} -- pets (adopt + wish) and pet teams; everything else they need lives inside them
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
-local lastDump = ""
 ---------------------------------------------------------------- utils
 local function track(c) conns[#conns + 1] = c return c end
 local function nap(t)
@@ -1228,7 +1227,7 @@ local function summonCrate()
     if not cp then
         CRATE.summonFails = CRATE.summonFails + 1
         CRATE.lastFail = now()
-        note("crate: cannot find where to open " .. CRATE.title .. " - open it once by hand, then DUMP")
+        note("crate: cannot find where to open " .. CRATE.title .. " - open it once by hand")
         return false
     end
     local part = partOf(cp)
@@ -1597,7 +1596,7 @@ function CRATE.smart()
         CRATE.lastBad, CRATE.learned, LEARN.dirty = L, nil, true
         if CRATE.fails >= 3 then
             CRATE.directOff = true
-            note("direct crate opening failed 3 times - using the button for now (see DUMP)")
+            note("direct crate opening failed 3 times - using the button for now")
         else
             note("the learned crate call did not work - back to pressing Open")
         end
@@ -2311,7 +2310,7 @@ local function decide()
             return "cratesmart", ("opening %s"):format(title), "ok"
         end
         if CRATE.summonFails >= 3 then
-            return nil, ("%s waiting - could not open it, open it by hand then DUMP"):format(title), "bad"
+            return nil, ("%s waiting - could not open it, open it by hand"):format(title), "bad"
         end
         if now() - CRATE.lastFail < 8 then
             return nil, ("%s waiting - retrying shortly"):format(title), "wait"
@@ -2398,197 +2397,6 @@ function setRunning(v, quiet)
         note("STOP")
     end
 end
-
----------------------------------------------------------------- dump
-local function dump()
-    local L = {}
-    local function p(s) L[#L + 1] = tostring(s) end
-    p("=== SAB " .. VERSION .. " DUMP " .. os.date("%H:%M:%S") .. " ===")
-    p(("running=%s busy=%s holding=%s capHit=%s uiErrs=%d zapFirst=%s"):format(tostring(S.running),
-        tostring(S.busy), tostring(S.holding), tostring(S.capHit), S.uiErrs, tostring(S.zapFirst)))
-    p("reason: " .. tostring(S.reason))
-    p("targets: " .. table.concat(targetNames(), ", "))
-    p(("bought=%d waxed=%d sold=%d collected=%d rolls=%d gifts=%d"):format(S.bought, S.placed, S.sold, S.collected, S.rolls, S.gifts))
-    p("cash=" .. fmt(cash()))
-    p(("pets: adopt=%s wish=%s | %s | %s"):format(tostring(CFG.PetBuy), tostring(CFG.PetWish), tostring(PX.buyMsg), tostring(PX.wishMsg)))
-    p(("teams: auto=%s normal=%s glaze=%s wax=%s lead=%s | %s"):format(tostring(CFG.Teams), CFG.TeamNormal, CFG.TeamGlaze,
-        CFG.TeamWax, tostring(CFG.GlazeLead), tostring(TM.msg)))
-    p(("crate near-open fails=%s"):format(tostring(CRATE.nearFails or 0)))
-    local held, inst = carriedName()
-    p("in hands: " .. tostring(held) .. (inst and (" (" .. inst.ClassName .. ")") or "") ..
-        "  via " .. tostring(S.carrySrc) .. "  blind=" .. string.format("%.1f", math.max(0, (S.carryBlind or 0) - now())))
-    p("  attribute SquishyEquipped = " .. tostring(plr:GetAttribute("SquishyEquipped")))
-    local hm = S.plot and S.plot:FindFirstChild("SquishyEquipped")
-    p("  plot.SquishyEquipped = " .. (hm and (#hm:GetChildren() .. " children") or "missing"))
-    local cc = plr.Character
-    if cc then
-        local names = {}
-        for _, d in ipairs(cc:GetDescendants()) do
-            if (d:IsA("Model") or d:IsA("Tool")) and d.Name ~= cc.Name then names[#names + 1] = d.ClassName .. ":" .. d.Name end
-        end
-        p("  on the character: " .. (table.concat(names, ", "):sub(1, 300)))
-    end
-    local pi = padInfo()
-    p("on pad: " .. (pi and ("%s [%s] %s"):format(pi.name, tostring(pi.rar), tostring(pi.price)) or "nothing"))
-    p("sell spot: " .. (S.sellSpot and relPath(S.sellSpot) or "none found"))
-    p("--- CRATES ---")
-    p(("waiting=%s windowOpen=%s title=%s rolled=%s (%ss ago) opened=%d tapWay=%s fails=%d/%d"):format(
-        tostring(CRATE.waiting), tostring(CRATE.on), CRATE.title, tostring(CRATE.rolled),
-        CRATE.rolledAt > 0 and string.format("%.0f", now() - CRATE.rolledAt) or "-",
-        S.crates, tostring(S.tapWay), S.crateFails, CRATE.summonFails))
-    p("--- AUTO ROLL ---")
-    local ar = AR.snap()
-    p(("game: AutoRollOn=%s AutoRoll=%s stop=%s rules=%s"):format(tostring(ar.on), tostring(ar.main),
-        tostring(ar.stop), tostring(ar.rules)))
-    p(("wanted: %s  choices to put back: %s (stop %s)  note: %s"):format(tostring(CFG.AutoRoll),
-        CFG.ARrules ~= "" and CFG.ARrules or "-", CFG.ARstop ~= "" and CFG.ARstop or "-", AR.msg ~= "" and AR.msg or "-"))
-    local function showCall(c)
-        local a = {}
-        for j = 1, c.n do
-            local v = c.args[j]
-            a[j] = type(v) == "table" and (v.__slot and ("<" .. v.__slot .. ">") or "{table}") or ("%q"):format(tostring(v))
-        end
-        return ("AutoRollAction:%s(%s)"):format(c.m, table.concat(a, ", "))
-    end
-    for i, c in ipairs(AR.rec.rules) do p(("  choices %d: %s"):format(i, showCall(c))) end
-    if AR.rec.on then p("  on:  " .. showCall(AR.rec.on)) end
-    if AR.rec.off then p("  off: " .. showCall(AR.rec.off)) end
-    if #AR.rec.rules == 0 and not AR.rec.on and not AR.rec.off then p("  nothing learned yet") end
-    p("--- CRATE OPENING ---")
-    local function show(v, d)
-        d = d or 0
-        local t = type(v)
-        if t == "string" then return ("%q"):format(v) end
-        if t == "table" then
-            if v.__slot then return "<" .. v.__slot .. ">" end
-            if d > 1 then return "{...}" end
-            local o = {}
-            for k, x in pairs(v) do o[#o + 1] = tostring(k) .. "=" .. show(x, d + 1) end
-            return "{" .. table.concat(o, ",") .. "}"
-        end
-        local ok, cn = pcall(function() return v.ClassName end)
-        if ok and cn then return "<" .. cn .. " " .. relPath(v) .. ">" end
-        return tostring(v)
-    end
-    p("watching CrateAction: " .. tostring(CRATE.oldNC ~= nil) .. "  hookmetamethod=" .. type(hookmetamethod))
-    if CRATE.learned then
-        p("learned (mode " .. tostring(CRATE.learned.mode or "untried") .. "):")
-        for i, c in ipairs(CRATE.learned.seq) do
-            local a = {}
-            for j = 1, c.n do a[j] = show(c.args[j]) end
-            p(("  %d. CrateAction:%s(%s)"):format(i, c.m, table.concat(a, ", ")))
-        end
-    else
-        p("not learned yet - it learns from the next crate that opens")
-    end
-    if CRATE.directOff then p("direct opening is OFF for this session after 3 failures") end
-    if CRATE.lastBad then
-        p("last call that failed:")
-        for i, c in ipairs(CRATE.lastBad.seq) do
-            local a = {}
-            for j = 1, c.n do a[j] = show(c.args[j]) end
-            p(("  %d. CrateAction:%s(%s)"):format(i, c.m, table.concat(a, ", ")))
-        end
-    end
-    p("CrateAction calls seen:")
-    for _, c in ipairs(CRATE.calls or {}) do
-        local a = {}
-        for j = 1, c.n do a[j] = show(c.args[j]) end
-        p(("  %.0fs ago  %s(%s)  [crate=%s]"):format(now() - c.t, c.m, table.concat(a, ", "), tostring(c.crate)))
-    end
-    local cw = CRATE.findWin()
-    if cw and type(getconnections) == "function" then
-        p("how the game wired its crate window buttons (handler counts):")
-        for _, b in ipairs(cw:GetDescendants()) do
-            if b:IsA("GuiButton") then
-                local parts = {}
-                for _, sn in ipairs({ "MouseButton1Click", "MouseButton1Down", "MouseButton1Up", "Activated",
-                    "InputBegan", "InputEnded", "TouchTap" }) do
-                    local ok, cons = pcall(function() return getconnections(b[sn]) end)
-                    local n = (ok and type(cons) == "table") and #cons or -1
-                    if n ~= 0 then parts[#parts + 1] = sn .. "=" .. n end
-                end
-                p(("  %s %s %q: %s"):format(b.ClassName, b.Name, btnWords(b), table.concat(parts, " ")))
-            end
-        end
-    end
-    p(("crate window: %s visible=%s mine=%s yours=%s"):format(cw and relPath(cw) or "not found",
-        tostring(cw and cw.Visible), tostring(CRATE.ours), tostring(CRATE.byYou)))
-    local cp = findCratePrompt()
-    p("crate prompt: " .. (cp and (relPath(cp) .. " [" .. cp.ActionText .. "|" .. cp.ObjectText .. "]") or "none found"))
-    local stand = S.plot and S.plot:FindFirstChild("CrateStand")
-    if stand then
-        local n = 0
-        for _, d in ipairs(stand:GetDescendants()) do
-            n = n + 1
-            if n > 30 then p("  ...") break end
-            local x = ""
-            if d:IsA("ProximityPrompt") then x = (" [%s|%s|on=%s|hold=%.2f]"):format(d.ActionText, d.ObjectText, tostring(d.Enabled), d.HoldDuration) end
-            p("  CrateStand/" .. relPath(d):gsub("^.-CrateStand%.", "") .. " (" .. d.ClassName .. ")" .. x)
-        end
-    else
-        p("  no CrateStand in the plot")
-    end
-    p("enabled prompts in the plot:")
-    if S.plot then
-        for _, d in ipairs(S.plot:GetDescendants()) do
-            if d:IsA("ProximityPrompt") and d.Enabled then
-                p(("  %s [%s|%s] safe=%s"):format(relPath(d), d.ActionText, d.ObjectText, tostring(safePrompt(d))))
-            end
-        end
-    end
-    local gui = plr:FindFirstChildOfClass("PlayerGui")
-    if gui then
-        p("buttons on screen that say open/discard:")
-        for _, g in ipairs(gui:GetDescendants()) do
-            if g:IsA("GuiButton") and onScreen(g) then
-                local w = btnWords(g)
-                if w:find("open", 1, true) or w:find("discard", 1, true) then
-                    p(("  %s %s -> %q"):format(g.ClassName, relPath(g), w))
-                end
-            end
-        end
-    end
-    p("tap tools: getconnections=" .. type(getconnections) .. " firesignal=" .. type(firesignal) .. " VIM=" .. tostring(VIM ~= nil))
-    p("--- CATALOG (" .. CAT.n .. " butters, worst rarity first) ---")
-    for _, r in ipairs(CAT.rarOrder) do
-        local names = {}
-        for _, k in ipairs(CAT.members[r] or {}) do
-            names[#names + 1] = (CFG.Targets[k] and "*" or "") .. prettyOf(k)
-        end
-        p(("  [%s]%s %s"):format(r, LEARN.price[r] and (" crate $" .. fmt(LEARN.price[r])) or "", table.concat(names, ", ")))
-    end
-    p("learned orders: ")
-    for r, o in pairs(LEARN.order) do p("  " .. r .. ": " .. table.concat(o, ", ")) end
-    p("--- PLOT ---")
-    p("plot=" .. (S.plot and S.plot:GetFullName() or "none"))
-    if S.plot then
-        for _, ch in ipairs(S.plot:GetChildren()) do
-            p(("  %s %s (%d)"):format(ch.ClassName, ch.Name, #ch:GetChildren()))
-        end
-        local free, total = freeCount()
-        p(("stations free %d / %d"):format(free, total))
-        local bp = buyPrompt()
-        p("BuyPrompt: " .. (bp and ("enabled=" .. tostring(bp.Enabled) .. " hold=" .. bp.HoldDuration) or "MISSING"))
-    end
-    p("autostart=" .. tostring(CFG.AutoStart) .. " rejoin=" .. tostring(CFG.Rejoin))
-    p(("config=%s autoload=%s selfPath=%s hidden=%s"):format(tostring(S.config), tostring(S.autoload),
-        tostring(S.selfPath), tostring(S.hidden)))
-    p("file tools: writefile=" .. type(writefile) .. " listfiles=" .. type(listfiles) ..
-        " queueonteleport=" .. type(queueonteleport) .. " configs=" .. #listConfigs())
-    p("--- COLLECT PAD ---")
-    p("manual=" .. tostring(S.manualPad ~= nil) .. " auto=" .. (S.padPart and relPath(S.padPart) or "none"))
-    p("--- ATTRIBUTES ---")
-    for _, k in ipairs({ "SquishyEquipped", "AutoRollOn", "AutoRollRules", "AutoRollStop", "BestRarity", "PlotNumber", "WaxStations", "IndexRows" }) do
-        p(("  %s = %s"):format(k, tostring(plr:GetAttribute(k))))
-    end
-    p("--- EVENTS ---")
-    for i = math.max(1, #evAll - 15), #evAll do p("  " .. evAll[i]) end
-    p("--- LOG ---")
-    for i = math.max(1, #logAll - 25), #logAll do p("  " .. logAll[i]) end
-    return table.concat(L, "\n")
-end
-
 
 -- a config marked "load on launch" is applied before the window is built, so it opens where you left it
 do
@@ -2788,23 +2596,14 @@ U.arT = button(rw, "AUTO ROLL: OFF", C.panel2, 11, at(0, 0.5))
 U.arL = lbl(rw, "", 9, C.dim, false, at(0.52, 0.48))
 caption("TOOLS")
 rw = row(30)
-U.buyB = button(rw, "BUY", C.warn, 10, at(0, 0.2))
-U.plB = button(rw, "WAX", C.good, 10, at(0.2, 0.2))
-U.dumpB = button(rw, "DUMP", C.accent, 10, at(0.4, 0.2))
-U.copyB = button(rw, "COPY", C.panel2, 10, at(0.6, 0.2))
-U.linkB = button(rw, "LINK", C.good, 10, at(0.8, 0.2))
+U.buyB = button(rw, "BUY", C.warn, 10, at(0, 0.5))
+U.plB = button(rw, "WAX", C.good, 10, at(0.5, 0.5))
 caption("LOG")
 U.log = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
     TextSize = 10, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
     TextWrapped = true, Text = "" }, row(84))
 round(U.log, 6)
 mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 4), PaddingRight = UDim.new(0, 6) }, U.log)
-caption("OUTPUT  (DUMP result)")
-U.out = mk("TextBox", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
-    TextSize = 9, TextColor3 = Color3.fromRGB(190, 205, 170), TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, MultiLine = true, ClearTextOnFocus = false,
-    Text = "DUMP output appears here. Tap COPY to put it on the clipboard." }, row(110))
-round(U.out, 6)
 U.farm.CanvasSize = UDim2.new(0, 0, 0, total)
 
 -- ---- SETUP tab
@@ -3250,24 +3049,6 @@ local function applyInterval()
     CFG.Every, S.lastCollect = n, now()
     note("collect every " .. n .. "s")
 end
-local function clip(txt)
-    local sc = setclipboard or toclipboard
-    return type(sc) == "function" and pcall(sc, txt)
-end
-local function copyOut()
-    local txt = lastDump ~= "" and lastDump or (S.reason .. "\n" .. table.concat(logAll, "\n"))
-    if clip(txt) then note("copied " .. #txt .. " chars") return end
-    U.out.Text = txt
-    pcall(function() U.out:CaptureFocus() end)
-    note("no clipboard here - select the text in OUTPUT")
-end
-local function doDump()
-    local ok, r = pcall(dump)
-    lastDump = ok and r or ("DUMP ERROR " .. tostring(r))
-    local copied = clip(lastDump)
-    U.out.Text = (copied and #lastDump > 7000) and (lastDump:sub(1, 7000) .. "\n... (full text is on your clipboard)") or lastDump
-    note("DUMP " .. #lastDump .. " chars" .. (copied and ", copied" or ""))
-end
 local function click(b, fn) track(b.MouseButton1Click:Connect(fn)) end
 click(U.secSet, applyInterval)
 track(U.secB.FocusLost:Connect(applyInterval))
@@ -3311,32 +3092,6 @@ end)
 click(U.plB, function()
     S.plot = findPlot() or S.plot
     task.spawn(runAction, "waxing (manual)...", doPlace)
-end)
-click(U.dumpB, doDump)
-click(U.copyB, copyOut)
-click(U.linkB, function()
-    task.spawn(function()
-        local ok0, r0 = pcall(dump)
-        lastDump = ok0 and r0 or lastDump
-        if lastDump == "" then lastDump = "(empty dump)" end
-        local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
-            or (syn and syn.request) or (http and http.request)
-        if type(req) ~= "function" then U.out.Text = "this executor cannot upload - use COPY instead" return end
-        U.out.Text = "uploading..."
-        local ok, res = pcall(req, { Url = "https://paste.rs/", Method = "POST",
-            Headers = { ["Content-Type"] = "text/plain" }, Body = lastDump })
-        local code = ok and type(res) == "table" and (res.StatusCode or res.status_code) or 0
-        local body = ok and type(res) == "table" and (res.Body or res.body) or ""
-        local url = (code >= 200 and code < 300) and tostring(body):match("https?://[%w%./%-_]+") or nil
-        if not url then
-            U.out.Text = "upload failed (" .. tostring(code) .. ") - use COPY instead"
-            note("LINK failed")
-            return
-        end
-        local copied = clip(url)
-        U.out.Text = "SEND THIS LINK TO CLAUDE:\n" .. url .. (copied and "\n(copied)" or "")
-        note("dump uploaded" .. (copied and ", link copied" or ""))
-    end)
 end)
 click(U.tabFarm, function() showTab("farm") end)
 click(U.tabBut, function() showTab("but") end)
@@ -3537,7 +3292,8 @@ local function refresh()
         learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or "")
     U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim
 end
-genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, dump = dump, CAT = CAT, LEARN = LEARN, buildList = buildList,
+genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
+    logAll = logAll, evAll = evAll, AR = AR, CR = CR,
     PX = PX, TM = TM, CRATE = CRATE }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end

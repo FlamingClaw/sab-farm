@@ -1,142 +1,142 @@
-local bQ="v25"local jY=game:GetService("Players")local C=jY.LocalPlayer or jY.PlayerAdded:Wait()local function gb(qt)
-pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{Title="SAB "..bQ,Text=qt,Duration=6})
-end)end gb("script started")local function qu()local az=game:GetService("ReplicatedStorage")local aG=game:GetService("Workspace")
-local jZ=game:GetService("UserInputService")local bR=(type(getgenv)=="function"and getgenv())or _G if type(bR.SAB_KILL)=="function"then pcall(bR.SAB_KILL)end
-local r=(type(tick)=="function")and tick or os.clock local gc=(function()local qv,qw=pcall(function()return game:GetService("VirtualUser")end)return qv and qw or nil end)()
+local bV="v25"local ki=game:GetService("Players")local F=ki.LocalPlayer or ki.PlayerAdded:Wait()local function gm(q3)
+pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{Title="SAB "..bV,Text=q3,Duration=6})
+end)end gm("script started")local function q4()local ao=game:GetService("ReplicatedStorage")local aC=game:GetService("Workspace")
+local kj=game:GetService("UserInputService")local bW=(type(getgenv)=="function"and getgenv())or _G if type(bW.SAB_KILL)=="function"then pcall(bW.SAB_KILL)end
+local q=(type(tick)=="function")and tick or os.clock local gn=(function()local q5,q6=pcall(function()return game:GetService("VirtualUser")end)return q5 and q6 or nil end)()
 local e={Targets={applepie=true},Collect=true,Every=60,SellJunk=true,Crates=true,CrateTicks={picniccrate=true},
 Rejoin=true,AutoStart=true,AutoRoll=false,ARrules="",ARstop="",Confirm=0.35,BuyGap=1.2,PlaceTries=3,PadDwell=0.7,
 PetBuy=false,PetWish=false,Pets={},AutoFuse=false,AutoBuild=false,Teams=false,TeamNormal="",TeamFull="",TeamGlaze="",TeamWax="",GlazeLead=45,
-Lite=false,HideHud=false,NoRender=false,FpsCap=0,MemLimit=2000,}local a={alive=true,running=false,busy=false,busyText="",holding=false,
+Lite=false,HideHud=false,NoRender=false,FpsCap=0,MemLimit=2000,Help=false,HelpGuild=false,}local c={alive=true,running=false,busy=false,busyText="",holding=false,
 bought=0,placed=0,collected=0,sold=0,rolls=0,gifts=0,placeFails=0,cashFails=0,sellFails=0,capHit=false,capMsg="",uiErrs=0,lastBuyAt=0,lastCollect=0,noCashUntil=0,
-matchSince=nil,boot=r(),plot=nil,reason="starting",level="wait",lastCarryDesc="",padSearchAt=-100,padPart=nil,padCands={},manualPad=nil,
+matchSince=nil,boot=q(),plot=nil,reason="starting",level="wait",lastCarryDesc="",padSearchAt=-100,padPart=nil,padCands={},manualPad=nil,
 sellSpot=nil,sellSearchAt=-100,noSellSpot=false,catAt=0,crates=0,crateFails=0,tapWay=nil,capAt=0,carrySrc=nil,carryBlind=0,attrStale=0,
-config="default",autoload=nil,selfPath=nil,rejoining=false,winPos=nil,togPos=nil,hidden=false,}local J={name=nil,rar=nil,at=r(),seq=0,init=nil,initAt=0,gift=nil,giftAt=0}
-local y={rec={rules={}},replaying=false,busy=false,msg="",lastCheck=0}local d={on=false,waiting=false,data=nil,at=0,title="crate",lastFail=0,
+config="default",autoload=nil,selfPath=nil,rejoining=false,winPos=nil,togPos=nil,hidden=false,}local N={name=nil,rar=nil,at=q(),seq=0,init=nil,initAt=0,gift=nil,giftAt=0}
+local z={rec={rules={}},replaying=false,busy=false,msg="",lastCheck=0}local d={on=false,waiting=false,data=nil,at=0,title="crate",lastFail=0,
 rolled=nil,rolledAt=0,prompt=nil,summonFails=0,ignoreUntil=0,scanAt=0,ours=false,byYou=false,openedAt=0,win=nil}
-local j,o,q,x={},{},{},{}local gd={}local ge,dY,cs,ct={},{},{},{}local function O(j0)ge[#ge+1]=j0 return j0 end
-local function ag(qx)task.wait(qx)if not a.alive then error(gd,0)end end local function u(dZ)dZ=os.date("%H:%M:%S").." "..tostring(dZ)
-table.insert(dY,1,dZ)if#dY>6 then table.remove(dY)end cs[#cs+1]=dZ if#cs>80 then table.remove(cs,1)end end local function d0(j1)
-if type(j1)~="string"then return""end return(j1:lower():gsub("[^%w]",""))end local function Q(qy)local j2=d0(qy)
-local gf=j2:gsub("butter$","")if gf==""then gf=j2 end return gf end local function aN(gg)return type(gg)=="string"and Q(gg)~=""and e.Targets[Q(gg)]==true end
-local function qz(cu)cu=cu:lower()return cu:find("squishy",1,true)~=nil or cu:match("butter$")~=nil or cu:match("butter[^%a]")~=nil
-end local gh={"","K","M","B","T","Qa","Qi","Sx","Sp","Oc","No","Dc"}local function au(cv)if type(cv)~="number"then return"?"end
-local d1=1 while math.abs(cv)>=1000 and d1<#gh do cv=cv/1000 d1=d1+1 end local qA=string.format("%.2f",cv):gsub("%.?0+$","")
-return qA..gh[d1]end local function qB(j3)if type(j3)~="string"then return nil end local qC,j4=j3:gsub(",",""):match("([%d%.]+)%s*(%a*)")
-local gi=tonumber(qC)if not gi then return nil end if j4==""then return gi end for qD,qE in ipairs(gh)do if qE:lower()==j4:lower()then return gi*1000^(qD-1)end end
-return nil end local function aO()local j5=C:GetAttribute("BoardValueMoney")if type(j5)=="number"then return j5 end
-local j6=C:FindFirstChild("leaderstats")if j6 then for xH,qF in ipairs({"Cash","Money","Coins"})do local gj=j6:FindFirstChild(qF)
-if gj and type(gj.Value)=="number"then return gj.Value end end end end local function d2(qG)local gk=qG:GetFullName()
-if a.plot then local gl=a.plot:GetFullName()if gk:sub(1,#gl)==gl then return gk:sub(#gl+2)end end return gk end
-local function aP()local d3=C.Character if d3 and d3:FindFirstChild("HumanoidRootPart")then local j7=d3:FindFirstChildOfClass("Humanoid")
-if j7 and j7 .Health>0 then return d3 end end end local function a3()local gm=aG:FindFirstChild("Plots")if not gm then return nil end
-local function j8(qH)local j9=qH:FindFirstChild("Plate")return j9~=nil and j9:FindFirstChild("EditStackAttachment",true)~=nil
-end local j_=C:GetAttribute("PlotNumber")if j_~=nil then local gn=gm:FindFirstChild(tostring(j_))if gn and j8(gn)then return gn end
-end for xI,ka in ipairs(gm:GetChildren())do if j8(ka)then return ka end end end local function cw(kb)local a4=kb and kb.Parent
-for xJ=1,6 do if not a4 then return nil end if a4:IsA("BasePart")then return a4 end if a4:IsA("Model")then return a4 .PrimaryPart or a4:FindFirstChildWhichIsA("BasePart",true)end
-a4=a4 .Parent end end local function kc(kd)local go=kd.Parent if go and go:IsA("Attachment")then return go.WorldPosition end
-local ke=cw(kd)return ke and ke.Position end local function qI()local bS=a.plot and a.plot:FindFirstChild("Plate")
-if not bS then return nil end if bS:IsA("BasePart")then return bS.Position end if bS:IsA("Model")then return bS:GetPivot().Position end
-local kf=bS:FindFirstChildWhichIsA("BasePart",true)return kf and kf.Position end local function kg()local gp={}
-local kh=a.plot and a.plot:FindFirstChild("WaxStations")if kh then for xK,qJ in ipairs(kh:GetChildren())do local ki=qJ:FindFirstChild("SquishyPlaceHolder")
-local gq=ki and ki:FindFirstChild("PlacePrompt")if gq and gq:IsA("ProximityPrompt")then gp[#gp+1]=gq end end end
-return gp end local function d4()local kj,gr=kg(),0 for xL,qK in ipairs(kj)do if qK.Enabled then gr=gr+1 end end
-local gs=#kj local gt=C:GetAttribute("WaxStations")if type(gt)=="number"and gt>gs then gs=gt end return gr,gs
-end local function qL()local kk=aP()local kl=kk and kk.HumanoidRootPart.Position local gu,km for xM,gv in ipairs(kg())do
-if gv.Enabled then local kn=kc(gv)local ko=(kn and kl)and(kn-kl).Magnitude or 1e9 if not gu or ko<km then gu,km=gv,ko end
-end end return gu end local function kp()local d5=a.plot and a.plot:FindFirstChild("RolledSquishyPlaceHolder")
-if not d5 then return nil end local kq=d5:FindFirstChild("BuyPromptAttachment")local d6=(kq and kq:FindFirstChild("BuyPrompt"))or d5:FindFirstChild("BuyPrompt",true)
-if d6 and d6:IsA("ProximityPrompt")and d6:IsDescendantOf(d5)then return d6 end end local kr={"Common","Rare","Epic","Legendary","Mythic","Celestial","Divine","Dream","Sugar Rush","Picnic"}
-local qM={["Sugar Rush"]={"CherryButter","StrawberryCrepeButter","CreamPuffButter","CheesecakeButter","TiramisuButter"},
+local j,o,r,y,A={},{},{},{},{}local go={}local gp,d8,cA,cB={},{},{},{}local function P(kk)gp[#gp+1]=kk return kk end
+local function af(q7)task.wait(q7)if not c.alive then error(go,0)end end local function x(d9)d9=os.date("%H:%M:%S").." "..tostring(d9)
+table.insert(d8,1,d9)if#d8>6 then table.remove(d8)end cA[#cA+1]=d9 if#cA>80 then table.remove(cA,1)end end local function d_(kl)
+if type(kl)~="string"then return""end return(kl:lower():gsub("[^%w]",""))end local function V(q8)local km=d_(q8)
+local gq=km:gsub("butter$","")if gq==""then gq=km end return gq end local function aQ(gr)return type(gr)=="string"and V(gr)~=""and e.Targets[V(gr)]==true end
+local function q9(cC)cC=cC:lower()return cC:find("squishy",1,true)~=nil or cC:match("butter$")~=nil or cC:match("butter[^%a]")~=nil
+end local gs={"","K","M","B","T","Qa","Qi","Sx","Sp","Oc","No","Dc"}local function ay(cD)if type(cD)~="number"then return"?"end
+local ea=1 while math.abs(cD)>=1000 and ea<#gs do cD=cD/1000 ea=ea+1 end local q_=string.format("%.2f",cD):gsub("%.?0+$","")
+return q_..gs[ea]end local function ra(kn)if type(kn)~="string"then return nil end local rb,ko=kn:gsub(",",""):match("([%d%.]+)%s*(%a*)")
+local gt=tonumber(rb)if not gt then return nil end if ko==""then return gt end for rc,rd in ipairs(gs)do if rd:lower()==ko:lower()then return gt*1000^(rc-1)end end
+return nil end local function aR()local kp=F:GetAttribute("BoardValueMoney")if type(kp)=="number"then return kp end
+local kq=F:FindFirstChild("leaderstats")if kq then for ys,re in ipairs({"Cash","Money","Coins"})do local gu=kq:FindFirstChild(re)
+if gu and type(gu.Value)=="number"then return gu.Value end end end end local function eb(rf)local gv=rf:GetFullName()
+if c.plot then local gw=c.plot:GetFullName()if gv:sub(1,#gw)==gw then return gv:sub(#gw+2)end end return gv end
+local function aD()local ec=F.Character if ec and ec:FindFirstChild("HumanoidRootPart")then local kr=ec:FindFirstChildOfClass("Humanoid")
+if kr and kr.Health>0 then return ec end end end local function a7()local gx=aC:FindFirstChild("Plots")if not gx then return nil end
+local function ks(rg)local kt=rg:FindFirstChild("Plate")return kt~=nil and kt:FindFirstChild("EditStackAttachment",true)~=nil
+end local ku=F:GetAttribute("PlotNumber")if ku~=nil then local gy=gx:FindFirstChild(tostring(ku))if gy and ks(gy)then return gy end
+end for yt,kv in ipairs(gx:GetChildren())do if ks(kv)then return kv end end end local function cE(kw)local a8=kw and kw.Parent
+for yu=1,6 do if not a8 then return nil end if a8:IsA("BasePart")then return a8 end if a8:IsA("Model")then return a8 .PrimaryPart or a8:FindFirstChildWhichIsA("BasePart",true)end
+a8=a8 .Parent end end local function kx(ky)local gz=ky.Parent if gz and gz:IsA("Attachment")then return gz.WorldPosition end
+local kz=cE(ky)return kz and kz.Position end local function rh()local bX=c.plot and c.plot:FindFirstChild("Plate")
+if not bX then return nil end if bX:IsA("BasePart")then return bX.Position end if bX:IsA("Model")then return bX:GetPivot().Position end
+local kA=bX:FindFirstChildWhichIsA("BasePart",true)return kA and kA.Position end local function kB()local gA={}
+local kC=c.plot and c.plot:FindFirstChild("WaxStations")if kC then for yv,ri in ipairs(kC:GetChildren())do local kD=ri:FindFirstChild("SquishyPlaceHolder")
+local gB=kD and kD:FindFirstChild("PlacePrompt")if gB and gB:IsA("ProximityPrompt")then gA[#gA+1]=gB end end end
+return gA end local function ed()local kE,gC=kB(),0 for yw,rj in ipairs(kE)do if rj.Enabled then gC=gC+1 end end
+local gD=#kE local gE=F:GetAttribute("WaxStations")if type(gE)=="number"and gE>gD then gD=gE end return gC,gD
+end local function rk()local kF=aD()local kG=kF and kF.HumanoidRootPart.Position local gF,kH for yx,gG in ipairs(kB())do
+if gG.Enabled then local kI=kx(gG)local kJ=(kI and kG)and(kI-kG).Magnitude or 1e9 if not gF or kJ<kH then gF,kH=gG,kJ end
+end end return gF end local function kK()local ee=c.plot and c.plot:FindFirstChild("RolledSquishyPlaceHolder")
+if not ee then return nil end local kL=ee:FindFirstChild("BuyPromptAttachment")local ef=(kL and kL:FindFirstChild("BuyPrompt"))or ee:FindFirstChild("BuyPrompt",true)
+if ef and ef:IsA("ProximityPrompt")and ef:IsDescendantOf(ee)then return ef end end local kM={"Common","Rare","Epic","Legendary","Mythic","Celestial","Divine","Dream","Sugar Rush","Picnic"}
+local rl={["Sugar Rush"]={"CherryButter","StrawberryCrepeButter","CreamPuffButter","CheesecakeButter","TiramisuButter"},
 ["Picnic"]={"CantaloupeButter","CinnamonRollButter","StrawberryShortcakeButter","BreakfastButter","ApplePieButter"},
-}local V={order={},price={},dirty=false}local E={seen={},at=0,boxes={},built=0}local M={rar={},pretty={},members={},rarOrder={},n=0,at=0}
-local gw="SAB_order.txt"local function d7()if not V.dirty or type(writefile)~="function"then return end local an={}
-for qN,qO in pairs(V.price)do an[#an+1]="P|"..qN.."|"..string.format("%.0f",qO)end for qP,qQ in pairs(V.order)do an[#an+1]="O|"..qP.."|"..table.concat(qQ,",")end
-if d.learned and d.enc then an[#an+1]="M|mode|"..tostring(d.learned.mode or"")for qR,d8 in ipairs(d.learned.seq)do
-local ks={}for kt=1,d8 .n do ks[kt]=d.enc(d8 .args[kt])end an[#an+1]=("A|%d|%s|%d|%s"):format(qR,d8 .m,d8 .n,table.concat(ks,";"))
-end end local function gx(qS,qT,d9)local ku={}for kv=1,d9 .n do ku[kv]=d.enc(d9 .args[kv])end an[#an+1]=("R|%d|%s|%s|%d|%s"):format(qT,qS,d9 .m,d9 .n,table.concat(ku,";"))
-end if d.enc then for qU,qV in ipairs(y.rec.rules)do gx("rules",qU,qV)end if y.rec.on then gx("on",0,y.rec.on)end
-if y.rec.off then gx("off",0,y.rec.off)end end for xN,cx in pairs(E.seen)do an[#an+1]=("K|%s|%s|%s|%s"):format(cx.name,cx.title or"",cx.rar or"",cx.price and string.format("%.0f",cx.price)or"")
-end if pcall(writefile,gw,table.concat(an,"\n"))then V.dirty=false end end local function qW()if type(isfile)~="function"or type(readfile)~="function"then return end
-local qX,qY=pcall(isfile,gw)if not(qX and qY)then return end local qZ,kw=pcall(readfile,gw)if not(qZ and type(kw)=="string")then return end
-for q0 in kw:gmatch("[^\n]+")do local bT,bU,aQ=q0:match("^(%a)|([^|]+)|(.*)$")if bT=="P"then V.price[bU]=tonumber(aQ)
-elseif bT=="M"then d.loadMode=(aQ~=""and aQ~="nil")and aQ or nil elseif bT=="A"and d.dec then local kx=tonumber(bU)
-local ky,d_,q1=aQ:match("^([^|]+)|(%d+)|(.*)$")if kx and ky then d_=tonumber(d_)local kz,ea={},0 for q2 in(q1 ..";"):gmatch("([^;]*);")do
-ea=ea+1 if ea<=d_ then kz[ea]=d.dec(q2)end end d.loadSeq=d.loadSeq or{}d.loadSeq[kx]={m=ky,n=d_,args=kz}end elseif bT=="R"and d.dec then
-local kA=tonumber(bU)local eb,q3,ec,q4=aQ:match("^([^|]+)|([^|]+)|(%d+)|(.*)$")if kA and eb then ec=tonumber(ec)
-local kB,ed={},0 for q5 in(q4 ..";"):gmatch("([^;]*);")do ed=ed+1 if ed<=ec then kB[ed]=d.dec(q5)end end local gy={m=q3,n=ec,args=kB}
-if eb=="rules"then y.rec.rules[kA]=gy elseif eb=="on"then y.rec.on=gy elseif eb=="off"then y.rec.off=gy end end
-elseif bT=="K"then local kC,kD,q6=aQ:match("^([^|]*)|([^|]*)|(.*)$")E.seen[E.key(bU)]={name=bU,title=kC~=""and kC or nil,
-rar=kD~=""and kD or nil,price=tonumber(q6)}elseif bT=="O"and aQ~=""then local ee={}for q7 in aQ:gmatch("[^,]+")do ee[#ee+1]=q7 end
-if#ee>0 then V.order[bU]=ee end end end end local function q8(ef)if type(ef)~="table"then return end local bp,kE=ef.rarity,ef.contents
-if type(bp)~="string"or bp==""or type(kE)~="table"then return end local cy={}for xO,eg in ipairs(kE)do if type(eg)=="table"and type(eg.butter)=="string"then
-cy[#cy+1]={n=eg.butter,ch=tonumber(eg.chance)or 0}end end if#cy==0 then return end table.sort(cy,function(q9,q_)return q9 .ch>q_.ch end)
-local cz,cA={},false for ra,rb in ipairs(cy)do cz[ra]=rb.n end local gz=V.order[bp]if not gz or#gz~=#cz then cA=true end
-if not cA then for kF=1,#cz do if gz[kF]~=cz[kF]then cA=true break end end end V.order[bp]=cz local gA=tonumber(ef.price)
-if gA and V.price[bp]~=gA then V.price[bp]=gA cA=true end if cA then V.dirty=true M.at=0 u("learned the "..bp.." order from its crate")
-end end local function bV(rc,rd)local re=rc:FindFirstChild(rd,true)local rf,gB=pcall(function()return re.Text end)
-return(rf and type(gB)=="string"and gB~="")and gB or nil end local function aa(kG)return M.pretty[kG]or kG end
-E.base={{"SnackCrate","Snack Crate","Common"},{"BerryCrate","Berry Crate","Rare"},{"BakeryCrate","Bakery Crate","Epic"},{"GourmetCrate","Gourmet Crate","Legendary"},
+}local aa={order={},price={},dirty=false}local H={seen={},at=0,boxes={},built=0}local Q={rar={},pretty={},members={},rarOrder={},n=0,at=0}
+local gH="SAB_order.txt"local function eg()if not aa.dirty or type(writefile)~="function"then return end local as={}
+for rm,rn in pairs(aa.price)do as[#as+1]="P|"..rm.."|"..string.format("%.0f",rn)end for ro,rp in pairs(aa.order)do as[#as+1]="O|"..ro.."|"..table.concat(rp,",")end
+if d.learned and d.enc then as[#as+1]="M|mode|"..tostring(d.learned.mode or"")for rq,eh in ipairs(d.learned.seq)do
+local kN={}for kO=1,eh.n do kN[kO]=d.enc(eh.args[kO])end as[#as+1]=("A|%d|%s|%d|%s"):format(rq,eh.m,eh.n,table.concat(kN,";"))
+end end local function gI(rr,rs,ei)local kP={}for kQ=1,ei.n do kP[kQ]=d.enc(ei.args[kQ])end as[#as+1]=("R|%d|%s|%s|%d|%s"):format(rs,rr,ei.m,ei.n,table.concat(kP,";"))
+end if d.enc then for rt,ru in ipairs(z.rec.rules)do gI("rules",rt,ru)end if z.rec.on then gI("on",0,z.rec.on)end
+if z.rec.off then gI("off",0,z.rec.off)end end for yy,cF in pairs(H.seen)do as[#as+1]=("K|%s|%s|%s|%s"):format(cF.name,cF.title or"",cF.rar or"",cF.price and string.format("%.0f",cF.price)or"")
+end if pcall(writefile,gH,table.concat(as,"\n"))then aa.dirty=false end end local function rv()if type(isfile)~="function"or type(readfile)~="function"then return end
+local rw,rx=pcall(isfile,gH)if not(rw and rx)then return end local ry,kR=pcall(readfile,gH)if not(ry and type(kR)=="string")then return end
+for rz in kR:gmatch("[^\n]+")do local bY,bZ,aS=rz:match("^(%a)|([^|]+)|(.*)$")if bY=="P"then aa.price[bZ]=tonumber(aS)
+elseif bY=="M"then d.loadMode=(aS~=""and aS~="nil")and aS or nil elseif bY=="A"and d.dec then local kS=tonumber(bZ)
+local kT,ej,rA=aS:match("^([^|]+)|(%d+)|(.*)$")if kS and kT then ej=tonumber(ej)local kU,ek={},0 for rB in(rA..";"):gmatch("([^;]*);")do
+ek=ek+1 if ek<=ej then kU[ek]=d.dec(rB)end end d.loadSeq=d.loadSeq or{}d.loadSeq[kS]={m=kT,n=ej,args=kU}end elseif bY=="R"and d.dec then
+local kV=tonumber(bZ)local el,rC,em,rD=aS:match("^([^|]+)|([^|]+)|(%d+)|(.*)$")if kV and el then em=tonumber(em)
+local kW,en={},0 for rE in(rD..";"):gmatch("([^;]*);")do en=en+1 if en<=em then kW[en]=d.dec(rE)end end local gJ={m=rC,n=em,args=kW}
+if el=="rules"then z.rec.rules[kV]=gJ elseif el=="on"then z.rec.on=gJ elseif el=="off"then z.rec.off=gJ end end
+elseif bY=="K"then local kX,kY,rF=aS:match("^([^|]*)|([^|]*)|(.*)$")H.seen[H.key(bZ)]={name=bZ,title=kX~=""and kX or nil,
+rar=kY~=""and kY or nil,price=tonumber(rF)}elseif bY=="O"and aS~=""then local eo={}for rG in aS:gmatch("[^,]+")do eo[#eo+1]=rG end
+if#eo>0 then aa.order[bZ]=eo end end end end local function rH(ep)if type(ep)~="table"then return end local bv,kZ=ep.rarity,ep.contents
+if type(bv)~="string"or bv==""or type(kZ)~="table"then return end local cG={}for yz,eq in ipairs(kZ)do if type(eq)=="table"and type(eq.butter)=="string"then
+cG[#cG+1]={n=eq.butter,ch=tonumber(eq.chance)or 0}end end if#cG==0 then return end table.sort(cG,function(rI,rJ)return rI.ch>rJ.ch end)
+local cH,cI={},false for rK,rL in ipairs(cG)do cH[rK]=rL.n end local gK=aa.order[bv]if not gK or#gK~=#cH then cI=true end
+if not cI then for k0=1,#cH do if gK[k0]~=cH[k0]then cI=true break end end end aa.order[bv]=cH local gL=tonumber(ep.price)
+if gL and aa.price[bv]~=gL then aa.price[bv]=gL cI=true end if cI then aa.dirty=true Q.at=0 x("learned the "..bv.." order from its crate")
+end end local function b0(rM,rN)local rO=rM:FindFirstChild(rN,true)local rP,gM=pcall(function()return rO.Text end)
+return(rP and type(gM)=="string"and gM~="")and gM or nil end local function ac(k1)return Q.pretty[k1]or k1 end
+H.base={{"SnackCrate","Snack Crate","Common"},{"BerryCrate","Berry Crate","Rare"},{"BakeryCrate","Bakery Crate","Epic"},{"GourmetCrate","Gourmet Crate","Legendary"},
 {"RoyalCrate","Royal Crate","Mythic"},{"CelestialCrate","Celestial Crate","Celestial"},{"DivineCrate","Divine Crate","Divine"},{"DreamCrate","Dream Crate","Dream"},
-{"SugarRushCrate","Sugar Rush Crate","Sugar Rush"},{"PicnicCrate","Picnic Crate","Picnic"}}function E.key(rg)return d0(rg or"")end
-function E.learn(aR)if type(aR)~="table"or type(aR.name)~="string"then return end local gC=E.key(aR.name)local aS=E.seen[gC]or{}
-local rh=(E.seen[gC]==nil)or(tonumber(aR.price)and aS.price~=tonumber(aR.price))aS.name,aS.title=aR.name,aR.title or aS.title
-aS.rar,aS.price=aR.rarity or aS.rar,tonumber(aR.price)or aS.price E.seen[gC]=aS if rh then E.at,V.dirty=r(),true end
-end function E.wanted(kH)return kH~=nil and e.CrateTicks[E.key(kH)]==true end function E.list()local bW={}for ri,eh in ipairs(E.base)do bW[E.key(eh[1])]={name=eh[1],title=eh[2],rar=eh[3],i=ri}end
-for xP,cB in ipairs(M.rarOrder)do local kI=false for xQ,rj in pairs(bW)do if rj.rar==cB then kI=true break end end
-if not kI and cB~="?"then local kJ=cB:gsub("[^%w]","").."Crate"bW[E.key(kJ)]={name=kJ,title=cB.." Crate",rar=cB,i=50,guess=true}
-end end for kK,ei in pairs(E.seen)do local aH=bW[kK]or{i=100}aH.name,aH.title,aH.rar=ei.name or aH.name,ei.title or aH.title,ei.rar or aH.rar
-aH.price,aH.guess=ei.price or aH.price,nil bW[kK]=aH end local cC,ej={},{}for rk,rl in ipairs(kr)do cC[rl]=rk end
-for rm,kL in ipairs(M.rarOrder)do cC[kL]=cC[kL]or(20+rm)end for rn,cD in pairs(bW)do cD.k=rn cD.price=cD.price or V.price[cD.rar or""]
-ej[#ej+1]=cD end table.sort(ej,function(bq,br)if bq.price and br.price and bq.price~=br.price then return bq.price<br.price end
-local kM,kN=cC[bq.rar or""]or 99,cC[br.rar or""]or 99 if kM~=kN then return kM<kN end if(bq.i or 100)~=(br.i or 100)then return(bq.i or 100)<(br.i or 100)end
-return bq.k<br.k end)return ej end local function ro()local kO=az:FindFirstChild("Assets")local kP=kO and kO:FindFirstChild("Squishies")
-if not kP then return false end local gD,kQ,bX={},{},{}local ek=0 for xR,el in ipairs(kP:GetChildren())do local cE=Q(el.Name)
-if cE~=""and not gD[cE]then local em=bV(el,"RarityText")or"?"gD[cE]=em kQ[cE]=bV(el,"NameText")or el.Name bX[em]=bX[em]or{}
-table.insert(bX[em],cE)ek=ek+1 end end if ek==0 then return false end for kR,rp in pairs(bX)do local kS=V.order[kR]or qM[kR]
-local gE={}if kS then for rq,rr in ipairs(kS)do gE[Q(rr)]=rq end end table.sort(rp,function(kT,kU)local gF,gG=gE[kT],gE[kU]
-if gF and gG then return gF<gG end if gF then return true end if gG then return false end return aa(kT)<aa(kU)
-end)end local gH={}for rs,rt in ipairs(kr)do gH[rt]=rs end local en={}for ru in pairs(bX)do en[#en+1]=ru end table.sort(en,function(gI,gJ)
-local gK,gL=V.price[gI],V.price[gJ]if gK and gL and gK~=gL then return gK<gL end local gM,gN=gH[gI],gH[gJ]if gM and gN then return gM<gN end
-if gM then return true end if gN then return false end return gI<gJ end)M.rar,M.pretty,M.members,M.rarOrder,M.n,M.at=gD,kQ,bX,en,ek,r()
-return true end local function gO()if M.at==0 or(r()-M.at)>120 then pcall(ro)end return M.n>0 end local function rv(rw)
-local kV=Q(rw)return M.rar[kV]or(J.name and Q(J.name)==kV and J.rar)or"?"end local function rx()local eo={}for ry,rz in pairs(e.Targets)do if rz then eo[#eo+1]=aa(ry)end end
-table.sort(eo)return eo end local W={dir="SAB",cfg="SAB/configs",auto="SAB/autoload.txt",exec="autoexec/SAB_autoload.lua"}
-local function kW()return type(writefile)=="function"and type(readfile)=="function"and type(isfile)=="function"end
-local function ep(kX)if type(makefolder)~="function"then return end local rA,rB=pcall(isfolder,kX)if not(rA and rB)then pcall(makefolder,kX)end
-end local function eq(kY)if type(isfile)~="function"or type(readfile)~="function"then return nil end local rC,rD=pcall(isfile,kY)
-if not(rC and rD)then return nil end local rE,rF=pcall(readfile,kY)return rE and rF or nil end local function cF(rG,rH)
-if type(writefile)~="function"then return false end return(pcall(writefile,rG,rH))end local function kZ(rI)local cG={}
-if type(listfiles)~="function"then return cG end local rJ,k0=pcall(listfiles,rI)if not rJ or type(k0)~="table"then return cG end
-for xS,rK in ipairs(k0)do cG[#cG+1]=tostring(rK)end return cG end local function k1()local er={}for xT,rL in ipairs(kZ(W.cfg))do
-local k2=rL:match("([^/\\]+)%.txt$")if k2 then er[#er+1]=k2 end end table.sort(er)return er end local function rM()
-local L={"V|1"}L[#L+1]="N|Every|"..tostring(e.Every)L[#L+1]="N|GlazeLead|"..tostring(e.GlazeLead)L[#L+1]="N|FpsCap|"..tostring(e.FpsCap)
-L[#L+1]="N|MemLimit|"..tostring(e.MemLimit)for xU,k3 in ipairs({"TeamNormal","TeamFull","TeamGlaze","TeamWax"})do L[#L+1]="S|"..k3 .."|"..e[k3]end
-do local es={}for rN,cH in pairs(e.Pets)do local k4=(cH.b and"b"or"")..(cH.g and"g"or"")..(cH.w and"w"or"")..((tonumber(cH.f)or 0)>0 and tostring(cH.f)or"")
-if k4~=""then es[#es+1]=rN.."|"..k4 end end table.sort(es)L[#L+1]="P|-"for xV,rO in ipairs(es)do L[#L+1]="P|"..rO end
-end for xW,k5 in ipairs({"Collect","SellJunk","Crates","Rejoin","AutoStart","AutoRoll","PetBuy","PetWish","Teams","Lite","HideHud","NoRender","AutoFuse","AutoBuild"})do
-L[#L+1]="B|"..k5 .."|"..(e[k5]and"1"or"0")end local gP=C:GetAttribute("AutoRollRules")if type(gP)=="string"and gP~=""then e.ARrules,e.ARstop=gP,tostring(C:GetAttribute("AutoRollStop")or"")end
-if e.ARrules~=""then L[#L+1]="S|rules|"..e.ARrules L[#L+1]="S|stop|"..e.ARstop end if a.winPos then L[#L+1]=("W|%d|%d"):format(a.winPos[1],a.winPos[2])end
-if a.togPos then L[#L+1]=("G|%d|%d"):format(a.togPos[1],a.togPos[2])end for xX,gQ in ipairs({{"T",e.Targets},{"K",e.CrateTicks}})do
-local et={}for rP,rQ in pairs(gQ[2])do if rQ then et[#et+1]=rP end end table.sort(et)L[#L+1]=gQ[1].."|-"for xY,rR in ipairs(et)do L[#L+1]=gQ[1].."|"..rR end
-end return table.concat(L,"\n")end local function rS(gR)if type(gR)~="string"or gR==""then return false end local k6,k7,k8,k9,cI={},false,{},false,nil
-for rT in gR:gmatch("[^\n]+")do local av,T,al=rT:match("^(%a)|([^|]*)|?(.*)$")if av=="N"and T=="Every"then local gS=tonumber(al)
-if gS and gS>=1 then e.Every=math.floor(gS)end elseif av=="N"and(T=="FpsCap"or T=="MemLimit")then local gT=tonumber(al)
-if gT and gT>=0 then e[T]=math.floor(gT)end elseif av=="N"and T=="GlazeLead"then local eu=tonumber(al)if eu and eu>=5 and eu<=600 then e.GlazeLead=math.floor(eu)end
-elseif av=="S"and(T=="TeamNormal"or T=="TeamFull"or T=="TeamGlaze"or T=="TeamWax")then e[T]=al elseif av=="P"and T~=""then
-if not cI then cI={}end if T~="-"and al~=""then cI[T]={b=al:find("b",1,true)and true or nil,g=al:find("g",1,true)and true or nil,
-w=al:find("w",1,true)and true or nil,f=tonumber(al:match("%d"))}end elseif av=="B"then if e[T]~=nil then e[T]=(al=="1")end
-elseif av=="S"and T=="rules"then e.ARrules=al elseif av=="S"and T=="stop"then e.ARstop=al elseif av=="W"then a.winPos={tonumber(T)or 10,tonumber(al)or 44}
-elseif av=="G"then a.togPos={tonumber(T)or 10,tonumber(al)or 300}elseif av=="T"and T~=""then if T~="-"then k6[T]=true end
-k7=true elseif av=="K"and T~=""then if T~="-"then k8[T]=true end k9=true end end if k7 then e.Targets=k6 end if k9 then e.CrateTicks=k8 end
-if cI then e.Pets=cI end return true end local function ev(bY)if not kW()then return false,"this executor cannot write files"end
-bY=(bY or"default"):gsub("[^%w_%- ]",""):gsub("^%s+",""):gsub("%s+$","")if bY==""then return false,"give the config a name"end
-ep(W.dir)ep(W.cfg)if not cF(W.cfg.."/"..bY..".txt",rM())then return false,"could not write the file"end a.config=bY
-return true,bY end local function k_(ew)local la=eq(W.cfg.."/"..ew..".txt")if not la then return false,"no config called "..tostring(ew)end
-if not rS(la)then return false,"that config looks empty"end a.config=ew return true,ew end local function lb(gU)
-if gU then ep(W.dir)cF(W.auto,gU)elseif type(delfile)=="function"then pcall(delfile,W.auto)else cF(W.auto,"")
-end a.autoload=gU end local function rU()if a.selfPath then return a.selfPath end local ex for xZ,rV in ipairs({"","scripts","Scripts","Delta","Delta/Scripts",W.dir})do
-for x0,lc in ipairs(kZ(rV))do local gV=lc:lower()if gV:sub(-4)==".lua"and(gV:find("sab_farm",1,true)or gV:find("sab farm",1,true))then
-ex=ex or lc end end end a.selfPath=ex return ex end W.stub=[[
+{"SugarRushCrate","Sugar Rush Crate","Sugar Rush"},{"PicnicCrate","Picnic Crate","Picnic"}}function H.key(rQ)return d_(rQ or"")end
+function H.learn(aT)if type(aT)~="table"or type(aT.name)~="string"then return end local gN=H.key(aT.name)local aU=H.seen[gN]or{}
+local rR=(H.seen[gN]==nil)or(tonumber(aT.price)and aU.price~=tonumber(aT.price))aU.name,aU.title=aT.name,aT.title or aU.title
+aU.rar,aU.price=aT.rarity or aU.rar,tonumber(aT.price)or aU.price H.seen[gN]=aU if rR then H.at,aa.dirty=q(),true end
+end function H.wanted(k2)return k2~=nil and e.CrateTicks[H.key(k2)]==true end function H.list()local b1={}for rS,er in ipairs(H.base)do b1[H.key(er[1])]={name=er[1],title=er[2],rar=er[3],i=rS}end
+for yA,cJ in ipairs(Q.rarOrder)do local k3=false for yB,rT in pairs(b1)do if rT.rar==cJ then k3=true break end end
+if not k3 and cJ~="?"then local k4=cJ:gsub("[^%w]","").."Crate"b1[H.key(k4)]={name=k4,title=cJ.." Crate",rar=cJ,i=50,guess=true}
+end end for k5,es in pairs(H.seen)do local aK=b1[k5]or{i=100}aK.name,aK.title,aK.rar=es.name or aK.name,es.title or aK.title,es.rar or aK.rar
+aK.price,aK.guess=es.price or aK.price,nil b1[k5]=aK end local cK,et={},{}for rU,rV in ipairs(kM)do cK[rV]=rU end
+for rW,k6 in ipairs(Q.rarOrder)do cK[k6]=cK[k6]or(20+rW)end for rX,cL in pairs(b1)do cL.k=rX cL.price=cL.price or aa.price[cL.rar or""]
+et[#et+1]=cL end table.sort(et,function(bw,bx)if bw.price and bx.price and bw.price~=bx.price then return bw.price<bx.price end
+local k7,k8=cK[bw.rar or""]or 99,cK[bx.rar or""]or 99 if k7~=k8 then return k7<k8 end if(bw.i or 100)~=(bx.i or 100)then return(bw.i or 100)<(bx.i or 100)end
+return bw.k<bx.k end)return et end local function rY()local k9=ao:FindFirstChild("Assets")local k_=k9 and k9:FindFirstChild("Squishies")
+if not k_ then return false end local gO,la,b2={},{},{}local eu=0 for yC,ev in ipairs(k_:GetChildren())do local cM=V(ev.Name)
+if cM~=""and not gO[cM]then local ew=b0(ev,"RarityText")or"?"gO[cM]=ew la[cM]=b0(ev,"NameText")or ev.Name b2[ew]=b2[ew]or{}
+table.insert(b2[ew],cM)eu=eu+1 end end if eu==0 then return false end for lb,rZ in pairs(b2)do local lc=aa.order[lb]or rl[lb]
+local gP={}if lc then for r0,r1 in ipairs(lc)do gP[V(r1)]=r0 end end table.sort(rZ,function(ld,le)local gQ,gR=gP[ld],gP[le]
+if gQ and gR then return gQ<gR end if gQ then return true end if gR then return false end return ac(ld)<ac(le)
+end)end local gS={}for r2,r3 in ipairs(kM)do gS[r3]=r2 end local ex={}for r4 in pairs(b2)do ex[#ex+1]=r4 end table.sort(ex,function(gT,gU)
+local gV,gW=aa.price[gT],aa.price[gU]if gV and gW and gV~=gW then return gV<gW end local gX,gY=gS[gT],gS[gU]if gX and gY then return gX<gY end
+if gX then return true end if gY then return false end return gT<gU end)Q.rar,Q.pretty,Q.members,Q.rarOrder,Q.n,Q.at=gO,la,b2,ex,eu,q()
+return true end local function gZ()if Q.at==0 or(q()-Q.at)>120 then pcall(rY)end return Q.n>0 end local function r5(r6)
+local lf=V(r6)return Q.rar[lf]or(N.name and V(N.name)==lf and N.rar)or"?"end local function r7()local ey={}for r8,r9 in pairs(e.Targets)do if r9 then ey[#ey+1]=ac(r8)end end
+table.sort(ey)return ey end local ab={dir="SAB",cfg="SAB/configs",auto="SAB/autoload.txt",exec="autoexec/SAB_autoload.lua"}
+local function lg()return type(writefile)=="function"and type(readfile)=="function"and type(isfile)=="function"end
+local function ez(lh)if type(makefolder)~="function"then return end local r_,sa=pcall(isfolder,lh)if not(r_ and sa)then pcall(makefolder,lh)end
+end local function eA(li)if type(isfile)~="function"or type(readfile)~="function"then return nil end local sb,sc=pcall(isfile,li)
+if not(sb and sc)then return nil end local sd,se=pcall(readfile,li)return sd and se or nil end local function cN(sf,sh)
+if type(writefile)~="function"then return false end return(pcall(writefile,sf,sh))end local function lj(si)local cO={}
+if type(listfiles)~="function"then return cO end local sj,lk=pcall(listfiles,si)if not sj or type(lk)~="table"then return cO end
+for yD,sk in ipairs(lk)do cO[#cO+1]=tostring(sk)end return cO end local function ll()local eB={}for yE,sl in ipairs(lj(ab.cfg))do
+local lm=sl:match("([^/\\]+)%.txt$")if lm then eB[#eB+1]=lm end end table.sort(eB)return eB end local function sm()
+local O={"V|1"}O[#O+1]="N|Every|"..tostring(e.Every)O[#O+1]="N|GlazeLead|"..tostring(e.GlazeLead)O[#O+1]="N|FpsCap|"..tostring(e.FpsCap)
+O[#O+1]="N|MemLimit|"..tostring(e.MemLimit)for yF,ln in ipairs({"TeamNormal","TeamFull","TeamGlaze","TeamWax"})do O[#O+1]="S|"..ln.."|"..e[ln]end
+do local eC={}for sn,cP in pairs(e.Pets)do local lo=(cP.b and"b"or"")..(cP.g and"g"or"")..(cP.w and"w"or"")..((tonumber(cP.f)or 0)>0 and tostring(cP.f)or"")
+if lo~=""then eC[#eC+1]=sn.."|"..lo end end table.sort(eC)O[#O+1]="P|-"for yG,so in ipairs(eC)do O[#O+1]="P|"..so end
+end for yH,lp in ipairs({"Collect","SellJunk","Crates","Rejoin","AutoStart","AutoRoll","PetBuy","PetWish","Teams","Lite","HideHud","NoRender","AutoFuse","AutoBuild","Help","HelpGuild"})do
+O[#O+1]="B|"..lp.."|"..(e[lp]and"1"or"0")end local g0=F:GetAttribute("AutoRollRules")if type(g0)=="string"and g0~=""then e.ARrules,e.ARstop=g0,tostring(F:GetAttribute("AutoRollStop")or"")end
+if e.ARrules~=""then O[#O+1]="S|rules|"..e.ARrules O[#O+1]="S|stop|"..e.ARstop end if c.winPos then O[#O+1]=("W|%d|%d"):format(c.winPos[1],c.winPos[2])end
+if c.togPos then O[#O+1]=("G|%d|%d"):format(c.togPos[1],c.togPos[2])end for yI,g1 in ipairs({{"T",e.Targets},{"K",e.CrateTicks}})do
+local eD={}for sp,sq in pairs(g1[2])do if sq then eD[#eD+1]=sp end end table.sort(eD)O[#O+1]=g1[1].."|-"for yJ,sr in ipairs(eD)do O[#O+1]=g1[1].."|"..sr end
+end return table.concat(O,"\n")end local function ss(g2)if type(g2)~="string"or g2==""then return false end local lq,lr,ls,lt,cQ={},false,{},false,nil
+for su in g2:gmatch("[^\n]+")do local az,W,ap=su:match("^(%a)|([^|]*)|?(.*)$")if az=="N"and W=="Every"then local g3=tonumber(ap)
+if g3 and g3>=1 then e.Every=math.floor(g3)end elseif az=="N"and(W=="FpsCap"or W=="MemLimit")then local g4=tonumber(ap)
+if g4 and g4>=0 then e[W]=math.floor(g4)end elseif az=="N"and W=="GlazeLead"then local eE=tonumber(ap)if eE and eE>=5 and eE<=600 then e.GlazeLead=math.floor(eE)end
+elseif az=="S"and(W=="TeamNormal"or W=="TeamFull"or W=="TeamGlaze"or W=="TeamWax")then e[W]=ap elseif az=="P"and W~=""then
+if not cQ then cQ={}end if W~="-"and ap~=""then cQ[W]={b=ap:find("b",1,true)and true or nil,g=ap:find("g",1,true)and true or nil,
+w=ap:find("w",1,true)and true or nil,f=tonumber(ap:match("%d"))}end elseif az=="B"then if e[W]~=nil then e[W]=(ap=="1")end
+elseif az=="S"and W=="rules"then e.ARrules=ap elseif az=="S"and W=="stop"then e.ARstop=ap elseif az=="W"then c.winPos={tonumber(W)or 10,tonumber(ap)or 44}
+elseif az=="G"then c.togPos={tonumber(W)or 10,tonumber(ap)or 300}elseif az=="T"and W~=""then if W~="-"then lq[W]=true end
+lr=true elseif az=="K"and W~=""then if W~="-"then ls[W]=true end lt=true end end if lr then e.Targets=lq end if lt then e.CrateTicks=ls end
+if cQ then e.Pets=cQ end return true end local function eF(b3)if not lg()then return false,"this executor cannot write files"end
+b3=(b3 or"default"):gsub("[^%w_%- ]",""):gsub("^%s+",""):gsub("%s+$","")if b3==""then return false,"give the config a name"end
+ez(ab.dir)ez(ab.cfg)if not cN(ab.cfg.."/"..b3 ..".txt",sm())then return false,"could not write the file"end c.config=b3
+return true,b3 end local function lu(eG)local lv=eA(ab.cfg.."/"..eG..".txt")if not lv then return false,"no config called "..tostring(eG)end
+if not ss(lv)then return false,"that config looks empty"end c.config=eG return true,eG end local function lw(g5)
+if g5 then ez(ab.dir)cN(ab.auto,g5)elseif type(delfile)=="function"then pcall(delfile,ab.auto)else cN(ab.auto,"")
+end c.autoload=g5 end local function sv()if c.selfPath then return c.selfPath end local eH for yK,sw in ipairs({"","scripts","Scripts","Delta","Delta/Scripts",ab.dir})do
+for yL,lx in ipairs(lj(sw))do local g6=lx:lower()if g6:sub(-4)==".lua"and(g6:find("sab_farm",1,true)or g6:find("sab farm",1,true))then
+eH=eH or lx end end end c.selfPath=eH return eH end ab.stub=[[
 -- SAB autoloader v2: loads the newest SAB farm from GitHub on every join (a saved copy if GitHub is down).
 task.spawn(function()
     task.wait(6)
@@ -174,795 +174,831 @@ task.spawn(function()
     end
 end)
 ]]
-local function rW()if not kW()then return false,"this executor cannot write files"end ep("autoexec")if not cF(W.exec,W.stub)then return false,"could not write to the autoexec folder"end
-return true,"it loads the newest version from GitHub on every join"end local ey=(function()local rX,rY=pcall(function()return game:GetService("TeleportService")end)return rX and rY or nil end)()
-local function gW()if type(queueonteleport)~="function"and type(queue_on_teleport)~="function"then return false end
-local rZ=queueonteleport or queue_on_teleport return(pcall(rZ,W.stub))end local function cJ(r0)if a.rejoining then return end
-a.rejoining=true u("REJOIN ("..r0 ..")")pcall(d7)if a.autoload then pcall(ev,a.autoload)end local r1=gW()u(r1 and"queued the script for the new server"or"this executor cannot queue scripts - set up autoexec for a clean restart")
-task.spawn(function()for x1=1,30 do if not ey then break end pcall(function()ey:Teleport(game.PlaceId,C)end)task.wait(10)
-end end)end local function r2()local r3,ld=pcall(function()return game:GetService("GuiService")end)if r3 and ld then
-pcall(function()O(ld.ErrorMessageChanged:Connect(function()if e.Rejoin then cJ("roblox error message")end end))
-end)end pcall(function()local le=game:GetService("CoreGui")local lf=le and le:WaitForChild("RobloxPromptGui",15)
-local lg=lf and lf:WaitForChild("promptOverlay",15)if lg then O(lg.ChildAdded:Connect(function(r4)if e.Rejoin and tostring(r4 .Name):lower():find("errorprompt",1,true)then cJ("disconnect prompt")end
-end))end end)pcall(function()O(C.OnTeleport:Connect(function(r5)if tostring(r5):find("Started")then gW()end end))
-end)if ey then pcall(function()O(ey.TeleportInitFailed:Connect(function()a.rejoining=false if e.Rejoin then task.delay(5,function()cJ("teleport retry")end)end
-end))end)end end local function lh(r6)local li=a.plot and a.plot:FindFirstChild(r6)if not li then return nil,false end
-for x2,gX in ipairs(li:GetChildren())do if gX:IsA("Model")or gX:IsA("BasePart")then return gX,true end end return nil,true
-end local function cK()local a5=lh("RolledSquishy")if not a5 then return nil end return{model=a5,name=a5 .Name,pretty=bV(a5,"NameText")or aa(Q(a5 .Name)),
-rar=bV(a5,"RarityText")or rv(a5 .Name),price=bV(a5,"PriceText")}end local function lj(gY)return type(gY)=="string"and(M.rar[Q(gY)]~=nil or qz(gY))
-end local function P()local gZ=lh("SquishyEquipped")if gZ then a.carrySrc,d.heldAt="model",r()return gZ.Name,gZ end
-local lk=C.Character if lk then for x3,cL in ipairs(lk:GetDescendants())do if(cL:IsA("Model")or cL:IsA("Tool"))and lj(cL.Name)then
-a.carrySrc,d.heldAt="character",r()return cL.Name,cL end end end local ez=C:GetAttribute("SquishyEquipped")if type(ez)=="string"and ez~=""and lj(ez)and r()>=(a.carryBlind or 0)then
-a.carrySrc="attribute"return ez,nil end a.carrySrc=nil end local function x4()local x5,r7=P()return r7 end local function ll()
-local lm=cK()local g0=lm and qB(lm.price)local g1=aO()if g0 and g1 and g1<g0*0.5 then return g1,g0 end end local function bZ(r8)
-ct[#ct+1]=os.date("%H:%M:%S").." "..r8 if#ct>40 then table.remove(ct,1)end end local function r9(bs,eA)if type(bs)~="string"then return end
-bZ(("Roll(%s,%s)"):format(bs,tostring(eA)))if bs:lower():find("crate",1,true)then d.rolled,d.rolledAt=bs,r()return
-end J.seq=J.seq+1 J.name,J.at=bs,r()J.rar=type(eA)=="string"and eA or nil a.rolls=a.rolls+1 if aN(bs)then u(("ROLL %s [%s] = TARGET"):format(bs,tostring(eA)))end
-end local function r_(bt)if type(bt)~="table"then return end local eB=bt.butter or bt.itemName if type(eB)~="string"then return end
-a.gifts=a.gifts+1 J.gift,J.giftAt=eB,r()if type(bt.giftId)=="string"then local ln=az:FindFirstChild("Remotes")
-local lo=ln and ln:FindFirstChild("GiftThanks")if lo then pcall(function()lo:FireServer(bt.giftId)end)end end
-bZ("Gift("..eB.." from "..tostring(bt.fromName)..")")u(("GIFT from %s: %s - it will not be waxed"):format(tostring(bt.fromName),eB))
-end local function sa()local lp=az:WaitForChild("Remotes",30)if not a.alive then return end if not lp then u("Remotes folder missing - no roll events")return end
-O(C:GetAttributeChangedSignal("SquishyEquipped"):Connect(function()local lq=C:GetAttribute("SquishyEquipped")
-if type(lq)=="string"and lq~=""then d.heldAt=r()end end))local sh={SquishyRollAnimation=r9,InitSquishy=function(lr)J.init,J.initAt=tostring(lr),r()bZ("Init("..tostring(lr)..")")end,
-CrateUpdate=function(b0,ls)pcall(q8,b0)pcall(E.learn,b0)if type(b0)=="table"then local sb=ls==true or(d.rolled~=nil and r()-d.rolledAt<15)or d.waiting
-if not sb then return end local sc=not d.waiting local sd=d.on d.waiting,d.data,d.at=true,b0,r()d.on=(ls==true)
-d.title=tostring(b0 .title or b0 .name or"crate")if d.on and not sd then d.openedAt,d.byYou=r(),not d.ours if d.onShow then task.spawn(d.onShow)end
-end if d.on then bZ("CrateWindow open("..d.title..")")elseif sc then bZ("Crate waiting("..d.title..")")u(d.title.." is waiting on your stand")
-end else if d.waiting then bZ("Crate gone")end d.on,d.waiting,d.data,d.prompt=false,false,nil,nil local se=d.byYou
-d.summonFails,d.ours,d.byYou=0,false,false if d.onGone then task.spawn(d.onGone,se)end if d.classify then local sf=r()
-task.spawn(function()pcall(d.classify,sf)end)end end end,GiftReceived=r_,}for eC,si in pairs(sh)do local g2=lp:FindFirstChild(eC)
-if g2 and g2:IsA("RemoteEvent")then O(g2 .OnClientEvent:Connect(si))elseif eC~="CrateUpdate"and eC~="GiftReceived"then u("remote "..eC.." missing")end
-end end local function g3()local bu=cK()if bu then if aN(bu.name)then return{state="match",shown=bu.pretty,src="pad",info=bu}
-end return{state="skip",info=bu,level="idle",text=("on pad: %s [%s] - not ticked"):format(bu.pretty,tostring(bu.rar))}
-end if J.name and(r()-J.at)<4 then if aN(J.name)then return{state="match",shown=aa(Q(J.name)),src="roll event"}
-end return{state="skip",level="idle",text=("rolled %s [%s] - not ticked"):format(aa(Q(J.name)),tostring(J.rar))}
-end return{state="none",level="wait",text="no result on pad (auto-roll running)"}end local function lt(sj,sk,sl,sm)
-local eD=RaycastParams.new()eD.FilterType=Enum.RaycastFilterType.Exclude local g4={C.Character}for x6,sn in ipairs(sm or{})do g4[#g4+1]=sn end
-eD.FilterDescendantsInstances=g4 pcall(function()eD.RespectCanCollide=true end)local lu=aG:Raycast(Vector3 .new(sj,sk+4,sl),Vector3 .new(0,-30,0),eD)
-return lu and lu.Position or nil end local function g5(lv)local lw=lv:FindFirstChildOfClass("Humanoid")return((lw and lw.HipHeight)or 2)+lv.HumanoidRootPart.Size.Y/2+0.2
-end local function g6(so,sp)local lx=so:FindFirstChildOfClass("Humanoid")local sq=r()while r()-sq<sp do if lx and lx.FloorMaterial~=Enum.Material.Air then return true end
-ag(0.05)end return false end local function cM(sr,g7,g8)local ly=sr.HumanoidRootPart ly.AssemblyLinearVelocity=Vector3 .new(0,0,0)
-ly.CFrame=g8 and CFrame.new(g7,Vector3 .new(g8 .X,g7 .Y,g8 .Z))or CFrame.new(g7)end local function cN(aT,lz)local bv=aP()
-if not bv or not aT then return false end local a6=aT.Position local eE=math.clamp(math.max(aT.Size.X,aT.Size.Z)/2+2.2,3,7)
-local lA=(lz and lz.MaxActivationDistance)or 10 if eE>lA-2 then eE=math.max(2.5,lA-2)end local cO={}local function bw(cP)
-cP=Vector3 .new(cP.X,0,cP.Z)if cP.Magnitude>0.05 then cO[#cO+1]=cP.Unit end end local lB=qI()if lB then bw(lB-a6)end
-bw(aT.CFrame.LookVector)bw(-aT.CFrame.LookVector)bw(aT.CFrame.RightVector)bw(-aT.CFrame.RightVector)bw(bv.HumanoidRootPart.Position-a6)
-if#cO==0 then bw(Vector3 .new(0,0,1))end local ss,eF=g5(bv),false for x7,su in ipairs(cO)do local eG=a6+su*eE
-local g9=lt(eG.X,a6 .Y,eG.Z,{aT})if g9 and math.abs(g9 .Y-a6 .Y)<14 then cM(bv,Vector3 .new(eG.X,g9 .Y+ss,eG.Z),a6)
-if g6(bv,0.7)then eF=true break end end end if not eF then cM(bv,a6+cO[1]*eE+Vector3 .new(0,3,0),a6)eF=g6(bv,1)
-end ag(0.12)return eF end local function sv(cQ)if not cQ.Parent or not cQ.Enabled then return false end pcall(function()cQ:InputHoldBegin()end)
-ag(math.max(cQ.HoldDuration,0)+0.08)pcall(function()cQ:InputHoldEnd()end)return true end local function ah(lC,sw)
-local sx=r()while r()-sx<sw do if lC()then return true end ag(0.05)end return lC()end local function eH(b1,sy,lD,sz)
-local sA=a.zapFirst and{"zap","hold"}or{"hold","zap"}for sB,g_ in ipairs(sA)do if sB==2 and(sz or not(b1 .Parent and b1 .Enabled and(not lD or lD())))then break end
-local ha if g_=="hold"then ha=sv(b1)else ha=type(fireproximityprompt)=="function"and b1 .Parent~=nil and b1 .Enabled and pcall(fireproximityprompt,b1)end
-if ha and ah(sy,1.2)then a.zapFirst=(g_=="zap")return true,g_ end end return false end local function lE(hb)local a7=kp()
-if not a7 or not a7 .Enabled then u("buy: nothing on the pad")return false end local lF=cw(a7)if not lF then u("buy: pad part missing")return false end
-a.lastBuyAt=r()local sC,lG=J.seq,aO()cN(lF,a7)if not a7 .Enabled then u("buy aborted: pad emptied")return false end
-local b2=g3()if not hb and b2 .state~="match"then u("buy aborted: "..(b2 .text or"pad changed"))a.matchSince=nil
-return false end local hc=b2 .info and b2 .info.name or(b2 .state=="match"and J.name)or nil local function sD()
-return a7 .Enabled and P()==nil and(hb or g3().state=="match")end local sE,sF=eH(a7,function()return P()~=nil or((not a7 .Enabled)and(hb or J.seq==sC))
-end,sD,ll()~=nil)if sE then ah(function()return P()~=nil end,0.8)local cR=P()local lH=aO()a.holding,a.bought,a.cashFails=true,a.bought+1,0
-a.matchSince=nil J.name,J.rar,J.at=nil,nil,r()u(("BOUGHT %s%s via %s"):format(cR and aa(Q(cR))or(b2 .shown or"?"),(lG and lH)and(" for $"..au(lG-lH))or"",sF))
-if cR and hc and Q(cR)~=Q(hc)then u(("note: picked up %s, not %s"):format(cR,hc))end return true end a.cashFails=a.cashFails+1
-a.noCashUntil=r()+math.min(8*2^(a.cashFails-1),60)local lI=cK()u(("BUY REFUSED: cash short? have $%s, price %s"):format(au(aO()),(lI and lI.price)or"?"))
-return false end local function lJ()local eI=P()if not eI then a.holding=false u("place: hands are empty")return false
-end if not aN(eI)then u(("REFUSED TO WAX %s - it is not ticked"):format(aa(Q(eI))))return false end for x8=1,e.PlaceTries do
-local a8=qL()if not a8 then u("place: no free station")break end local lK=cw(a8)if lK then cN(lK,a8)local lL=P()
-if not lL then a.holding=false u("place: hands emptied on the way")return false end if not aN(lL)then u("place: what I carry changed, not waxing it")return false end
-if a8 .Enabled then local sG,sH=eH(a8,function()return not a8 .Enabled end,function()return a8 .Enabled end)if sG then
-a.holding,a.placed,a.placeFails=false,a.placed+1,0 a.carryBlind,a.attrStale=r()+2.5,0 J.name,J.rar,J.at=nil,nil,r()
-u(("WAXED %s #%d at %s via %s"):format(aa(Q(eI)),a.placed,a8 .Parent.Parent.Name,sH))return true end end end ag(0.25)
-end a.placeFails=a.placeFails+1 if P()==nil then a.holding=false end u("PLACE FAILED ("..a.placeFails..")")if a.placeFails>=2 then
-a.capHit,a.running,a.capAt=true,false,r()a.capMsg=("STOPPED: waxing %s failed twice with free stations (plate full at 100?)"):format(
-tostring(P()))u(a.capMsg)end return false end function o.place()local sI=r()while a.alive and o.editing and r()-sI<25 do ag(0.2)end
-if e.Teams and e.TeamWax~=""then o.placing=true local sJ=r()while a.alive and o.current()~=e.TeamWax and r()-sJ<5 do ag(0.1)end
-if o.current()==e.TeamWax then ag(0.3)else u("wax team did not come on in time - placing anyway")end end local sK,lM=pcall(lJ)
-o.placing=false if not sK then error(lM,0)end return lM end local function lN(lO)return type(lO)=="string"and lO:lower():find("crate",1,true)~=nil
-end local sL={SABFarmGui=1,SABToggle=1,SABError=1}local function hd(sM)local a9=sM while a9 do if sL[a9 .Name]then return false end
-if a9:IsA("ScreenGui")then local sN,sO=pcall(function()return a9 .Enabled end)return(not sN)or sO~=false end if a9:IsA("GuiObject")and not a9 .Visible then return false end
-a9=a9 .Parent end return false end local function eJ(eK)local b3=""pcall(function()if eK:IsA("TextButton")then b3=eK.Text end end)
-if not b3:find("%a")then for x9,eL in ipairs(eK:GetDescendants())do if(eL:IsA("TextLabel")or eL:IsA("TextButton"))and eL.Text:find("%a")then b3=eL.Text break end
-end end if not b3:find("%a")then b3=eK.Name end return(b3:lower():gsub("[^%a]",""))end local function sP()local cS,cT
-local lP=C:FindFirstChildOfClass("PlayerGui")if not lP then return nil,nil end for x_,cU in ipairs(lP:GetDescendants())do
-if cU:IsA("GuiButton")and hd(cU)then local he=eJ(cU)if he:sub(1,4)=="open"and not he:find("shop",1,true)then cS=cS or cU end
-if he:sub(1,7)=="discard"then cT=cT or cU end end end if cS and cT then return cS,cT end if d.on then return cS,cT end
-return nil,nil end local hf=(function()local sQ,sR=pcall(function()return game:GetService("VirtualInputManager")end)return sQ and sR or nil end)()
-local function lQ(aU,hg)local hh={}local function lR(sS)hh[#hh+1]=sS end if a.tapWay then lR(a.tapWay)end for ya,lS in ipairs({"touch","conn","signal"})do
-if lS~=a.tapWay then lR(lS)end end local function lT(sT,...)local sU,hi=pcall(getconnections,sT)if not(sU and type(hi)=="table"and#hi>0)then return false end
-local lU,sV,sW=false,{...},select("#",...)for yb,sX in ipairs(hi)do if pcall(function()sX:Fire(table.unpack(sV,1,sW))end)then lU=true end
-end return lU end local function lV()local lW=Vector3 .new(0,0,0)pcall(function()local lX,lY=aU.AbsolutePosition,aU.AbsoluteSize
-lW=Vector3 .new(lX.X+lY.X/2,lX.Y+lY.Y/2,0)end)local hj={Position=lW,Delta=Vector3 .new(0,0,0),KeyCode=Enum.KeyCode.Unknown}
-pcall(function()hj.UserInputType=Enum.UserInputType.Touch end)pcall(function()hj.UserInputState=Enum.UserInputState.End end)
-return hj end for yc,aV in ipairs(hh)do local cV=false if aV=="conn"and type(getconnections)=="function"then if lT(aU.MouseButton1Click)then
-cV=true if ah(hg,1.5)then a.tapWay=aV return true,aV end end cV=lT(aU.Activated,lV(),1)elseif aV=="signal"and type(firesignal)=="function"then
-if pcall(firesignal,aU.MouseButton1Click)then if ah(hg,1.5)then a.tapWay=aV return true,aV end end cV=pcall(firesignal,aU.Activated,lV(),1)
-elseif aV=="touch"and hf then cV=pcall(function()local lZ,l0=aU.AbsolutePosition,aU.AbsoluteSize local l1=0 local l2=aU:FindFirstAncestorWhichIsA("ScreenGui")
-local sY,sZ=pcall(function()return l2 and l2 .IgnoreGuiInset end)if not(sY and sZ)then pcall(function()l1=game:GetService("GuiService"):GetGuiInset().Y end)
-end local l3,l4=lZ.X+l0 .X/2,lZ.Y+l0 .Y/2+l1 hf:SendMouseButtonEvent(l3,l4,0,true,game,1)task.wait(0.06)hf:SendMouseButtonEvent(l3,l4,0,false,game,1)
-end)end if cV and ah(hg,1.5)then a.tapWay=aV return true,aV end end return false end d.NOT={LimitedSquishyPlaceHolder=1,Lever=1,WaxStations=1,RolledSquishyPlaceHolder=1,SquishyStack=1}
-local function hk(l5)local cW=l5 .Parent while cW and cW~=a.plot do if d.NOT[cW.Name]then return false end cW=cW.Parent
-end local hl=(l5 .ActionText or""):lower()if hl:find("roll",1,true)or hl:find("place",1,true)or hl:find("sell",1,true)then return false end
-return true end local function s0()if d.prompt and d.prompt.Parent and d.prompt.Enabled then return d.prompt end
-if not a.plot then return nil end local l6=a.plot:FindFirstChild("CrateStand")local cX if l6 then for yd,eM in ipairs(l6:GetDescendants())do
-if eM:IsA("ProximityPrompt")and eM.Enabled and hk(eM)then cX=eM break end end end if not cX then for ye,a_ in ipairs(a.plot:GetDescendants())do
-if a_:IsA("ProximityPrompt")and a_.Enabled and hk(a_)then local l7=a_:FindFirstAncestorWhichIsA("Model")local s1=((a_.ActionText or"").." "..(a_.ObjectText or"").." "..a_.Name.." "..(l7 and l7 .Name or"")):lower()
-if s1:find("crate",1,true)then cX=a_ break end end end end d.prompt=cX return cX end local function hm()if d.on then return true end
-local cY=s0()if not cY then d.summonFails=d.summonFails+1 d.lastFail=r()u("crate: cannot find where to open "..d.title.." - open it once by hand")
-return false end local l8=cw(cY)if l8 then cN(l8,cY)end d.ours=true eH(cY,function()return d.on end)if ah(function()return d.on end,3)then
-d.summonFails=0 return true end d.ours=false d.summonFails=d.summonFails+1 d.lastFail=r()u("crate: pressed "..d2(cY).." but no window came up")
-return false end do local function s2(l9)local b4=l9 .Parent while b4 and b4:IsA("GuiObject")do local l_,ma=false,false
-for yf,cZ in ipairs(b4:GetDescendants())do if cZ~=l9 and cZ:IsA("GuiButton")and eJ(cZ):sub(1,7)=="discard"then l_=true end
-if cZ:IsA("TextLabel")then local hn=cZ.Text:lower()if hn:find("crate",1,true)or hn:find("can contain",1,true)or hn:find("cost",1,true)then ma=true end
-end if l_ and ma then return b4 end end b4=b4 .Parent end end function d.findWin()if d.win and d.win.Parent then return d.win end
-local mb=C:FindFirstChildOfClass("PlayerGui")if not mb then return nil end for yg,eN in ipairs(mb:GetDescendants())do
-if eN:IsA("GuiButton")and not eN:FindFirstAncestor("SABFarmGui")and eJ(eN):sub(1,4)=="open"then local ho=s2(eN)
-if ho then d.win=ho return ho end end end end local function s3(s4)for yh,eO in ipairs(s4:GetDescendants())do
-if eO:IsA("GuiButton")then local mc,hp=eJ(eO),eO.Name:lower()if mc=="x"or mc=="close"or hp=="x"or hp:find("close",1,true)or hp:find("exit",1,true)then return eO end
-end end end d.onShow=function()d.win=nil d.findWin()end d.onGone=function(s5)task.wait(s5 and 4 or 1.2)if d.on or d.waiting then return end
-local eP=d.findWin()if not eP or not hd(eP)then return end local md=s3(eP)if md and lQ(md,function()return not hd(eP)end)then return end
-u("the crate window is still open - tap its X")end end local function eQ(eR)if not hm()then return false end local me=r()-(d.openedAt or 0)
-if me<0.6 then ag(0.6-me)end local hq=d.title local s6,s7=sP()local mf=eR and s6 or s7 if not mf then d.lastFail=r()
-a.crateFails=a.crateFails+1 u(("crate: no %s button found in %s"):format(eR and"Open"or"Discard",hq))return false
-end local s8=P()local s9,yi=lQ(mf,function()return(not d.on)or(P()~=nil and P()~=s8)end)if not s9 then d.lastFail=r()
-a.crateFails=a.crateFails+1 u("crate: could not press "..(eR and"Open"or"Discard").." (no working tap method)")
-return false end a.crateFails=0 if eR then a.crates=a.crates+1 ah(function()return P()~=nil end,1.5)local mg=P()
-u(("OPENED %s -> %s"):format(hq,mg and aa(Q(mg))or"?"))else u("discarded "..hq.." (nothing ticked in it)")end
-return true end d.calls={}function d.saw(s_,...)local ta=select("#",...)d.calls[#d.calls+1]={t=r(),m=s_,n=ta,args={...},data=d.data,
+local function sx()if not lg()then return false,"this executor cannot write files"end ez("autoexec")if not cN(ab.exec,ab.stub)then return false,"could not write to the autoexec folder"end
+return true,"it loads the newest version from GitHub on every join"end local eI=(function()local sy,sz=pcall(function()return game:GetService("TeleportService")end)return sy and sz or nil end)()
+local function g7()if type(queueonteleport)~="function"and type(queue_on_teleport)~="function"then return false end
+local sA=queueonteleport or queue_on_teleport return(pcall(sA,ab.stub))end local function cR(sB)if c.rejoining then return end
+c.rejoining=true x("REJOIN ("..sB..")")pcall(eg)if c.autoload then pcall(eF,c.autoload)end local sC=g7()x(sC and"queued the script for the new server"or"this executor cannot queue scripts - set up autoexec for a clean restart")
+task.spawn(function()for yM=1,30 do if not eI then break end pcall(function()eI:Teleport(game.PlaceId,F)end)task.wait(10)
+end end)end local function sD()local sE,ly=pcall(function()return game:GetService("GuiService")end)if sE and ly then
+pcall(function()P(ly.ErrorMessageChanged:Connect(function()if e.Rejoin then cR("roblox error message")end end))
+end)end pcall(function()local lz=game:GetService("CoreGui")local lA=lz and lz:WaitForChild("RobloxPromptGui",15)
+local lB=lA and lA:WaitForChild("promptOverlay",15)if lB then P(lB.ChildAdded:Connect(function(sF)if e.Rejoin and tostring(sF.Name):lower():find("errorprompt",1,true)then cR("disconnect prompt")end
+end))end end)pcall(function()P(F.OnTeleport:Connect(function(sG)if tostring(sG):find("Started")then g7()end end))
+end)if eI then pcall(function()P(eI.TeleportInitFailed:Connect(function()c.rejoining=false if e.Rejoin then task.delay(5,function()cR("teleport retry")end)end
+end))end)end end local function lC(sH)local lD=c.plot and c.plot:FindFirstChild(sH)if not lD then return nil,false end
+for yN,g8 in ipairs(lD:GetChildren())do if g8:IsA("Model")or g8:IsA("BasePart")then return g8,true end end return nil,true
+end local function cS()local a9=lC("RolledSquishy")if not a9 then return nil end return{model=a9,name=a9 .Name,pretty=b0(a9,"NameText")or ac(V(a9 .Name)),
+rar=b0(a9,"RarityText")or r5(a9 .Name),price=b0(a9,"PriceText")}end local function lE(g9)return type(g9)=="string"and(Q.rar[V(g9)]~=nil or q9(g9))
+end local function T()local g_=lC("SquishyEquipped")if g_ then c.carrySrc,d.heldAt="model",q()return g_.Name,g_ end
+local lF=F.Character if lF then for yO,cT in ipairs(lF:GetDescendants())do if(cT:IsA("Model")or cT:IsA("Tool"))and lE(cT.Name)then
+c.carrySrc,d.heldAt="character",q()return cT.Name,cT end end end local eJ=F:GetAttribute("SquishyEquipped")if type(eJ)=="string"and eJ~=""and lE(eJ)and q()>=(c.carryBlind or 0)then
+c.carrySrc="attribute"return eJ,nil end c.carrySrc=nil end local function yP()local yQ,sI=T()return sI end local function lG()
+local lH=cS()local ha=lH and ra(lH.price)local hb=aR()if ha and hb and hb<ha*0.5 then return hb,ha end end local function b4(sJ)
+cB[#cB+1]=os.date("%H:%M:%S").." "..sJ if#cB>40 then table.remove(cB,1)end end local function sK(by,eK)if type(by)~="string"then return end
+b4(("Roll(%s,%s)"):format(by,tostring(eK)))if by:lower():find("crate",1,true)then d.rolled,d.rolledAt=by,q()return
+end N.seq=N.seq+1 N.name,N.at=by,q()N.rar=type(eK)=="string"and eK or nil c.rolls=c.rolls+1 if aQ(by)then x(("ROLL %s [%s] = TARGET"):format(by,tostring(eK)))end
+end local function sL(bz)if type(bz)~="table"then return end local eL=bz.butter or bz.itemName if type(eL)~="string"then return end
+c.gifts=c.gifts+1 N.gift,N.giftAt=eL,q()if type(bz.giftId)=="string"then local lI=ao:FindFirstChild("Remotes")
+local lJ=lI and lI:FindFirstChild("GiftThanks")if lJ then pcall(function()lJ:FireServer(bz.giftId)end)end end
+b4("Gift("..eL.." from "..tostring(bz.fromName)..")")x(("GIFT from %s: %s - it will not be waxed"):format(tostring(bz.fromName),eL))
+end local function sM()local lK=ao:WaitForChild("Remotes",30)if not c.alive then return end if not lK then x("Remotes folder missing - no roll events")return end
+P(F:GetAttributeChangedSignal("SquishyEquipped"):Connect(function()local lL=F:GetAttribute("SquishyEquipped")
+if type(lL)=="string"and lL~=""then d.heldAt=q()end end))local sS={SquishyRollAnimation=sK,InitSquishy=function(lM)N.init,N.initAt=tostring(lM),q()b4("Init("..tostring(lM)..")")end,
+CrateUpdate=function(b5,lN)pcall(rH,b5)pcall(H.learn,b5)if type(b5)=="table"then local sN=lN==true or(d.rolled~=nil and q()-d.rolledAt<15)or d.waiting
+if not sN then return end local sO=not d.waiting local sP=d.on d.waiting,d.data,d.at=true,b5,q()d.on=(lN==true)
+d.title=tostring(b5 .title or b5 .name or"crate")if d.on and not sP then d.openedAt,d.byYou=q(),not d.ours if d.onShow then task.spawn(d.onShow)end
+end if d.on then b4("CrateWindow open("..d.title..")")elseif sO then b4("Crate waiting("..d.title..")")x(d.title.." is waiting on your stand")
+end else if d.waiting then b4("Crate gone")end d.on,d.waiting,d.data,d.prompt=false,false,nil,nil local sQ=d.byYou
+d.summonFails,d.ours,d.byYou=0,false,false if d.onGone then task.spawn(d.onGone,sQ)end if d.classify then local sR=q()
+task.spawn(function()pcall(d.classify,sR)end)end end end,GiftReceived=sL,}for eM,sT in pairs(sS)do local hc=lK:FindFirstChild(eM)
+if hc and hc:IsA("RemoteEvent")then P(hc.OnClientEvent:Connect(sT))elseif eM~="CrateUpdate"and eM~="GiftReceived"then x("remote "..eM.." missing")end
+end end local function hd()local bA=cS()if bA then if aQ(bA.name)then return{state="match",shown=bA.pretty,src="pad",info=bA}
+end return{state="skip",info=bA,level="idle",text=("on pad: %s [%s] - not ticked"):format(bA.pretty,tostring(bA.rar))}
+end if N.name and(q()-N.at)<4 then if aQ(N.name)then return{state="match",shown=ac(V(N.name)),src="roll event"}
+end return{state="skip",level="idle",text=("rolled %s [%s] - not ticked"):format(ac(V(N.name)),tostring(N.rar))}
+end return{state="none",level="wait",text="no result on pad (auto-roll running)"}end local function lO(sU,sV,sW,sX)
+local eN=RaycastParams.new()eN.FilterType=Enum.RaycastFilterType.Exclude local he={F.Character}for yR,sY in ipairs(sX or{})do he[#he+1]=sY end
+eN.FilterDescendantsInstances=he pcall(function()eN.RespectCanCollide=true end)local lP=aC:Raycast(Vector3 .new(sU,sV+4,sW),Vector3 .new(0,-30,0),eN)
+return lP and lP.Position or nil end local function hf(lQ)local lR=lQ:FindFirstChildOfClass("Humanoid")return((lR and lR.HipHeight)or 2)+lQ.HumanoidRootPart.Size.Y/2+0.2
+end local function hg(sZ,s0)local lS=sZ:FindFirstChildOfClass("Humanoid")local s1=q()while q()-s1<s0 do if lS and lS.FloorMaterial~=Enum.Material.Air then return true end
+af(0.05)end return false end local function b6(s2,hh,hi)local lT=s2 .HumanoidRootPart lT.AssemblyLinearVelocity=Vector3 .new(0,0,0)
+lT.CFrame=hi and CFrame.new(hh,Vector3 .new(hi.X,hh.Y,hi.Z))or CFrame.new(hh)end local function b7(aV,lU)local bB=aD()
+if not bB or not aV then return false end local a_=aV.Position local eO=math.clamp(math.max(aV.Size.X,aV.Size.Z)/2+2.2,3,7)
+local lV=(lU and lU.MaxActivationDistance)or 10 if eO>lV-2 then eO=math.max(2.5,lV-2)end local cU={}local function bC(cV)
+cV=Vector3 .new(cV.X,0,cV.Z)if cV.Magnitude>0.05 then cU[#cU+1]=cV.Unit end end local lW=rh()if lW then bC(lW-a_)end
+bC(aV.CFrame.LookVector)bC(-aV.CFrame.LookVector)bC(aV.CFrame.RightVector)bC(-aV.CFrame.RightVector)bC(bB.HumanoidRootPart.Position-a_)
+if#cU==0 then bC(Vector3 .new(0,0,1))end local s3,eP=hf(bB),false for yS,s4 in ipairs(cU)do local eQ=a_+s4*eO
+local hj=lO(eQ.X,a_.Y,eQ.Z,{aV})if hj and math.abs(hj.Y-a_.Y)<14 then b6(bB,Vector3 .new(eQ.X,hj.Y+s3,eQ.Z),a_)
+if hg(bB,0.7)then eP=true break end end end if not eP then b6(bB,a_+cU[1]*eO+Vector3 .new(0,3,0),a_)eP=hg(bB,1)
+end af(0.12)return eP end local function s5(cW)if not cW.Parent or not cW.Enabled then return false end pcall(function()cW:InputHoldBegin()end)
+af(math.max(cW.HoldDuration,0)+0.08)pcall(function()cW:InputHoldEnd()end)return true end local function aj(lX,s6)
+local s7=q()while q()-s7<s6 do if lX()then return true end af(0.05)end return lX()end local function eR(b8,s8,lY,s9)
+local s_=c.zapFirst and{"zap","hold"}or{"hold","zap"}for ta,hk in ipairs(s_)do if ta==2 and(s9 or not(b8 .Parent and b8 .Enabled and(not lY or lY())))then break end
+local hl if hk=="hold"then hl=s5(b8)else hl=type(fireproximityprompt)=="function"and b8 .Parent~=nil and b8 .Enabled and pcall(fireproximityprompt,b8)end
+if hl and aj(s8,1.2)then c.zapFirst=(hk=="zap")return true,hk end end return false end local function lZ(hm)local ba=kK()
+if not ba or not ba.Enabled then x("buy: nothing on the pad")return false end local l0=cE(ba)if not l0 then x("buy: pad part missing")return false end
+c.lastBuyAt=q()local tb,l1=N.seq,aR()b7(l0,ba)if not ba.Enabled then x("buy aborted: pad emptied")return false end
+local b9=hd()if not hm and b9 .state~="match"then x("buy aborted: "..(b9 .text or"pad changed"))c.matchSince=nil
+return false end local hn=b9 .info and b9 .info.name or(b9 .state=="match"and N.name)or nil local function tc()
+return ba.Enabled and T()==nil and(hm or hd().state=="match")end local td,te=eR(ba,function()return T()~=nil or((not ba.Enabled)and(hm or N.seq==tb))
+end,tc,lG()~=nil)if td then aj(function()return T()~=nil end,0.8)local cX=T()local l2=aR()c.holding,c.bought,c.cashFails=true,c.bought+1,0
+c.matchSince=nil N.name,N.rar,N.at=nil,nil,q()x(("BOUGHT %s%s via %s"):format(cX and ac(V(cX))or(b9 .shown or"?"),(l1 and l2)and(" for $"..ay(l1-l2))or"",te))
+if cX and hn and V(cX)~=V(hn)then x(("note: picked up %s, not %s"):format(cX,hn))end return true end c.cashFails=c.cashFails+1
+c.noCashUntil=q()+math.min(8*2^(c.cashFails-1),60)local l3=cS()x(("BUY REFUSED: cash short? have $%s, price %s"):format(ay(aR()),(l3 and l3 .price)or"?"))
+return false end local function l4()local eS=T()if not eS then c.holding=false x("place: hands are empty")return false
+end if not aQ(eS)then x(("REFUSED TO WAX %s - it is not ticked"):format(ac(V(eS))))return false end for yT=1,e.PlaceTries do
+local bc=rk()if not bc then x("place: no free station")break end local l5=cE(bc)if l5 then b7(l5,bc)local l6=T()
+if not l6 then c.holding=false x("place: hands emptied on the way")return false end if not aQ(l6)then x("place: what I carry changed, not waxing it")return false end
+if bc.Enabled then local tf,tg=eR(bc,function()return not bc.Enabled end,function()return bc.Enabled end)if tf then
+c.holding,c.placed,c.placeFails=false,c.placed+1,0 c.carryBlind,c.attrStale=q()+2.5,0 N.name,N.rar,N.at=nil,nil,q()
+x(("WAXED %s #%d at %s via %s"):format(ac(V(eS)),c.placed,bc.Parent.Parent.Name,tg))return true end end end af(0.25)
+end c.placeFails=c.placeFails+1 if T()==nil then c.holding=false end x("PLACE FAILED ("..c.placeFails..")")if c.placeFails>=2 then
+c.capHit,c.running,c.capAt=true,false,q()c.capMsg=("STOPPED: waxing %s failed twice with free stations (plate full at 100?)"):format(
+tostring(T()))x(c.capMsg)end return false end function o.place()local th=q()while c.alive and o.editing and q()-th<25 do af(0.2)end
+if e.Teams and e.TeamWax~=""then o.placing=true local ti=q()while c.alive and o.current()~=e.TeamWax and q()-ti<5 do af(0.1)end
+if o.current()==e.TeamWax then af(0.3)else x("wax team did not come on in time - placing anyway")end end local tj,l7=pcall(l4)
+o.placing=false if not tj then error(l7,0)end return l7 end local function l8(l9)return type(l9)=="string"and l9:lower():find("crate",1,true)~=nil
+end local tk={SABFarmGui=1,SABToggle=1,SABError=1}local function ho(tl)local bd=tl while bd do if tk[bd.Name]then return false end
+if bd:IsA("ScreenGui")then local tm,tn=pcall(function()return bd.Enabled end)return(not tm)or tn~=false end if bd:IsA("GuiObject")and not bd.Visible then return false end
+bd=bd.Parent end return false end local function eT(eU)local b_=""pcall(function()if eU:IsA("TextButton")then b_=eU.Text end end)
+if not b_:find("%a")then for yU,eV in ipairs(eU:GetDescendants())do if(eV:IsA("TextLabel")or eV:IsA("TextButton"))and eV.Text:find("%a")then b_=eV.Text break end
+end end if not b_:find("%a")then b_=eU.Name end return(b_:lower():gsub("[^%a]",""))end local function to()local cY,cZ
+local l_=F:FindFirstChildOfClass("PlayerGui")if not l_ then return nil,nil end for yV,c0 in ipairs(l_:GetDescendants())do
+if c0:IsA("GuiButton")and ho(c0)then local hp=eT(c0)if hp:sub(1,4)=="open"and not hp:find("shop",1,true)then cY=cY or c0 end
+if hp:sub(1,7)=="discard"then cZ=cZ or c0 end end end if cY and cZ then return cY,cZ end if d.on then return cY,cZ end
+return nil,nil end local hq=(function()local tp,tq=pcall(function()return game:GetService("VirtualInputManager")end)return tp and tq or nil end)()
+local function ma(aW,hr)local hs={}local function mb(tr)hs[#hs+1]=tr end if c.tapWay then mb(c.tapWay)end for yW,mc in ipairs({"touch","conn","signal"})do
+if mc~=c.tapWay then mb(mc)end end local function md(ts,...)local tt,ht=pcall(getconnections,ts)if not(tt and type(ht)=="table"and#ht>0)then return false end
+local me,tu,tv=false,{...},select("#",...)for yX,tw in ipairs(ht)do if pcall(function()tw:Fire(table.unpack(tu,1,tv))end)then me=true end
+end return me end local function mf()local mg=Vector3 .new(0,0,0)pcall(function()local mh,mi=aW.AbsolutePosition,aW.AbsoluteSize
+mg=Vector3 .new(mh.X+mi.X/2,mh.Y+mi.Y/2,0)end)local hu={Position=mg,Delta=Vector3 .new(0,0,0),KeyCode=Enum.KeyCode.Unknown}
+pcall(function()hu.UserInputType=Enum.UserInputType.Touch end)pcall(function()hu.UserInputState=Enum.UserInputState.End end)
+return hu end for yY,aX in ipairs(hs)do local c1=false if aX=="conn"and type(getconnections)=="function"then if md(aW.MouseButton1Click)then
+c1=true if aj(hr,1.5)then c.tapWay=aX return true,aX end end c1=md(aW.Activated,mf(),1)elseif aX=="signal"and type(firesignal)=="function"then
+if pcall(firesignal,aW.MouseButton1Click)then if aj(hr,1.5)then c.tapWay=aX return true,aX end end c1=pcall(firesignal,aW.Activated,mf(),1)
+elseif aX=="touch"and hq then c1=pcall(function()local mj,mk=aW.AbsolutePosition,aW.AbsoluteSize local ml=0 local mm=aW:FindFirstAncestorWhichIsA("ScreenGui")
+local tx,ty=pcall(function()return mm and mm.IgnoreGuiInset end)if not(tx and ty)then pcall(function()ml=game:GetService("GuiService"):GetGuiInset().Y end)
+end local mn,mo=mj.X+mk.X/2,mj.Y+mk.Y/2+ml hq:SendMouseButtonEvent(mn,mo,0,true,game,1)task.wait(0.06)hq:SendMouseButtonEvent(mn,mo,0,false,game,1)
+end)end if c1 and aj(hr,1.5)then c.tapWay=aX return true,aX end end return false end d.NOT={LimitedSquishyPlaceHolder=1,Lever=1,WaxStations=1,RolledSquishyPlaceHolder=1,SquishyStack=1}
+local function hv(mp)local c2=mp.Parent while c2 and c2~=c.plot do if d.NOT[c2 .Name]then return false end c2=c2 .Parent
+end local hw=(mp.ActionText or""):lower()if hw:find("roll",1,true)or hw:find("place",1,true)or hw:find("sell",1,true)then return false end
+return true end local function tz()if d.prompt and d.prompt.Parent and d.prompt.Enabled then return d.prompt end
+if not c.plot then return nil end local mq=c.plot:FindFirstChild("CrateStand")local c3 if mq then for yZ,eW in ipairs(mq:GetDescendants())do
+if eW:IsA("ProximityPrompt")and eW.Enabled and hv(eW)then c3=eW break end end end if not c3 then for y0,be in ipairs(c.plot:GetDescendants())do
+if be:IsA("ProximityPrompt")and be.Enabled and hv(be)then local mr=be:FindFirstAncestorWhichIsA("Model")local tA=((be.ActionText or"").." "..(be.ObjectText or"").." "..be.Name.." "..(mr and mr.Name or"")):lower()
+if tA:find("crate",1,true)then c3=be break end end end end d.prompt=c3 return c3 end local function hx()if d.on then return true end
+local c4=tz()if not c4 then d.summonFails=d.summonFails+1 d.lastFail=q()x("crate: cannot find where to open "..d.title.." - open it once by hand")
+return false end local ms=cE(c4)if ms then b7(ms,c4)end d.ours=true eR(c4,function()return d.on end)if aj(function()return d.on end,3)then
+d.summonFails=0 return true end d.ours=false d.summonFails=d.summonFails+1 d.lastFail=q()x("crate: pressed "..eb(c4).." but no window came up")
+return false end do local function tB(mt)local ca=mt.Parent while ca and ca:IsA("GuiObject")do local mu,mv=false,false
+for y1,c5 in ipairs(ca:GetDescendants())do if c5~=mt and c5:IsA("GuiButton")and eT(c5):sub(1,7)=="discard"then mu=true end
+if c5:IsA("TextLabel")then local hy=c5 .Text:lower()if hy:find("crate",1,true)or hy:find("can contain",1,true)or hy:find("cost",1,true)then mv=true end
+end if mu and mv then return ca end end ca=ca.Parent end end function d.findWin()if d.win and d.win.Parent then return d.win end
+local mw=F:FindFirstChildOfClass("PlayerGui")if not mw then return nil end for y2,eX in ipairs(mw:GetDescendants())do
+if eX:IsA("GuiButton")and not eX:FindFirstAncestor("SABFarmGui")and eT(eX):sub(1,4)=="open"then local hz=tB(eX)
+if hz then d.win=hz return hz end end end end local function tC(tD)for y3,eY in ipairs(tD:GetDescendants())do
+if eY:IsA("GuiButton")then local mx,hA=eT(eY),eY.Name:lower()if mx=="x"or mx=="close"or hA=="x"or hA:find("close",1,true)or hA:find("exit",1,true)then return eY end
+end end end d.onShow=function()d.win=nil d.findWin()end d.onGone=function(tE)task.wait(tE and 4 or 1.2)if d.on or d.waiting then return end
+local eZ=d.findWin()if not eZ or not ho(eZ)then return end local my=tC(eZ)if my and ma(my,function()return not ho(eZ)end)then return end
+x("the crate window is still open - tap its X")end end local function e0(e1)if not hx()then return false end local mz=q()-(d.openedAt or 0)
+if mz<0.6 then af(0.6-mz)end local hB=d.title local tF,tG=to()local mA=e1 and tF or tG if not mA then d.lastFail=q()
+c.crateFails=c.crateFails+1 x(("crate: no %s button found in %s"):format(e1 and"Open"or"Discard",hB))return false
+end local tH=T()local tI,y4=ma(mA,function()return(not d.on)or(T()~=nil and T()~=tH)end)if not tI then d.lastFail=q()
+c.crateFails=c.crateFails+1 x("crate: could not press "..(e1 and"Open"or"Discard").." (no working tap method)")
+return false end c.crateFails=0 if e1 then c.crates=c.crates+1 aj(function()return T()~=nil end,1.5)local mB=T()
+x(("OPENED %s -> %s"):format(hB,mB and ac(V(mB))or"?"))else x("discarded "..hB.." (nothing ticked in it)")end
+return true end d.calls={}function d.saw(tJ,...)local tK=select("#",...)d.calls[#d.calls+1]={t=q(),m=tJ,n=tK,args={...},data=d.data,
 crate=d.data and d.data.name,title=d.title,rar=d.data and d.data.rarity}if#d.calls>12 then table.remove(d.calls,1)end
-end function d.slot(ao,aW)local ba=type(ao)if(ba=="string"or ba=="number")and type(aW.data)=="table"then for mh,hr in pairs(aW.data)do
-if hr==ao and type(mh)=="string"and(type(hr)=="string"or type(hr)=="number")then return{__slot="f:"..mh}end end
-end if ba=="string"then if aW.crate and ao==aW.crate then return{__slot="crate"}end if aW.title and ao==aW.title then return{__slot="title"}end
-if aW.rar and ao==aW.rar then return{__slot="rarity"}end return ao end if ba=="number"or ba=="boolean"or ba=="nil"then return ao end
-if ba=="table"then local mi={}for tb,mj in pairs(ao)do if type(mj)=="table"then return nil,"nested table"end local tc,mk=d.slot(mj,aW)
-if mk then return nil,mk end mi[tb]=tc end return mi end local td,te=pcall(function()return ao:IsA("Instance")end)
-if td and te then if ao==C then return{__slot="player"}end if a.plot and ao==a.plot then return{__slot="plot"}end
-local eS=a.plot and a.plot:FindFirstChild("CrateStand")if eS and ao==eS then return{__slot="stand"}end if eS and ao.Parent==eS then return{__slot="model"}end
-end return nil,"a value it cannot rebuild ("..ba..")"end function d.resolve(eT)if type(eT)~="table"then return eT end
-local aA=eT.__slot if aA and aA:sub(1,2)=="f:"then return d.data and d.data[aA:sub(3)]end if aA=="crate"then return d.data and d.data.name end
-if aA=="title"then return(d.data and d.data.title)or d.title end if aA=="rarity"then return d.data and d.data.rarity end
-if aA=="player"then return C end if aA=="plot"then return a.plot end if aA=="stand"or aA=="model"then local hs=a.plot and a.plot:FindFirstChild("CrateStand")
-if aA=="stand"or not hs then return hs end for yj,ml in ipairs(hs:GetChildren())do if lN(ml.Name)then return ml end end
-return nil end local mm={}for tf,tg in pairs(eT)do mm[tf]=d.resolve(tg)end return mm end function d.classify(ht)
-if d.directOff then return end local eU={}for yk,hu in ipairs(d.calls)do if hu.t<=ht+0.05 and ht-hu.t<=6 then eU[#eU+1]=hu end
-end if#eU==0 then return end if not ah(function()return(d.heldAt or 0)>=ht-1 end,2.5)then return end local c0={}
-for yl,c1 in ipairs(eU)do local mn={}for mo=1,c1 .n do local th,mp=d.slot(c1 .args[mo],c1)if mp then u("crate call has "..mp.." - keeping the button method")
-return end mn[mo]=th end c0[#c0+1]={m=c1 .m,n=c1 .n,args=mn}end local hv=d.learned d.learned={seq=c0,mode=hv and hv.mode or nil}
-V.dirty=true if not hv then u(("learned how to open crates directly (%d call%s)"):format(#c0,#c0==1 and""or"s"))end
-end function d.replay()local mq=d.learned local mr=az:FindFirstChild("Remotes")local hw=mr and mr:FindFirstChild("CrateAction")
-if not(mq and hw)then return false end local ms=table.unpack or unpack d.replaying=true for ym,c2 in ipairs(mq.seq)do
-local hx={}for mt=1,c2 .n do hx[mt]=d.resolve(c2 .args[mt])end task.spawn(function()pcall(function()if c2 .m=="InvokeServer"then hw:InvokeServer(ms(hx,1,c2 .n))
-else hw:FireServer(ms(hx,1,c2 .n))end end)end)task.wait(0.2)end d.replaying=false return true end function d.esc(ti)return(ti:gsub("[%%|;=,\n]",function(tj)return("%%%02X"):format(tj:byte())end))end
-function d.enc(bx)local eV=type(bx)if eV=="string"then return"s"..d.esc(bx)end if eV=="number"then return"n"..tostring(bx)end
-if eV=="boolean"then return bx and"b1"or"b0"end if eV=="nil"then return"z"end if bx.__slot then return"k"..bx.__slot end
-local hy={}for tk,tl in pairs(bx)do hy[#hy+1]=d.enc(tk).."="..d.enc(tl)end return"t"..table.concat(hy,",")end
-function d.dec(mu)local c3,c4=mu:sub(1,1),mu:sub(2)local function tm(tn)return(tn:gsub("%%(%x%x)",function(to)return string.char(tonumber(to,16))end))end
-if c3=="s"then return tm(c4)end if c3=="n"then return tonumber(c4)end if c3=="b"then return c4=="1"end if c3=="k"then return{__slot=c4}end
-if c3=="t"then local mv={}for tp in c4:gmatch("[^,]+")do local mw,tq=tp:match("^(.-)=(.*)$")if mw then local mx=d.dec(mw)
-if mx~=nil then mv[mx]=d.dec(tq)end end end return mv end return nil end function d.goneOrNew(tr)return function()
-if not d.waiting then return true end local my=P()return my~=nil and my~=tr end end function d.near()local mz=az:FindFirstChild("Remotes")
-local mA=mz and mz:FindFirstChild("CrateAction")local hz=aP()local hA=a.plot and a.plot:FindFirstChild("CrateStand")
-local hB=hA and hA:FindFirstChild("Spot")if not(mA and hz and hB)then return false,"no crate stand or remote"end
-local hC=hz.HumanoidRootPart local eW=hC.CFrame local mB,hD=d.title,"no answer"local ts=P()local mC=hA:FindFirstChild("Holder")
-local function mD()if not mC then return d.waiting or d.on end for yn,tt in ipairs(mC:GetChildren())do if tt:IsA("Model")then return true end end
-return false end for tu=1,3 do if not(d.waiting or d.on)or not mD()then d.waiting,d.on,d.quietUntil=false,false,r()+4
-return true,"already gone"end if(hC.Position-hB.Position).Magnitude>8 then cN(hB,d.prompt)end ag(0.12+0.15*tu)
-local aI={}d.replaying=true task.spawn(function()aI.ok,aI.v=pcall(function()return mA:InvokeServer("open")end)
-aI.done=true end)ah(function()return aI.done end,6)d.replaying=false local by=aI.v if aI.done and aI.ok and type(by)=="table"and by.ok then
-a.crates,d.fails,d.nearFails=a.crates+1,0,0 d.waiting,d.on,d.quietUntil=false,false,r()+4 u(("OPENED %s -> %s (no window)"):format(mB,by.prize and aa(Q(tostring(by.prize)))or"?"))
-ah(function()local mE=P()return mE~=nil and mE~=ts end,1.5)if(hC.Position-eW.Position).Magnitude>8 then pcall(function()cM(hz,eW.Position,eW.Position+eW.LookVector)end)end
-return true,"opened"end hD=(aI.done and aI.ok and type(by)=="table")and tostring(by.reason or"refused, no reason given")
-or(aI.done and("error: "..tostring(by))or"no answer in 6s")ag(0.3)if not mD()then d.waiting,d.on,d.quietUntil=false,false,r()+4
-return true,"already gone"end end d.nearFails=(d.nearFails or 0)+1 u(("crate: the server would not open %s next to the stand (%s)"):format(mB,hD))
-return false,hD end function d.smart()local hE=d.title if(d.nearFails or 0)<3 then local tv=d.near()if tv then return true end
-if d.nearFails>=3 then u("opening next to the stand failed 3 times - trying the older ways")end end local bz=d.learned
-if bz then local hF=P()if d.on then d.replay()if ah(d.goneOrNew(hF),3.5)then a.crates=a.crates+1 u("OPENED "..hE.." (direct)")
-return true end else if bz.mode~="window"then d.replay()if ah(d.goneOrNew(hF),3.5)then a.crates,d.fails=a.crates+1,0
-if bz.mode~="direct"then bz.mode,V.dirty="direct",true u("crates now open directly - the window never comes up")
-end u("OPENED "..hE.." (direct, no window)")return true end end if hm()then d.replay()if ah(d.goneOrNew(hF),3.5)then
-a.crates,d.fails=a.crates+1,0 if bz.mode~="window"then bz.mode,V.dirty="window",true u("crates need their window up first - it shows briefly")
-end u("OPENED "..hE.." (direct, window up)")return true end end end d.fails=(d.fails or 0)+1 d.lastBad,d.learned,V.dirty=bz,nil,true
-if d.fails>=3 then d.directOff=true u("direct crate opening failed 3 times - using the button for now")else u("the learned crate call did not work - back to pressing Open")
-end end return eQ(true)end function y.snap()return{rules=C:GetAttribute("AutoRollRules"),stop=C:GetAttribute("AutoRollStop"),
-on=C:GetAttribute("AutoRollOn"),main=C:GetAttribute("AutoRoll")}end y.cache={}function y.watchCache()y.cache=y.snap()
-for tw,mF in pairs({rules="AutoRollRules",stop="AutoRollStop",on="AutoRollOn",main="AutoRoll"})do O(C:GetAttributeChangedSignal(mF):Connect(function()y.cache[tw]=C:GetAttribute(mF)end))
-end end function y.isOn()return C:GetAttribute("AutoRollOn")==true end function y.saw(tx,...)local eX=y.cache
-local ty={m=tx,n=select("#",...),args={...},before={rules=eX.rules,stop=eX.stop,on=eX.on,main=eX.main}}task.delay(1.5,function()
-if a.alive then pcall(y.learnOne,ty)end end)end function y.learnOne(c5)local aj,c6=y.snap(),c5 .before local eY=(aj.rules~=c6 .rules)or(aj.stop~=c6 .stop)
-local mG=(aj.on~=c6 .on)or(aj.main~=c6 .main)if not eY and not mG then return end local mH={}for mI=1,c5 .n do
-local aw=c5 .args[mI]local bA=type(aw)if bA=="string"and aw~=""and aw==aj.rules then aw={__slot="rules"}elseif bA=="string"and aw~=""and eY and aw==aj.stop and aj.stop~=c6 .stop then aw={__slot="stop"}
-elseif bA=="table"then local mJ={}for tz,b5 in pairs(aw)do if type(b5)=="table"or(type(b5)=="userdata")then y.msg="Auto Roll sends something I cannot repeat"return
-end mJ[tz]=(type(b5)=="string"and b5~=""and b5==aj.rules)and{__slot="rules"}or b5 end aw=mJ elseif bA~="string"and bA~="number"and bA~="boolean"and bA~="nil"then
-if aw==C then aw={__slot="player"}else y.msg="Auto Roll sends something I cannot repeat"return end end mH[mI]=aw
-end local b6={m=c5 .m,n=c5 .n,args=mH}if eY then local hG=false for tA=1,b6 .n do local c7=b6 .args[tA]if type(c7)=="table"and c7 .__slot=="rules"then hG=true end
-if type(c7)=="table"and not c7 .__slot then for yo,mK in pairs(c7)do if type(mK)=="table"and mK.__slot=="rules"then hG=true end end
-end end if hG then y.rec.rules={b6}else table.insert(y.rec.rules,b6)if#y.rec.rules>60 then table.remove(y.rec.rules,1)end
-end end if mG then if aj.on==true then y.rec.on=b6 else y.rec.off=b6 end e.AutoRoll=(aj.on==true)end if aj.rules and aj.rules~=""then e.ARrules,e.ARstop=aj.rules,aj.stop or""end
-V.dirty=true y.msg=""u(("learned an Auto Roll %s message"):format(eY and"choices"or(aj.on and"on"or"off")))end
-function y.resolve(b7)if type(b7)~="table"then return b7 end if b7 .__slot=="rules"then return e.ARrules~=""and e.ARrules or C:GetAttribute("AutoRollRules")end
-if b7 .__slot=="stop"then return e.ARstop~=""and e.ARstop or C:GetAttribute("AutoRollStop")end if b7 .__slot=="player"then return C end
-local mL={}for tB,tC in pairs(b7)do mL[tB]=y.resolve(tC)end return mL end function y.replay(mM,tD)local mN=table.unpack or unpack
-for yp,c8 in ipairs(tD)do local hH={}for mO=1,c8 .n do hH[mO]=y.resolve(c8 .args[mO])end y.replaying=true pcall(function()
-if c8 .m=="InvokeServer"then task.spawn(function()pcall(function()mM:InvokeServer(mN(hH,1,c8 .n))end)end)else mM:FireServer(mN(hH,1,c8 .n))end
-end)y.replaying=false task.wait(0.25)end end function y.apply(mP,tE)if y.busy or not a.alive then return end y.busy=true
-pcall(function()local mQ=az:FindFirstChild("Remotes")local hI=mQ and mQ:FindFirstChild("AutoRollAction")if not hI then y.msg="this game has no AutoRollAction"return end
-local bc=e.AutoRoll if bc and e.ARrules~=""and C:GetAttribute("AutoRollRules")~=e.ARrules then if#y.rec.rules==0 then
-y.msg="pick your Auto Roll choices once in the game's menu so I can learn them"u(y.msg)else y.replay(hI,y.rec.rules)
-if ah(function()return C:GetAttribute("AutoRollRules")==e.ARrules end,4)then u("Auto Roll choices put back")else
-y.msg="Auto Roll choices did not come out the same - set them in the game, then SAVE"u(y.msg)end end end if bc==y.isOn()or(not bc and not tE)then return end
-local eZ=bc and y.rec.on or y.rec.off if not eZ then local c9=bc and y.rec.off or y.rec.on local mR=c9~=nil for tF=1,c9 and c9 .n or 0 do
-if type(c9 .args[tF])=="boolean"then mR=false end end if mR then eZ=c9 end end if not eZ then y.msg=("switch Auto Roll %s once in the game's menu so I can learn it"):format(bc and"on"or"off")
-u(y.msg)return end y.replay(hI,{eZ})if ah(function()return y.isOn()==bc end,4)then y.msg=""u(("Auto Roll switched %s%s"):format(bc and"ON"or"OFF",mP and(" ("..mP..")")or""))
-else y.msg="Auto Roll did not switch - do it once in the game so I can relearn it"u(y.msg)end end)y.busy=false
-end j.HS=game:GetService("HttpService")j.uid=(function()local tG,tH=pcall(function()return C.UserId end)return tG and tH or 0 end)()
-j.buyMsg,j.wishMsg,j.wishN="","",0 function j.info()if j.I then return j.I end local tI,hJ=pcall(function()return require(az:WaitForChild("Modules",5):WaitForChild("PetInfo",5))end)
-if tI and type(hJ)=="table"and type(hJ.Pets)=="table"then j.I=hJ end return j.I end function j.order()if j.list then return j.list end
-local bd=j.info()if not bd then return{}end local bB={}if type(bd.Order)=="table"and#bd.Order>0 then for yq,mS in ipairs(bd.Order)do if bd.Pets[mS]then bB[#bB+1]=mS end end
-else for tJ in pairs(bd.Pets)do bB[#bB+1]=tJ end table.sort(bB,function(tK,tL)return(bd.Pets[tK].price or 0)<(bd.Pets[tL].price or 0)end)
-end j.list=bB return bB end function j.nice(mT,hK)local mU=j.info()local mV=mU and mU.Pets[mT]return((hK and hK~="")and(hK.." ")or"")..(mV and mV.displayName or tostring(mT))
-end function j.data()local e0=C:GetAttribute("PetsData")if type(e0)~="string"then return nil end if e0==j.rawD then return j.lastD end
-local tM,c_=pcall(function()return j.HS:JSONDecode(e0)end)c_=(tM and type(c_)=="table")and c_ or nil j.rawD,j.lastD=e0,c_
-return c_ end function j.pen()return az:FindFirstChild("PetMeadowSpawns")end function j.srv()return aG:GetServerTimeNow()end
-function j.money()local hL=C:FindFirstChild("MoneyValue")if hL and type(hL.Value)=="number"then return hL.Value end
-return aO()or 0 end function j.wishes()local mW=j.pen()local mX=mW and mW:GetAttribute("Wishes")local hM,mY={},j.srv()
-if type(mX)~="string"then return hM end local tN,mZ=pcall(function()return j.HS:JSONDecode(mX)end)if tN and type(mZ)=="table"then
-for tO,hN in pairs(mZ)do if type(hN)=="number"and hN>mY then hM[tO]=hN-mY end end end return hM end function j.call(...)
-local m0=az:FindFirstChild("Remotes")local m1=m0 and m0:FindFirstChild("PetRequest")if not m1 then return nil end
-local m2=table.pack(...)local bC={}task.spawn(function()bC.ok,bC.v=pcall(function()return m1:InvokeServer(table.unpack(m2,1,m2 .n))end)
-bC.done=true end)local tP=r()while not bC.done and r()-tP<6 do task.wait(0.05)end if bC.done and bC.ok then return bC.v end
-return nil end function j.want(tQ)return e.Pets[tQ]end function j.closeNaming(hO)local m4=pcall(function()local m3=C:FindFirstChild("PlayerScripts")
-local tR=m3 and m3:FindFirstChild("Naming",true)require(tR).close()end)ag(0.5)if hO.Visible then pcall(function()local m5=hO:FindFirstChild("NameBox",true)if m5 then m5:ReleaseFocus()end end)
-hO.Visible=false m4=false end return m4 end function j.skipNaming()j.namingUntil=r()+10 if j.namingOn then return end
-j.namingOn=true task.spawn(function()while a.alive and r()<j.namingUntil do local m6=C:FindFirstChildOfClass("PlayerGui")
-local m7=m6 and m6:FindFirstChild("MainGui")local e1=m7 and m7:FindFirstChild("PetNameGui")if e1 and e1 .Visible then
-ag(0.4)if e1 .Visible then j.namingShut=(j.namingShut or 0)+1 pcall(j.closeNaming,e1)break end end ag(0.25)end
-j.namingOn=false end)end function j.buyTick()if not e.PetBuy then j.buyMsg="auto adopt is off"return end local hP,m8,e2=j.info(),j.pen(),j.data()
-if not(hP and m8 and e2)then j.buyMsg="pet data not loaded yet"return end j.tryAt=j.tryAt or{}local da,hQ=#(e2 .pets or{}),tonumber(e2 .maxOwned)or 60
-local tS,m9,db=j.srv(),{},nil for yr,aB in ipairs(m8:GetChildren())do m9[aB.Name]=true local bD,e3=aB:GetAttribute("Pet"),aB:GetAttribute("Variant")or""
-local hR=bD and j.want(bD)if hR and hR.b and hP.Pets[bD]and(not hR.g or e3=="Big")and x.wantMore(bD,e3,e2)and not aB:GetAttribute("A_"..j.uid)
-and(tonumber(aB:GetAttribute("ExpiresAt"))or 0)>tS+1 and r()>=(j.tryAt[aB.Name]or 0)then local dc,m_=j.nice(bD,e3),hP.Pets[bD].price or 0
-if da>=hQ then db=("%s is in the pen, but you have %d/%d pets"):format(dc,da,hQ)j.tryAt[aB.Name]=r()+15 elseif j.money()<m_ then
-db=("%s is in the pen - need $%s"):format(dc,au(m_))j.tryAt[aB.Name]=r()+5 else j.tryAt[aB.Name]=r()+8 local be=j.call("adopt",aB.Name)
-if type(be)=="table"and be.ok then da=da+1 j.buys=(j.buys or 0)+1 j.recent=j.recent or{}local tT=type(be.pet)=="table"and be.pet or{}
-table.insert(j.recent,{id=tostring(tT.id or("?"..r())),name=bD,variant=e3,at=r()})if#j.recent>30 then table.remove(j.recent,1)end
-u("ADOPTED "..dc)j.skipNaming()db="adopted "..dc else local na=type(be)=="table"and tostring(be.reason or"no reason given")or"no answer"
-u(("adopt %s failed: %s"):format(dc,na))db="adopt failed: "..na if type(be)=="table"and be.bagFull then j.tryAt[aB.Name]=r()+60 end
-end end end end for nb in pairs(j.tryAt)do if not m9[nb]then j.tryAt[nb]=nil end end j.buyMsg=db or("watching the pen (%d/%d pets)"):format(da,hQ)
-end function j.wishTick()if not e.PetWish then j.wishMsg="auto wish is off"return end local e4=j.info()if not(e4 and j.pen())then j.wishMsg="pet data not loaded yet"return end
-j.wishTry,j.wishWhy=j.wishTry or{},j.wishWhy or{}local e5,hS,bf=j.wishes(),0,nil local tU=(type(e4 .Wish)=="table"and e4 .Wish.cashShare)or 2
-local tV=j.data()for ys,am in ipairs(j.order())do local nc=j.want(am)if nc and nc.w and x.wantMore(am,"",tV)then
-hS=hS+1 if not e5[am]and r()>=(j.wishTry[am]or 0)then local hT=tonumber(C:GetAttribute("PetWishCredits"))or 0
-local hU=math.floor((e4 .Pets[am].price or 0)*tU)if hT<=0 and j.money()<hU then j.wishTry[am]=r()+10 bf=("need $%s to wish for %s"):format(au(hU),j.nice(am))
-j.wishWhy[am]=bf else j.wishTry[am]=r()+3 local tW=hT>0 and"wishCredit"or"wish"local e6=j.call(tW,am)if type(e6)=="table"and e6 .ok then
-j.wishN,j.wishWhy[am]=j.wishN+1,nil u(("WISHED for %s (%s)"):format(j.nice(am),hT>0 and"free wish"or("$"..au(hU))))
-else local hV=type(e6)=="table"and tostring(e6 .reason or"no reason given")or"no answer"if hV:lower():find("already",1,true)then j.wishTry[am]=r()+2
-else u(("wish %s failed: %s"):format(j.nice(am),hV))bf="wish failed: "..hV end end end end end end if not bf then
-for yt,e7 in ipairs(j.order())do local nd=j.want(e7)if nd and nd.w and not e5[e7]and j.wishWhy[e7]then bf=j.wishWhy[e7]break end
-end end if not bf then local e8={}for yu,e9 in ipairs(j.order())do local ne=j.want(e9)if ne and ne.w and e5[e9]then e8[#e8+1]=("%s %dm"):format(j.nice(e9),math.ceil(e5[e9]/60))end
-end bf=hS==0 and"no pet has WISH ticked"or("running: "..(#e8>0 and table.concat(e8,", ")or"none yet"))end j.wishMsg=bf
-end o.switches,o.glazed,o.finished=0,0,0 o.done,o.doneN,o.later={},0,{}function o.teams()local hW=j.data()return(hW and hW.teams)or{},hW
-end function o.current(b8)b8=b8 or j.data()if not b8 then return""end local nf={}for yv,tX in ipairs(b8 .equipped or{})do nf[tostring(tX)]=true end
-for yw,ng in ipairs(b8 .teams or{})do local nh=ng.pets or{}local hX=#nh==#(b8 .equipped or{})if hX then for yx,tY in ipairs(nh)do if not nf[tostring(tY)]then hX=false break end end end
-if hX then return ng.name end end return""end function o.equip(hY)local tZ,t0=o.teams()local hZ for t1,t2 in ipairs(tZ)do if t2 .name==hY then hZ=t1 break end end
-if not hZ then o.msg="no saved team called "..tostring(hY)return false end if o.current(t0)==hY then return true end
-for yy=1,4 do local ni=j.call("teamEquip",hZ)if type(ni)=="table"and ni.ok then o.switches=o.switches+1 return true
-end task.wait(0.4)end return false end function o.left(t3)local nj=t3:FindFirstChild("SquishyPlaceHolder")local nk=nj and nj:FindFirstChild("TimerGui")
-local nl=nk and nk:FindFirstChildWhichIsA("TextLabel",true)local h0=nl and nl.Text if type(h0)~="string"or h0:find("-",1,true)then return nil end
-local h1,nm,nn=h0:match("^%s*(%d+):(%d+):?(%d*)%s*$")if not h1 then return nil end local no=nn~=""and(tonumber(h1)*3600+tonumber(nm)*60+tonumber(nn))or(tonumber(h1)*60+tonumber(nm))
-return no>0 and no or nil end function o.waxes()local dd={}local np=a.plot and a.plot:FindFirstChild("WaxStations")
-if not np then return dd end local nq=j.srv()for yz,aJ in ipairs(np:GetChildren())do local h2=tonumber(aJ:GetAttribute("PourEnd"))
-local nr=aJ:GetAttribute("PourOwner")if aJ:GetAttribute("HasSquishy")and aJ:GetAttribute("PourId")and(nr==nil or nr==j.uid)then
-local h3=o.left(aJ)local ns=h3 and(nq+h3)or((h2 and h2>nq)and h2 or nil)if ns then local nt,nu=aJ:FindFirstChild("SquishyPlaceHolder"),"?"
-if nt then for yA,nv in ipairs(nt:GetChildren())do if nv:IsA("Model")then nu=nv.Name break end end end local t4=tostring(aJ:GetAttribute("Helpers")or"")
-local h4=0 for yB in t4:gmatch("%d+")do h4=h4+1 end dd[#dd+1]={st=aJ,ends=ns,sure=h3~=nil,id=aJ:GetAttribute("PourId"),name=nu,helps=h4,
-long=aJ:GetAttribute("PourLong")==true}end end end table.sort(dd,function(t5,t6)return t5 .ends<t6 .ends end)
-return dd end function o.glazeCount()local nw=az:FindFirstChild("Remotes")local nx=nw and nw:FindFirstChild("EditStack")
-if not nx then return nil end local t7,de=pcall(function()return nx:InvokeServer("State",nil)end)if not(t7 and type(de)=="table"and type(de.state)=="table")then return nil end
-local h5,h6=0,{}for yC,e_ in ipairs(de.state.entries or{})do if e_.glaze and e_.glaze~=""then h5=h5+1 h6[e_.glaze]=(h6[e_.glaze]or 0)+1 end
-end return h5,h6,#(de.state.entries or{}),de.state.capacity end function o.finishedOne(fa,ny)o.finished=o.finished+1
-task.wait(2)local h7,t8,nz,t9=o.glazeCount()if h7 and ny and h7>ny then o.glazed=o.glazed+1 local h8={}for t_,ua in pairs(t8)do h8[#h8+1]=t_.." "..ua end
-u(("GLAZED! %s on station %s finished glazed (%s glazed now: %s)"):format(aa(Q(fa.name)),fa.st.Name,h7,table.concat(h8,", ")))
-else u(("wax done on station %s: %s, no glaze%s"):format(fa.st.Name,aa(Q(fa.name)),nz and(" (stack "..nz.."/"..tostring(t9)..")")or""))
-end end function o.tick()o.list=o.waxes()if o.editing and r()-(o.editingSince or r())>120 then o.editing=false end
+end function d.slot(au,aY)local bf=type(au)if(bf=="string"or bf=="number")and type(aY.data)=="table"then for mC,hC in pairs(aY.data)do
+if hC==au and type(mC)=="string"and(type(hC)=="string"or type(hC)=="number")then return{__slot="f:"..mC}end end
+end if bf=="string"then if aY.crate and au==aY.crate then return{__slot="crate"}end if aY.title and au==aY.title then return{__slot="title"}end
+if aY.rar and au==aY.rar then return{__slot="rarity"}end return au end if bf=="number"or bf=="boolean"or bf=="nil"then return au end
+if bf=="table"then local mD={}for tL,mE in pairs(au)do if type(mE)=="table"then return nil,"nested table"end local tM,mF=d.slot(mE,aY)
+if mF then return nil,mF end mD[tL]=tM end return mD end local tN,tO=pcall(function()return au:IsA("Instance")end)
+if tN and tO then if au==F then return{__slot="player"}end if c.plot and au==c.plot then return{__slot="plot"}end
+local e2=c.plot and c.plot:FindFirstChild("CrateStand")if e2 and au==e2 then return{__slot="stand"}end if e2 and au.Parent==e2 then return{__slot="model"}end
+end return nil,"a value it cannot rebuild ("..bf..")"end function d.resolve(e3)if type(e3)~="table"then return e3 end
+local aE=e3 .__slot if aE and aE:sub(1,2)=="f:"then return d.data and d.data[aE:sub(3)]end if aE=="crate"then return d.data and d.data.name end
+if aE=="title"then return(d.data and d.data.title)or d.title end if aE=="rarity"then return d.data and d.data.rarity end
+if aE=="player"then return F end if aE=="plot"then return c.plot end if aE=="stand"or aE=="model"then local hD=c.plot and c.plot:FindFirstChild("CrateStand")
+if aE=="stand"or not hD then return hD end for y5,mG in ipairs(hD:GetChildren())do if l8(mG.Name)then return mG end end
+return nil end local mH={}for tP,tQ in pairs(e3)do mH[tP]=d.resolve(tQ)end return mH end function d.classify(hE)
+if d.directOff then return end local e4={}for y6,hF in ipairs(d.calls)do if hF.t<=hE+0.05 and hE-hF.t<=6 then e4[#e4+1]=hF end
+end if#e4==0 then return end if not aj(function()return(d.heldAt or 0)>=hE-1 end,2.5)then return end local c6={}
+for y7,c7 in ipairs(e4)do local mI={}for mJ=1,c7 .n do local tR,mK=d.slot(c7 .args[mJ],c7)if mK then x("crate call has "..mK.." - keeping the button method")
+return end mI[mJ]=tR end c6[#c6+1]={m=c7 .m,n=c7 .n,args=mI}end local hG=d.learned d.learned={seq=c6,mode=hG and hG.mode or nil}
+aa.dirty=true if not hG then x(("learned how to open crates directly (%d call%s)"):format(#c6,#c6==1 and""or"s"))end
+end function d.replay()local mL=d.learned local mM=ao:FindFirstChild("Remotes")local hH=mM and mM:FindFirstChild("CrateAction")
+if not(mL and hH)then return false end local mN=table.unpack or unpack d.replaying=true for y8,c8 in ipairs(mL.seq)do
+local hI={}for mO=1,c8 .n do hI[mO]=d.resolve(c8 .args[mO])end task.spawn(function()pcall(function()if c8 .m=="InvokeServer"then hH:InvokeServer(mN(hI,1,c8 .n))
+else hH:FireServer(mN(hI,1,c8 .n))end end)end)task.wait(0.2)end d.replaying=false return true end function d.esc(tS)return(tS:gsub("[%%|;=,\n]",function(tT)return("%%%02X"):format(tT:byte())end))end
+function d.enc(bD)local e5=type(bD)if e5=="string"then return"s"..d.esc(bD)end if e5=="number"then return"n"..tostring(bD)end
+if e5=="boolean"then return bD and"b1"or"b0"end if e5=="nil"then return"z"end if bD.__slot then return"k"..bD.__slot end
+local hJ={}for tU,tV in pairs(bD)do hJ[#hJ+1]=d.enc(tU).."="..d.enc(tV)end return"t"..table.concat(hJ,",")end
+function d.dec(mP)local c9,c_=mP:sub(1,1),mP:sub(2)local function tW(tX)return(tX:gsub("%%(%x%x)",function(tY)return string.char(tonumber(tY,16))end))end
+if c9=="s"then return tW(c_)end if c9=="n"then return tonumber(c_)end if c9=="b"then return c_=="1"end if c9=="k"then return{__slot=c_}end
+if c9=="t"then local mQ={}for tZ in c_:gmatch("[^,]+")do local mR,t0=tZ:match("^(.-)=(.*)$")if mR then local mS=d.dec(mR)
+if mS~=nil then mQ[mS]=d.dec(t0)end end end return mQ end return nil end function d.goneOrNew(t1)return function()
+if not d.waiting then return true end local mT=T()return mT~=nil and mT~=t1 end end function d.near()local mU=ao:FindFirstChild("Remotes")
+local mV=mU and mU:FindFirstChild("CrateAction")local hK=aD()local hL=c.plot and c.plot:FindFirstChild("CrateStand")
+local hM=hL and hL:FindFirstChild("Spot")if not(mV and hK and hM)then return false,"no crate stand or remote"end
+local hN=hK.HumanoidRootPart local e6=hN.CFrame local mW,hO=d.title,"no answer"local t2=T()local mX=hL:FindFirstChild("Holder")
+local function mY()if not mX then return d.waiting or d.on end for y9,t3 in ipairs(mX:GetChildren())do if t3:IsA("Model")then return true end end
+return false end for t4=1,3 do if not(d.waiting or d.on)or not mY()then d.waiting,d.on,d.quietUntil=false,false,q()+4
+return true,"already gone"end if(hN.Position-hM.Position).Magnitude>8 then b7(hM,d.prompt)end af(0.12+0.15*t4)
+local aL={}d.replaying=true task.spawn(function()aL.ok,aL.v=pcall(function()return mV:InvokeServer("open")end)
+aL.done=true end)aj(function()return aL.done end,6)d.replaying=false local bE=aL.v if aL.done and aL.ok and type(bE)=="table"and bE.ok then
+c.crates,d.fails,d.nearFails=c.crates+1,0,0 d.waiting,d.on,d.quietUntil=false,false,q()+4 x(("OPENED %s -> %s (no window)"):format(mW,bE.prize and ac(V(tostring(bE.prize)))or"?"))
+aj(function()local mZ=T()return mZ~=nil and mZ~=t2 end,1.5)if(hN.Position-e6 .Position).Magnitude>8 then pcall(function()b6(hK,e6 .Position,e6 .Position+e6 .LookVector)end)end
+return true,"opened"end hO=(aL.done and aL.ok and type(bE)=="table")and tostring(bE.reason or"refused, no reason given")
+or(aL.done and("error: "..tostring(bE))or"no answer in 6s")af(0.3)if not mY()then d.waiting,d.on,d.quietUntil=false,false,q()+4
+return true,"already gone"end end d.nearFails=(d.nearFails or 0)+1 x(("crate: the server would not open %s next to the stand (%s)"):format(mW,hO))
+return false,hO end function d.smart()local hP=d.title if(d.nearFails or 0)<3 then local t5=d.near()if t5 then return true end
+if d.nearFails>=3 then x("opening next to the stand failed 3 times - trying the older ways")end end local bF=d.learned
+if bF then local hQ=T()if d.on then d.replay()if aj(d.goneOrNew(hQ),3.5)then c.crates=c.crates+1 x("OPENED "..hP.." (direct)")
+return true end else if bF.mode~="window"then d.replay()if aj(d.goneOrNew(hQ),3.5)then c.crates,d.fails=c.crates+1,0
+if bF.mode~="direct"then bF.mode,aa.dirty="direct",true x("crates now open directly - the window never comes up")
+end x("OPENED "..hP.." (direct, no window)")return true end end if hx()then d.replay()if aj(d.goneOrNew(hQ),3.5)then
+c.crates,d.fails=c.crates+1,0 if bF.mode~="window"then bF.mode,aa.dirty="window",true x("crates need their window up first - it shows briefly")
+end x("OPENED "..hP.." (direct, window up)")return true end end end d.fails=(d.fails or 0)+1 d.lastBad,d.learned,aa.dirty=bF,nil,true
+if d.fails>=3 then d.directOff=true x("direct crate opening failed 3 times - using the button for now")else x("the learned crate call did not work - back to pressing Open")
+end end return e0(true)end function z.snap()return{rules=F:GetAttribute("AutoRollRules"),stop=F:GetAttribute("AutoRollStop"),
+on=F:GetAttribute("AutoRollOn"),main=F:GetAttribute("AutoRoll")}end z.cache={}function z.watchCache()z.cache=z.snap()
+for t6,m0 in pairs({rules="AutoRollRules",stop="AutoRollStop",on="AutoRollOn",main="AutoRoll"})do P(F:GetAttributeChangedSignal(m0):Connect(function()z.cache[t6]=F:GetAttribute(m0)end))
+end end function z.isOn()return F:GetAttribute("AutoRollOn")==true end function z.saw(t7,...)local e7=z.cache
+local t8={m=t7,n=select("#",...),args={...},before={rules=e7 .rules,stop=e7 .stop,on=e7 .on,main=e7 .main}}task.delay(1.5,function()
+if c.alive then pcall(z.learnOne,t8)end end)end function z.learnOne(da)local al,db=z.snap(),da.before local e8=(al.rules~=db.rules)or(al.stop~=db.stop)
+local m1=(al.on~=db.on)or(al.main~=db.main)if not e8 and not m1 then return end local m2={}for m3=1,da.n do local aA=da.args[m3]
+local bG=type(aA)if bG=="string"and aA~=""and aA==al.rules then aA={__slot="rules"}elseif bG=="string"and aA~=""and e8 and aA==al.stop and al.stop~=db.stop then aA={__slot="stop"}
+elseif bG=="table"then local m4={}for t9,cb in pairs(aA)do if type(cb)=="table"or(type(cb)=="userdata")then z.msg="Auto Roll sends something I cannot repeat"return
+end m4[t9]=(type(cb)=="string"and cb~=""and cb==al.rules)and{__slot="rules"}or cb end aA=m4 elseif bG~="string"and bG~="number"and bG~="boolean"and bG~="nil"then
+if aA==F then aA={__slot="player"}else z.msg="Auto Roll sends something I cannot repeat"return end end m2[m3]=aA
+end local cc={m=da.m,n=da.n,args=m2}if e8 then local hR=false for t_=1,cc.n do local dc=cc.args[t_]if type(dc)=="table"and dc.__slot=="rules"then hR=true end
+if type(dc)=="table"and not dc.__slot then for y_,m5 in pairs(dc)do if type(m5)=="table"and m5 .__slot=="rules"then hR=true end end
+end end if hR then z.rec.rules={cc}else table.insert(z.rec.rules,cc)if#z.rec.rules>60 then table.remove(z.rec.rules,1)end
+end end if m1 then if al.on==true then z.rec.on=cc else z.rec.off=cc end e.AutoRoll=(al.on==true)end if al.rules and al.rules~=""then e.ARrules,e.ARstop=al.rules,al.stop or""end
+aa.dirty=true z.msg=""x(("learned an Auto Roll %s message"):format(e8 and"choices"or(al.on and"on"or"off")))end
+function z.resolve(cd)if type(cd)~="table"then return cd end if cd.__slot=="rules"then return e.ARrules~=""and e.ARrules or F:GetAttribute("AutoRollRules")end
+if cd.__slot=="stop"then return e.ARstop~=""and e.ARstop or F:GetAttribute("AutoRollStop")end if cd.__slot=="player"then return F end
+local m6={}for ua,ub in pairs(cd)do m6[ua]=z.resolve(ub)end return m6 end function z.replay(m7,uc)local m8=table.unpack or unpack
+for za,dd in ipairs(uc)do local hS={}for m9=1,dd.n do hS[m9]=z.resolve(dd.args[m9])end z.replaying=true pcall(function()
+if dd.m=="InvokeServer"then task.spawn(function()pcall(function()m7:InvokeServer(m8(hS,1,dd.n))end)end)else m7:FireServer(m8(hS,1,dd.n))end
+end)z.replaying=false task.wait(0.25)end end function z.apply(m_,ud)if z.busy or not c.alive then return end z.busy=true
+pcall(function()local na=ao:FindFirstChild("Remotes")local hT=na and na:FindFirstChild("AutoRollAction")if not hT then z.msg="this game has no AutoRollAction"return end
+local bh=e.AutoRoll if bh and e.ARrules~=""and F:GetAttribute("AutoRollRules")~=e.ARrules then if#z.rec.rules==0 then
+z.msg="pick your Auto Roll choices once in the game's menu so I can learn them"x(z.msg)else z.replay(hT,z.rec.rules)
+if aj(function()return F:GetAttribute("AutoRollRules")==e.ARrules end,4)then x("Auto Roll choices put back")else
+z.msg="Auto Roll choices did not come out the same - set them in the game, then SAVE"x(z.msg)end end end if bh==z.isOn()or(not bh and not ud)then return end
+local e9=bh and z.rec.on or z.rec.off if not e9 then local de=bh and z.rec.off or z.rec.on local nb=de~=nil for ue=1,de and de.n or 0 do
+if type(de.args[ue])=="boolean"then nb=false end end if nb then e9=de end end if not e9 then z.msg=("switch Auto Roll %s once in the game's menu so I can learn it"):format(bh and"on"or"off")
+x(z.msg)return end z.replay(hT,{e9})if aj(function()return z.isOn()==bh end,4)then z.msg=""x(("Auto Roll switched %s%s"):format(bh and"ON"or"OFF",m_ and(" ("..m_..")")or""))
+else z.msg="Auto Roll did not switch - do it once in the game so I can relearn it"x(z.msg)end end)z.busy=false
+end j.HS=game:GetService("HttpService")j.uid=(function()local uf,ug=pcall(function()return F.UserId end)return uf and ug or 0 end)()
+j.buyMsg,j.wishMsg,j.wishN="","",0 function j.info()if j.I then return j.I end local uh,hU=pcall(function()return require(ao:WaitForChild("Modules",5):WaitForChild("PetInfo",5))end)
+if uh and type(hU)=="table"and type(hU.Pets)=="table"then j.I=hU end return j.I end function j.order()if j.list then return j.list end
+local bi=j.info()if not bi then return{}end local bH={}if type(bi.Order)=="table"and#bi.Order>0 then for zb,nc in ipairs(bi.Order)do if bi.Pets[nc]then bH[#bH+1]=nc end end
+else for ui in pairs(bi.Pets)do bH[#bH+1]=ui end table.sort(bH,function(uj,uk)return(bi.Pets[uj].price or 0)<(bi.Pets[uk].price or 0)end)
+end j.list=bH return bH end function j.nice(nd,hV)local ne=j.info()local nf=ne and ne.Pets[nd]return((hV and hV~="")and(hV.." ")or"")..(nf and nf.displayName or tostring(nd))
+end function j.data()local e_=F:GetAttribute("PetsData")if type(e_)~="string"then return nil end if e_==j.rawD then return j.lastD end
+local ul,df=pcall(function()return j.HS:JSONDecode(e_)end)df=(ul and type(df)=="table")and df or nil j.rawD,j.lastD=e_,df
+return df end function j.pen()return ao:FindFirstChild("PetMeadowSpawns")end function j.srv()return aC:GetServerTimeNow()end
+function j.money()local hW=F:FindFirstChild("MoneyValue")if hW and type(hW.Value)=="number"then return hW.Value end
+return aR()or 0 end function j.wishes()local ng=j.pen()local nh=ng and ng:GetAttribute("Wishes")local hX,ni={},j.srv()
+if type(nh)~="string"then return hX end local um,nj=pcall(function()return j.HS:JSONDecode(nh)end)if um and type(nj)=="table"then
+for uo,hY in pairs(nj)do if type(hY)=="number"and hY>ni then hX[uo]=hY-ni end end end return hX end function j.call(...)
+local nk=ao:FindFirstChild("Remotes")local nl=nk and nk:FindFirstChild("PetRequest")if not nl then return nil end
+local nm=table.pack(...)local bI={}task.spawn(function()bI.ok,bI.v=pcall(function()return nl:InvokeServer(table.unpack(nm,1,nm.n))end)
+bI.done=true end)local up=q()while not bI.done and q()-up<6 do task.wait(0.05)end if bI.done and bI.ok then return bI.v end
+return nil end function j.want(uq)return e.Pets[uq]end function j.closeNaming(hZ)local no=pcall(function()local nn=F:FindFirstChild("PlayerScripts")
+local ur=nn and nn:FindFirstChild("Naming",true)require(ur).close()end)af(0.5)if hZ.Visible then pcall(function()local np=hZ:FindFirstChild("NameBox",true)if np then np:ReleaseFocus()end end)
+hZ.Visible=false no=false end return no end function j.skipNaming()j.namingUntil=q()+10 if j.namingOn then return end
+j.namingOn=true task.spawn(function()while c.alive and q()<j.namingUntil do local nq=F:FindFirstChildOfClass("PlayerGui")
+local nr=nq and nq:FindFirstChild("MainGui")local fa=nr and nr:FindFirstChild("PetNameGui")if fa and fa.Visible then
+af(0.4)if fa.Visible then j.namingShut=(j.namingShut or 0)+1 pcall(j.closeNaming,fa)break end end af(0.25)end
+j.namingOn=false end)end function j.buyTick()if not e.PetBuy then j.buyMsg="auto adopt is off"return end local h0,ns,fb=j.info(),j.pen(),j.data()
+if not(h0 and ns and fb)then j.buyMsg="pet data not loaded yet"return end j.tryAt=j.tryAt or{}local dg,h1=#(fb.pets or{}),tonumber(fb.maxOwned)or 60
+local us,nt,dh=j.srv(),{},nil for zc,aF in ipairs(ns:GetChildren())do nt[aF.Name]=true local bJ,fc=aF:GetAttribute("Pet"),aF:GetAttribute("Variant")or""
+local h2=bJ and j.want(bJ)if h2 and h2 .b and h0 .Pets[bJ]and(not h2 .g or fc=="Big")and y.wantMore(bJ,fc,fb)and not aF:GetAttribute("A_"..j.uid)
+and(tonumber(aF:GetAttribute("ExpiresAt"))or 0)>us+1 and q()>=(j.tryAt[aF.Name]or 0)then local di,nu=j.nice(bJ,fc),h0 .Pets[bJ].price or 0
+if dg>=h1 then dh=("%s is in the pen, but you have %d/%d pets"):format(di,dg,h1)j.tryAt[aF.Name]=q()+15 elseif j.money()<nu then
+dh=("%s is in the pen - need $%s"):format(di,ay(nu))j.tryAt[aF.Name]=q()+5 else j.tryAt[aF.Name]=q()+8 local bj=j.call("adopt",aF.Name)
+if type(bj)=="table"and bj.ok then dg=dg+1 j.buys=(j.buys or 0)+1 j.recent=j.recent or{}local ut=type(bj.pet)=="table"and bj.pet or{}
+table.insert(j.recent,{id=tostring(ut.id or("?"..q())),name=bJ,variant=fc,at=q()})if#j.recent>30 then table.remove(j.recent,1)end
+x("ADOPTED "..di)j.skipNaming()dh="adopted "..di else local nv=type(bj)=="table"and tostring(bj.reason or"no reason given")or"no answer"
+x(("adopt %s failed: %s"):format(di,nv))dh="adopt failed: "..nv if type(bj)=="table"and bj.bagFull then j.tryAt[aF.Name]=q()+60 end
+end end end end for nw in pairs(j.tryAt)do if not nt[nw]then j.tryAt[nw]=nil end end j.buyMsg=dh or("watching the pen (%d/%d pets)"):format(dg,h1)
+end function j.wishTick()if not e.PetWish then j.wishMsg="auto wish is off"return end local fd=j.info()if not(fd and j.pen())then j.wishMsg="pet data not loaded yet"return end
+j.wishTry,j.wishWhy=j.wishTry or{},j.wishWhy or{}local fe,h3,bk=j.wishes(),0,nil local uu=(type(fd.Wish)=="table"and fd.Wish.cashShare)or 2
+local uv=j.data()for zd,aq in ipairs(j.order())do local nx=j.want(aq)if nx and nx.w and y.wantMore(aq,"",uv)then
+h3=h3+1 if not fe[aq]and q()>=(j.wishTry[aq]or 0)then local h4=tonumber(F:GetAttribute("PetWishCredits"))or 0
+local h5=math.floor((fd.Pets[aq].price or 0)*uu)if h4<=0 and j.money()<h5 then j.wishTry[aq]=q()+10 bk=("need $%s to wish for %s"):format(ay(h5),j.nice(aq))
+j.wishWhy[aq]=bk else j.wishTry[aq]=q()+3 local uw=h4>0 and"wishCredit"or"wish"local ff=j.call(uw,aq)if type(ff)=="table"and ff.ok then
+j.wishN,j.wishWhy[aq]=j.wishN+1,nil x(("WISHED for %s (%s)"):format(j.nice(aq),h4>0 and"free wish"or("$"..ay(h5))))
+else local h6=type(ff)=="table"and tostring(ff.reason or"no reason given")or"no answer"if h6:lower():find("already",1,true)then j.wishTry[aq]=q()+2
+else x(("wish %s failed: %s"):format(j.nice(aq),h6))bk="wish failed: "..h6 end end end end end end if not bk then
+for ze,fg in ipairs(j.order())do local ny=j.want(fg)if ny and ny.w and not fe[fg]and j.wishWhy[fg]then bk=j.wishWhy[fg]break end
+end end if not bk then local fh={}for zf,fi in ipairs(j.order())do local nz=j.want(fi)if nz and nz.w and fe[fi]then fh[#fh+1]=("%s %dm"):format(j.nice(fi),math.ceil(fe[fi]/60))end
+end bk=h3==0 and"no pet has WISH ticked"or("running: "..(#fh>0 and table.concat(fh,", ")or"none yet"))end j.wishMsg=bk
+end o.switches,o.glazed,o.finished=0,0,0 o.done,o.doneN,o.later={},0,{}function o.teams()local h7=j.data()return(h7 and h7 .teams)or{},h7
+end function o.current(ce)ce=ce or j.data()if not ce then return""end local nA={}for zg,ux in ipairs(ce.equipped or{})do nA[tostring(ux)]=true end
+for zh,nB in ipairs(ce.teams or{})do local nC=nB.pets or{}local h8=#nC==#(ce.equipped or{})if h8 then for zi,uy in ipairs(nC)do if not nA[tostring(uy)]then h8=false break end end end
+if h8 then return nB.name end end return""end function o.equip(h9)local uz,uA=o.teams()local h_ for uB,uC in ipairs(uz)do if uC.name==h9 then h_=uB break end end
+if not h_ then o.msg="no saved team called "..tostring(h9)return false end if o.current(uA)==h9 then return true end
+for zj=1,4 do local nD=j.call("teamEquip",h_)if type(nD)=="table"and nD.ok then o.switches=o.switches+1 return true
+end task.wait(0.4)end return false end function o.left(uD)local nE=uD:FindFirstChild("SquishyPlaceHolder")local nF=nE and nE:FindFirstChild("TimerGui")
+local nG=nF and nF:FindFirstChildWhichIsA("TextLabel",true)local ia=nG and nG.Text if type(ia)~="string"or ia:find("-",1,true)then return nil end
+local ib,nH,nI=ia:match("^%s*(%d+):(%d+):?(%d*)%s*$")if not ib then return nil end local nJ=nI~=""and(tonumber(ib)*3600+tonumber(nH)*60+tonumber(nI))or(tonumber(ib)*60+tonumber(nH))
+return nJ>0 and nJ or nil end function o.waxes()local dj={}local nK=c.plot and c.plot:FindFirstChild("WaxStations")
+if not nK then return dj end local nL=j.srv()for zk,aM in ipairs(nK:GetChildren())do local ic=tonumber(aM:GetAttribute("PourEnd"))
+local nM=aM:GetAttribute("PourOwner")if aM:GetAttribute("HasSquishy")and aM:GetAttribute("PourId")and(nM==nil or nM==j.uid)then
+local ie=o.left(aM)local nN=ie and(nL+ie)or((ic and ic>nL)and ic or nil)if nN then local nO,nP=aM:FindFirstChild("SquishyPlaceHolder"),"?"
+if nO then for zl,nQ in ipairs(nO:GetChildren())do if nQ:IsA("Model")then nP=nQ.Name break end end end local uE=tostring(aM:GetAttribute("Helpers")or"")
+local ig=0 for zm in uE:gmatch("%d+")do ig=ig+1 end dj[#dj+1]={st=aM,ends=nN,sure=ie~=nil,id=aM:GetAttribute("PourId"),name=nP,helps=ig,
+long=aM:GetAttribute("PourLong")==true}end end end table.sort(dj,function(uF,uG)return uF.ends<uG.ends end)return dj
+end function o.glazeCount()local nR=ao:FindFirstChild("Remotes")local nS=nR and nR:FindFirstChild("EditStack")
+if not nS then return nil end local uH,dk=pcall(function()return nS:InvokeServer("State",nil)end)if not(uH and type(dk)=="table"and type(dk.state)=="table")then return nil end
+local ih,ii=0,{}for zn,fj in ipairs(dk.state.entries or{})do if fj.glaze and fj.glaze~=""then ih=ih+1 ii[fj.glaze]=(ii[fj.glaze]or 0)+1 end
+end return ih,ii,#(dk.state.entries or{}),dk.state.capacity end function o.finishedOne(fk,nT)o.finished=o.finished+1
+task.wait(2)local ij,uI,nU,uJ=o.glazeCount()if ij and nT and ij>nT then o.glazed=o.glazed+1 local ik={}for uK,uL in pairs(uI)do ik[#ik+1]=uK.." "..uL end
+x(("GLAZED! %s on station %s finished glazed (%s glazed now: %s)"):format(ac(V(fk.name)),fk.st.Name,ij,table.concat(ik,", ")))
+else x(("wax done on station %s: %s, no glaze%s"):format(fk.st.Name,ac(V(fk.name)),nU and(" (stack "..nU.."/"..tostring(uJ)..")")or""))
+end end function o.tick()o.list=o.waxes()if o.editing and q()-(o.editingSince or q())>120 then o.editing=false end
 if o.editing then o.msg="rebuilding teams..."return end if not e.Teams then o.want,o.msg="","auto teams is off"return end
-local b9=j.srv()local ap=o.glazeFor if ap then local df=ap.st local nA=df.Parent and df:GetAttribute("HasSquishy")and df:GetAttribute("PourId")==ap.id
-local nB=nA and o.left(df)if nB then ap.ends=b9+nB end if not nA then o.glazeFor,o.afterUntil=nil,r()+1.5 if not o.done[ap.id or"?"]then
-o.done[ap.id or"?"],o.doneN=true,o.doneN+1 if o.doneN>400 then o.done,o.doneN={[ap.id or"?"]=true},1 end local ub=ap.before
-task.spawn(function()pcall(o.finishedOne,ap,ub)end)end elseif ap.ends-b9>e.GlazeLead*3+60 or b9>ap.ends+90 then
-o.glazeFor,o.afterUntil=nil,r()+1.5 o.later[ap.id or"?"]=r()+120 u(("station %s is not finishing yet (%s left) - glaze team off again"):format(df.Name,o.clock(ap.ends-b9)))
-end end if e.TeamGlaze~=""and not o.glazeFor then local uc=o.speedRatio(e.TeamGlaze)for yD,bE in ipairs(o.list)do
-if bE.sure and(bE.ends-b9)*uc[bE.long and 2 or 1]<=e.GlazeLead and r()>=(o.later[bE.id or"?"]or 0)and not o.done[bE.id or"?"]then
-o.glazeFor=bE task.spawn(function()bE.before=o.glazeCount()end)break end end end local ax,fb="",""if e.TeamGlaze~=""and(o.glazeFor or r()<(o.afterUntil or 0))then
-ax,fb=e.TeamGlaze,o.glazeFor and(" - station "..o.glazeFor.st.Name.." finishes soon")or""elseif e.TeamWax~=""and(o.placing or o.aboutToPlace())then
-ax,fb=e.TeamWax," - placing a butter"elseif e.TeamFull~=""and o.allBusy()then ax,fb=e.TeamFull," - every station is busy"
-else ax=e.TeamNormal end o.want=ax local dg=o.current()o.cur=dg if ax~=""and dg~=ax and r()>=(o.nextTry or 0)then
-o.nextTry=r()+1.1 if o.equip(ax)then u("team: "..ax..fb)else o.nextTry=r()+3 end end local h9=o.list[1]o.msg=("on: %s%s | next wax done %s"):format(dg~=""and dg or"(not a saved team)",(ax~=""and ax~=dg)and(" -> "..ax)or"",
-h9 and("in "..o.clock(h9 .ends-b9).." (st "..h9 .st.Name..")")or"- none running")end function o.clock(bh)bh=math.max(0,math.floor(bh))
-if bh>=3600 then return("%d:%02d:%02d"):format(math.floor(bh/3600),math.floor((bh%3600)/60),bh%60)end return("%d:%02d"):format(math.floor(bh/60),bh%60)
-end function o.allBusy()local ud,ue=d4()return ue>0 and ud==0 end function o.aboutToPlace()if not a.running then return false end
-local nC=P()if not(nC and aN(nC))then return false end local uf=d4()return uf>0 end function o.mult(nD,ug,nE)return{(1+nD)*(1+nE),(1+nD+ug)*(1+nE)}end
-function o.speedNow()local function h_(uh)return tonumber(C:GetAttribute(uh))or 0 end return o.mult(h_("PetWaxSpeed"),h_("PetLongWax"),h_("PetSocialWax"))
-end function o.speedOf(ui)local uj,nF=o.teams()if not nF then return nil end for yE,nG in ipairs(uj)do if nG.name==ui then
-local ia={}for yF,uk in ipairs(nG.pets or{})do for yG,nH in ipairs(nF.pets or{})do if tostring(nH.id)==tostring(uk)then ia[#ia+1]=nH break end end
-end local nI=x.caps()local nJ,ul=x.stats(ia)return o.mult(math.min(nJ.waxSpeed or 0,nI.waxSpeed or 0.25),math.min(nJ.longWax or 0,nI.longWax or 0.3),ul.socialWax or 0)
-end end return nil end function o.speedRatio(um)local nK,ib=o.speedNow(),o.speedOf(um)if not ib then return{1,1}end
-return{nK[1]/ib[1],nK[2]/ib[2]}end function o.glazeSoon()return e.Teams and e.TeamGlaze~=""and(o.glazeFor~=nil or r()<(o.afterUntil or 0))
-end x.CAPS={income=0.5,price=0.25,waxSpeed=0.25,offline=1,luck=3,waxStirPerMinute=30,cratePulls=4,glaze=0.25,glazeUp=0.5,headStart=0.4,cashGiftPerMinute=9,newFind=2,longWax=0.3}
-x.ROUND={luck=true,luckyPull=true,crate=true,waxStir=true,socialLuck=true,cashGift=true}x.buildMsg,x.fuseMsg,x.fused,x.builds="","",0,0
-function x.need()return C:GetAttribute("FusePass")==true and 3 or 7 end function x.caps()local ic=j.info()return(ic and type(ic.Caps)=="table")and ic.Caps or x.CAPS
-end function x.value(nL,ie)local fc=j.info()local b_=fc and fc.Pets[nL]if not(b_ and type(b_.boost)=="table")then return nil end
-local bF if type(fc.boostValue)=="function"then local un,uo=pcall(fc.boostValue,nL,(ie~=""and ie)or nil)bF=un and tonumber(uo)or nil
-end if not bF then bF=b_.boost.value or 0 if ie=="Big"then local nM=bF*1.5 bF=x.ROUND[b_.boost.kind]and math.max(bF+1,math.floor(nM+0.5))or nM
-end end return b_.boost.kind,bF,b_.boost.every end function x.stats(up)local bG,ig={},{}for yH,nN in ipairs(up)do
-local aC,fd,nO=x.value(nN.name,nN.variant or"")if aC then if aC:sub(1,6)=="social"then ig[aC]=math.max(ig[aC]or 0,fd)
-elseif aC=="waxStir"or aC=="cashGift"then bG[aC]=(bG[aC]or 0)+fd*60/(nO or 60)elseif aC=="luckyPull"then bG.luckyPull=(bG.luckyPull or 0)+fd/(nO or 10)
-else bG[aC]=(bG[aC]or 0)+fd end end end return bG,ig end function x.glazeGain(uq,fe)local dh,ih,yI={0.003,0.0005,0.0002},{1.5,2,2.5},nil
-local ur=dh[1]+dh[2]+dh[3]local us=tonumber(C:GetAttribute("GuildUpGlaze"))or 0 local ca={}for ff=1,3 do ca[ff]=dh[ff]+uq*dh[ff]/ur+(ff==1 and us or 0)end
-local ii={ca[1]*(1-fe),ca[2]*(1-fe)+ca[1]*fe,ca[3]+ca[2]*fe}return ii[1]*(ih[1]-1)+ii[2]*(ih[2]-1)+ii[3]*(ih[3]-1)
-end function x.score(fg,ut)local ij=x.caps()local fh,fi=x.stats(ut)local function bi(nP)return math.min(fh[nP]or 0,ij[nP]or math.huge)end
-local uu=(1+bi("income"))*(1+(fi.socialIncome or 0))*(1+math.min(fh.cashGift or 0,ij.cashGiftPerMinute or 9)/60)
-local uv=1+bi("luck")+(fh.luckyPull or 0)+(fi.socialLuck or 0)local nQ=uv*(1+bi("newFind"))local di=math.log(uu)
-local uw=math.max(tonumber(C:GetAttribute("WaxStations"))or 18,1)local ik=(1+bi("waxSpeed")+bi("longWax"))*(1+(fi.socialWax or 0))
-+math.min(fh.waxStir or 0,ij.waxStirPerMinute or 30)/60/uw local ux=1-(1-bi("headStart"))*(1-(fi.socialHeadStart or 0))
-if fg=="farm"then return di+0.7*math.log(nQ)+0.1*math.log(ik)end if fg=="full"then return di+0.4*math.log(ik)+0.02*math.log(nQ)end
-if fg=="glaze"then return x.glazeGain(bi("glaze"),bi("glazeUp"))+0.001*di end if fg=="wax"then return-math.log(1-0.5*ux)+0.001*di+0.001*math.log(ik)end
-return di end function x.best(nR,cb,uy,il)il=il or{}local ak,dj={},{}local function nS(uz)local nT={}for uA,uB in ipairs(uz)do nT[uA]=cb[uB]end return nT end
-local function im(nU)local io=x.score(nR,nS(nU))for yJ,uC in ipairs(nU)do if il[cb[uC].id]then io=io+1e-7 end end
-return io end for yK=1,math.min(uy,#cb)do local fj,ip for iq=1,#cb do if not dj[iq]then ak[#ak+1]=iq local nV=im(ak)
-ak[#ak]=nil if not ip or nV>ip+1e-12 then fj,ip=iq,nV end end end if not fj then break end dj[fj]=true ak[#ak+1]=fj
-end for yL=1,6 do task.wait()local nW,nX=false,im(ak)for ir=1,#ak do for is=1,#cb do if not dj[is]then local nY=ak[ir]
-ak[ir]=is local nZ=im(ak)if nZ>nX+1e-9 then dj[nY],dj[is],nX,nW=nil,true,nZ,true else ak[ir]=nY end end end end
-if not nW then break end end local n0={}for uD,uE in ipairs(ak)do n0[uD]=tostring(cb[uE].id)end return n0,x.score(nR,nS(ak))
-end function x.count(n1,n2,uF)local dk,dl={},0 local n3,n4={},{}for yM,uG in ipairs(n2 .arriving or{})do n3[tostring(uG)]=true end
-for yN,cc in ipairs(n2 .pets or{})do n4[tostring(cc.id)]=true if cc.name==n1 and not n3[tostring(cc.id)]then if cc.variant=="Big"then dl=dl+1 elseif(cc.variant or"")==""then dk[#dk+1]=cc end
-end end if not uF then for yO,dm in ipairs(j.recent or{})do if dm.name==n1 and not n4[dm.id]and r()-dm.at<20 then
-if dm.variant=="Big"then dl=dl+1 else dk[#dk+1]=dm end end end end return dk,dl end function x.goal(uH)local n5=e.Pets[uH]return n5 and tonumber(n5 .f)or 0 end
-function x.wantMore(n6,uI,n7)local it=x.goal(n6)if it<=0 or not n7 then return true end local uJ,n8=x.count(n6,n7)
-if n8>=it then return false end if uI=="Big"then return true end return#uJ<x.need()*(it-n8)end function x.status(n9,n_)
-local fk=x.goal(n9)if fk<=0 or not n_ then return nil end local uK,iu=x.count(n9,n_)if iu>=fk then return("Big %d/%d done"):format(iu,fk)end
-return("%d/%d to fuse, Big %d/%d"):format(math.min(#uK,x.need()),x.need(),iu,fk)end function x.wear(iv)local iw={}
-for yP,uL in ipairs(iv)do iw[tostring(uL)]=true end for yQ=1,3 do local cd=j.data()if not cd then return false end
-for yR,oa in ipairs(cd.equipped or{})do if not iw[tostring(oa)]then j.call("unequip",oa)task.wait(0.3)end end
-cd=j.data()local ob={}for yS,uM in ipairs(cd.equipped or{})do ob[tostring(uM)]=true end for yT,oc in ipairs(iv)do
-if not ob[tostring(oc)]then j.call("equip",oc)task.wait(0.3)end end task.wait(0.4)cd=j.data()local ix,od=0,true
-for yU,uN in ipairs(cd.equipped or{})do ix=ix+1 if not iw[tostring(uN)]then od=false end end if od and ix==#iv then return true end
-end return false end function x.saveTeam(oe,of)if not x.wear(of)then return false,"could not put the pets on"end
-local uO=o.teams()local bH for uP,uQ in ipairs(uO)do if uQ.name==oe then bH=uP break end end local ce if bH then
-ce=j.call("teamSave",bH)else ce=j.call("teamNew")if type(ce)=="table"and ce.ok and ce.index then bH=ce.index task.wait(0.3)
-j.call("teamRename",{index=bH,name=oe})end end task.wait(0.4)local iy=j.data()local og=iy and iy.teams and bH and iy.teams[bH]
-if not og then return false,"the game did not save it"end local oh={}for yV,uR in ipairs(og.pets or{})do oh[tostring(uR)]=true end
-for yW,uS in ipairs(of)do if not oh[tostring(uS)]then return false,"saved, but not with these pets"end end return true
-end x.ROLES={{"TeamNormal","farm"},{"TeamFull","full"},{"TeamGlaze","glaze"},{"TeamWax","wax"}}function x.quiet()
-if o.placing or o.glazeSoon()then return false end local uT=j.srv()for yX,uU in ipairs(o.list or{})do if uU.ends-uT<(e.GlazeLead or 45)+90 then return false end end
-return true end function x.plan()local dn=j.data()if not dn then return{}end local oi={}for yY,uV in ipairs(dn.arriving or{})do oi[tostring(uV)]=true end
-local dp={}for yZ,fl in ipairs(dn.pets or{})do if not oi[tostring(fl.id)]then dp[#dp+1]={id=tostring(fl.id),name=fl.name,variant=fl.variant or""}end
-end local oj={}for y0,ol in ipairs(dp)do oj[ol.id]=ol end local om=tonumber(dn.slots)or 3 local iz,oo={},{}for y1,fm in ipairs(x.ROLES)do
-local dq=e[fm[1]]if dq~=""and not oo[dq]then oo[dq]=true local iA,dr,op={},{},false for y2,oq in ipairs(dn.teams or{})do
-if oq.name==dq then for y3,uW in ipairs(oq.pets or{})do local iB=oj[tostring(uW)]if iB then iA[iB.id]=true dr[#dr+1]=iB else op=true end
-end end end local iC,ot=x.best(fm[2],dp,om,iA)local ou=x.score(fm[2],dr)local ov=#iC==#dr for y4,uX in ipairs(iC)do if not iA[uX]then ov=false end end
-if not ov and(op or#dr<math.min(om,#dp)or ot>ou+1e-4)then iz[#iz+1]={team=dq,role=fm[2],ids=iC,gain=ot-ou}end
-end end return iz end function x.rebuild(uY)local ow=x.plan()if#ow==0 then x.buildMsg="teams are already the best your pets allow"return true end
-if not x.quiet()then x.buildMsg="a wax finishes soon - rebuilding the teams after it"return false end o.editing,o.editingSince=true,r()
-local fn=true local u2,u3=pcall(function()for y5,ds in ipairs(ow)do local uZ,u0=x.saveTeam(ds.team,ds.ids)local ox=j.data()
-local iD={}for y6,u1 in ipairs(ds.ids)do for y7,iE in ipairs(ox and ox.pets or{})do if tostring(iE.id)==u1 then iD[#iD+1]=j.nice(iE.name,iE.variant)end
-end end if uZ then u(("TEAM %s rebuilt (%s): %s"):format(ds.team,uY or"pets changed",table.concat(iD,", ")))else fn=false u(("TEAM %s: %s"):format(ds.team,tostring(u0)))end
-end end)o.editing,o.nextTry=false,0 if not u2 then fn=false u("TEAM BUILD ERR "..tostring(u3))end x.builds=x.builds+1
-x.buildMsg=fn and("teams rebuilt "..os.date("%H:%M"))or"a team could not be saved - see the log"return fn end
-function x.fuseTick()if not e.AutoFuse or o.editing then return end local fo=j.data()if not fo then return end
-local iF=x.need()local iG,fp={},{}for y8,u4 in ipairs(fo.teams or{})do for y9,u5 in ipairs(u4 .pets or{})do iG[tostring(u5)]=true end end
-for y_,u6 in ipairs(fo.equipped or{})do fp[tostring(u6)]=true end x.failUntil=x.failUntil or{}for bI,u7 in pairs(e.Pets)do
-local oy=tonumber(u7 .f)or 0 local iH,u8=x.count(bI,fo,true)if oy>0 and u8<oy and#iH>=iF and r()>=(x.failUntil[bI]or 0)then
-table.sort(iH,function(fq,fr)local oz=(fp[tostring(fq.id)]and 4 or 0)+(iG[tostring(fq.id)]and 2 or 0)+(fq.named and 1 or 0)
-local oA=(fp[tostring(fr.id)]and 4 or 0)+(iG[tostring(fr.id)]and 2 or 0)+(fr.named and 1 or 0)if oz~=oA then return oz<oA end
-return tostring(fq.id)<tostring(fr.id)end)local fs,iI={},{}for ft=1,iF do fs[ft]=tostring(iH[ft].id)if fp[fs[ft]]then iI[#iI+1]=fs[ft]end
-end o.editing,o.editingSince=true,r()for za,u9 in ipairs(iI)do j.call("unequip",u9)task.wait(0.3)end local fu=j.call("fuse",{ids=fs})
-o.editing,o.nextTry=false,0 if type(fu)=="table"and fu.ok then x.fused=x.fused+1 x.dirtyAt=r()u(("FUSED %d %s -> Big %s"):format(iF,j.nice(bI),j.nice(bI)))
-x.fuseMsg=("fused a Big %s %s"):format(j.nice(bI),os.date("%H:%M"))else x.failUntil[bI]=r()+120 u(("fuse %s failed: %s"):format(j.nice(bI),type(fu)=="table"and tostring(fu.reason or"no reason given")or"no answer"))
-end return end end end function x.tick()pcall(x.fuseTick)if not e.AutoBuild or not e.Teams then return end local oB=j.data()
-if not oB then return end local bJ={}for zb,u_ in ipairs(oB.pets or{})do bJ[#bJ+1]=tostring(u_.id)end table.sort(bJ)
-bJ=table.concat(bJ,",")if bJ~=x.sig then x.sig,x.dirtyAt=bJ,r()end local va=(x.dirtyAt and r()-x.dirtyAt>8)or r()-(x.lastBuild or 0)>900
-if va and not o.editing then local vb=x.rebuild(x.dirtyAt and"pets changed"or"check")if vb then x.dirtyAt,x.lastBuild=nil,r()end
-end end q.bb,q.fx,q.post,q.hud=setmetatable({},{__mode="k"}),setmetatable({},{__mode="k"}),{},{}q.watch=setmetatable({},{__mode="k"})
-q.mem,q.memPeak,q.fps=0,0,0 function q.isFx(bK)return bK:IsA("ParticleEmitter")or bK:IsA("Trail")or bK:IsA("Beam")or bK:IsA("Fire")or bK:IsA("Smoke")
-or bK:IsA("Sparkles")or bK:IsA("Light")end function q.muteOne(aq)if not e.Lite or not aq.Parent then return end
-local fv=(aq:IsA("BillboardGui")and q.bb)or(q.isFx(aq)and q.fx)or nil if not fv or fv[aq]~=nil then return end
-fv[aq]=aq.Enabled if aq.Enabled then aq.Enabled=false end q.watch[aq]=aq:GetPropertyChangedSignal("Enabled"):Connect(function()
-if e.Lite and aq.Enabled then fv[aq]=true aq.Enabled=false end end)end function q.lite(oC)e.Lite=oC if oC then
-task.spawn(function()for vc,vd in ipairs(aG:GetDescendants())do if not e.Lite then return end pcall(q.muteOne,vd)
-if vc%600==0 then task.wait()end end end)if not q.addConn then q.queue={}q.addConn=O(aG.DescendantAdded:Connect(function(iJ)
-if e.Lite and(iJ:IsA("BillboardGui")or q.isFx(iJ))then q.queue[#q.queue+1]=iJ end end))end local iK=game:GetService("Lighting")
-for zc,dt in ipairs(iK:GetChildren())do if dt:IsA("PostEffect")and dt.Enabled and q.post[dt]==nil then q.post[dt]=true dt.Enabled=false end
-end pcall(function()q.oldShadows=q.oldShadows==nil and iK.GlobalShadows or q.oldShadows iK.GlobalShadows=false end)
-pcall(function()q.oldDeco=q.oldDeco==nil and aG.Terrain.Decoration or q.oldDeco aG.Terrain.Decoration=false end)
-else for zd,ve in pairs(q.watch)do pcall(function()ve:Disconnect()end)end for oD,vf in pairs(q.bb)do pcall(function()if oD.Parent then oD.Enabled=vf end end)end
-for oE,vg in pairs(q.fx)do pcall(function()if oE.Parent then oE.Enabled=vg end end)end for oF in pairs(q.post)do pcall(function()if oF.Parent then oF.Enabled=true end end)end
-q.bb,q.fx=setmetatable({},{__mode="k"}),setmetatable({},{__mode="k"})q.watch,q.post,q.queue=setmetatable({},{__mode="k"}),{},{}
-local vh=game:GetService("Lighting")if q.oldShadows~=nil then pcall(function()vh.GlobalShadows=q.oldShadows end)q.oldShadows=nil end
-if q.oldDeco~=nil then pcall(function()aG.Terrain.Decoration=q.oldDeco end)q.oldDeco=nil end end end q.MINE={SABFarmGui=true,SABToggle=true,SABError=true,SAB_Bridge=true}
-function q.hideHud(oG)e.HideHud=oG local iL=C:FindFirstChildOfClass("PlayerGui")if not iL then return end if oG then
-for ze,du in ipairs(iL:GetChildren())do if du:IsA("ScreenGui")and not q.MINE[du.Name]and du.Enabled then q.hud[du]=true du.Enabled=false end
-end if not q.hudConn then q.hudConn=O(iL.ChildAdded:Connect(function(dv)if e.HideHud and dv:IsA("ScreenGui")and not q.MINE[dv.Name]then
-task.defer(function()if e.HideHud and dv.Enabled then q.hud[dv]=true dv.Enabled=false end end)end end))end else
-for oH in pairs(q.hud)do pcall(function()if oH.Parent then oH.Enabled=true end end)end q.hud={}end end q.CAPS={0,30,15,10}
-function q.cap(iM)e.FpsCap=iM local oI=(type(setfpscap)=="function"and setfpscap)or(type(set_fps_cap)=="function"and set_fps_cap)
-if not oI then return false end return pcall(oI,iM==0 and 60 or iM)end function q.render(oJ)e.NoRender=oJ pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(not oJ)end)
-end function q.restoreAll()pcall(q.lite,false)pcall(q.hideHud,false)pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(true)end)
-if(e.FpsCap or 0)~=0 then pcall(q.cap,0)end end function q.rejoinSame(oK)if a.rejoining then return end u("REJOIN this server ("..oK..")")
-pcall(d7)if a.autoload then pcall(ev,a.autoload)end gW()local vi=pcall(function()game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId,game.JobId,C)
-end)task.delay(25,function()if a.alive then cJ(oK..", same server failed")end end)return vi end function q.tick()
-local iN=q.queue if e.Lite and iN and#iN>0 then q.queue={}for vj,vk in ipairs(iN)do pcall(q.muteOne,vk)if vj%300==0 then task.wait()end end
-end local oL=e.Lite and a.plot and a.plot:FindFirstChild("WaxStations")if oL then for zf,vl in ipairs(oL:GetChildren())do
-local oM=vl:FindFirstChild("SquishyPlaceHolder")local bL=oM and oM:FindFirstChild("TimerGui")if bL and bL:IsA("BillboardGui")then
-if q.bb[bL]==nil then pcall(q.muteOne,bL)elseif bL.Enabled then q.bb[bL]=true bL.Enabled=false end end end end
-local vm,dw=pcall(function()return game:GetService("Stats"):GetTotalMemoryUsageMb()end)if vm and type(dw)=="number"then
-q.mem=dw q.memPeak=math.max(q.memPeak,dw)if(e.MemLimit or 0)>0 and dw>e.MemLimit then q.over=(q.over or 0)+1 if q.over>=30 and not a.busy then
-q.over=-600 q.rejoinSame(("memory %d MB > %d MB"):format(dw,e.MemLimit))end elseif(q.over or 0)>0 then q.over=0
-end end if r()-(q.noteAt or 0)>1800 then q.noteAt=r()u(("health: %d fps, %d MB (peak %d)"):format(math.floor(q.fps+0.5),q.mem,q.memPeak))
-end end a.sellWords={"sell","trash","discard","dispose","bin"}local function iO(fw)if type(fw)~="string"then return false end
-fw=fw:lower()for zg,vn in ipairs(a.sellWords)do if fw:find(vn,1,true)then return true end end return false end
-local function vo()local oN=az:FindFirstChild("Remotes")local iP=oN and oN:FindFirstChild("SellSquishy")if not(iP and iP:IsA("RemoteEvent"))then return false end
-if not pcall(function()iP:FireServer()end)then return false end return ah(function()return P()==nil end,1.5)end
-local function vp()if a.sellSpot and a.sellSpot.Parent then return a.sellSpot end if r()-a.sellSearchAt<20 then return nil end
-a.sellSearchAt=r()local oO=aP()local oP=oO and oO.HumanoidRootPart.Position local dx,oQ for zh,cf in ipairs((a.plot or aG):GetDescendants())do
-if cf:IsA("ProximityPrompt")and(iO(cf.ActionText)or iO(cf.ObjectText)or iO(cf.Name))then local oR=kc(cf)local iQ=(oR and oP)and(oR-oP).Magnitude or 1e9
-if iQ<=400 and(not dx or iQ<oQ)then dx,oQ=cf,iQ end end end a.sellSpot=dx a.noSellSpot=(dx==nil)return dx end
-local function oS()local iR=P()if not iR then a.holding=false return false end if aN(iR)then return false end
-local iS=aa(Q(iR))if vo()then a.sold,a.holding,a.sellFails=a.sold+1,false,0 a.carryBlind,a.attrStale=r()+2.5,0
-u("SOLD "..iS)return true end local cg=vp()if cg then local oT=cw(cg)if oT then cN(oT,cg)local oU=P()if oU and not aN(oU)then
-local vq,vr=eH(cg,function()return P()==nil end,function()return cg.Enabled end)if vq then a.sold,a.holding,a.sellFails=a.sold+1,false,0
-u(("SOLD %s at %s via %s"):format(iS,d2(cg),vr))return true end end end end a.sellFails=a.sellFails+1 u("could not sell "..iS.." ("..a.sellFails..")")
-return false end local vs={"bounce","lift","lever","wheel","holder","waxstation","squishystack","shadow","crate","skin"}
-local function vt(ci)local fy=d2(ci):lower()for zi,vu in ipairs(vs)do if fy:find(vu,1,true)then return 0 end end
-local aK,ab=ci.Name:lower(),0 local function aD(vv,vw)return vv:find(vw,1,true)~=nil end if aD(aK,"collect")then ab=ab+60 end
-if aD(aK,"cash")or aD(aK,"money")then ab=ab+45 end if aD(aK,"income")or aD(aK,"claim")then ab=ab+35 end if aD(aK,"coin")or aD(aK,"earn")or aD(aK,"green")then ab=ab+20 end
-if aK=="pad"or aK=="touch"then ab=ab+25 end if ab==0 and(aD(fy,"collect")or aD(fy,"cash")or aD(fy,"money"))then ab=25 end
-if ab==0 then return 0 end local dy=ci.Color if dy.G>0.5 and dy.G>dy.R*1.4 and dy.G>dy.B*1.4 then ab=ab+15 end
-if math.min(ci.Size.X,ci.Size.Y,ci.Size.Z)<2 then ab=ab+5 end return ab end local function vx()if a.padPart and a.padPart.Parent then return a.padPart end
-if not a.plot or r()-a.padSearchAt<20 then return nil end a.padSearchAt=r()local fz,dz,iT={},nil,29 for zj,fA in ipairs(a.plot:GetDescendants())do
-if fA:IsA("BasePart")then local fB=vt(fA)if fB>0 then fz[#fz+1]={s=fB,p=fA}if fB>iT then dz,iT=fA,fB end end end
-end table.sort(fz,function(vy,vz)return vy.s>vz.s end)a.padCands,a.padPart=fz,dz if dz then u("collect pad: "..d2(dz).." (score "..iT..")")end
-return dz end local iU="SAB_pad_v1.txt"local function vA(vB)if type(writefile)=="function"then pcall(writefile,iU,table.concat({vB:GetComponents()},","))end
-end local function vC()if type(isfile)~="function"or type(readfile)~="function"then return nil end local vD,oV=pcall(function()if isfile(iU)then return readfile(iU)end end)
-if not vD or type(oV)~="string"then return nil end local fC={}for vE in oV:gmatch("[^,]+")do fC[#fC+1]=tonumber(vE)end
-if#fC==12 then return CFrame.new(unpack(fC))end end local function vF(iV,fD,vG)local vH=g5(iV)local iW=a.plot and a.plot:FindFirstChild("RolledSquishyPlaceHolder")
-local aE=(iW and iW:IsA("BasePart"))and(iW.Position-fD)or Vector3 .new(1,0,0)aE=Vector3 .new(aE.X,0,aE.Z)if aE.Magnitude<0.05 then aE=Vector3 .new(1,0,0)end
-aE=aE.Unit for vI=0,7 do local fE=vI*math.pi/4 local vJ=Vector3 .new(aE.X*math.cos(fE)-aE.Z*math.sin(fE),0,aE.X*math.sin(fE)+aE.Z*math.cos(fE))
-local fF=fD+vJ*(vG+5)local iX=lt(fF.X,fD.Y,fF.Z)if iX and math.abs(iX.Y-fD.Y)<8 then cM(iV,Vector3 .new(fF.X,iX.Y+vH,fF.Z))
-if g6(iV,0.7)then return true end end end return false end local function vK()a.lastCollect=r()local dA=aP()if not dA then return end
-local oW,vL=dA.HumanoidRootPart,g5(dA)local dB,oX,dC,iY=nil,4,nil,"?"local iZ=a.plot and a.plot:FindFirstChild("RolledSquishyPlaceHolder")
-if a.manualPad and iZ and iZ:IsA("BasePart")then dB,iY=(iZ.CFrame*a.manualPad).Position,"manual pad"else local aX=vx()
-if aX then dB=Vector3 .new(aX.Position.X,aX.Position.Y+aX.Size.Y/2+vL,aX.Position.Z)oX,dC,iY=math.max(aX.Size.X,aX.Size.Z)/2,aX,aX.Name
-end end if not dB then u("COLLECT: pad not found - stand on it and tap SET PAD")return end local i0=aO()cM(dA,dB)
-if dC and type(firetouchinterest)=="function"then pcall(firetouchinterest,oW,dC,0)end ag(e.PadDwell)if dC and type(firetouchinterest)=="function"then pcall(firetouchinterest,oW,dC,1)end
-ag(0.5)a.collected=a.collected+1 local i1=aO()u(("COLLECTED (%s) %s"):format(iY,(i0 and i1 and i1>i0)and("+$"..au(i1-i0))or"no cash change seen"))
-vF(dA,dB,oX)end local dD local function oY()if a.capHit then if e.AutoStart and r()-(a.capAt or 0)>300 then a.capHit,a.placeFails=false,0
-u("trying again after being stopped for 5 minutes")dD(true,true)else return nil,a.capMsg,"bad"end end if a.busy then return nil,a.busyText,"ok"end
-if not aP()then return nil,"waiting for character","wait"end if not a.plot or not a.plot.Parent then a.plot,a.padPart,a.sellSpot=a3(),nil,nil
-if not a.plot then return nil,"own plot not found yet","wait"end end if not next(e.Targets)then return nil,"nothing ticked - pick a butter in the BUTTERS tab","bad"
-end local i2,oZ=d4()local fG=P()if fG then local cj=aa(Q(fG))if not aN(fG)then local i3=(J.gift and Q(J.gift)==Q(fG)and r()-J.giftAt<600)and"gift"or"not ticked"
-if not e.SellJunk then return nil,("holding %s (%s) - selling is off"):format(cj,i3),"bad"end if a.sellFails>=3 then
-return nil,("holding %s (%s) - selling is not working, tap SELL"):format(cj,i3),"bad"end return"sell",("selling %s (%s)"):format(cj,i3),"warn"
-end if i2<1 then return nil,("holding %s - 0 free stations"):format(cj),"wait"end if o.glazeSoon()then return nil,("holding %s - glaze team is on for a wax that is finishing, placing right after"):format(cj),"wait"end
-return"place",("waxing %s (%d free)"):format(cj,i2),"ok"end a.holding=false if e.Crates and not d.waiting and r()-(d.scanAt or 0)>1 and r()>(d.quietUntil or 0)then
-d.scanAt=r()local i4=a.plot:FindFirstChild("CrateStand")if i4 then for zk,dE in ipairs(i4:GetDescendants())do
-if dE:IsA("ProximityPrompt")and dE.Enabled and hk(dE)then local aY=dE.ObjectText if aY==""then aY=bV(i4,"TitleLabel")or""end
-if aY~=""and E.wanted(aY)then local vM=d0(aY):gsub("crate$","")local o0 for o1 in pairs(M.members)do if d0(o1)==vM then o0=o1 end end
-d.waiting,d.at,d.title,d.prompt=true,r(),aY,dE d.data={name=(aY:gsub("%s","")),rarity=o0,title=aY}u(aY.." found waiting on your stand")
-end break end end end end local o2=E.wanted(d.data and d.data.name)or E.wanted(d.title)if e.Crates and(d.on or d.waiting)and o2 then
-local aZ=d.title if r()<(d.ignoreUntil or 0)then return nil,("%s - its buttons do not respond to me, press Open yourself"):format(aZ),"bad"
-end if d.on then if a.crateFails>=3 then d.ignoreUntil,a.crateFails=r()+120,0 u("could not press the "..aZ.." buttons 3 times - leaving it to you for 2 min")
-return nil,("%s window open - press Open yourself"):format(aZ),"bad"end if r()-d.lastFail<8 then return nil,("%s window open - could not press its buttons"):format(aZ),"bad"
-end if d.byYou and r()-d.openedAt<60 then return nil,("%s window is yours - tap Open or Discard (I step in after %ds)"):format(
-aZ,math.ceil(60-(r()-d.openedAt))),"idle"end return"cratesmart",("opening %s"):format(aZ),"ok"end if d.summonFails>=3 then
-return nil,("%s waiting - could not open it, open it by hand"):format(aZ),"bad"end if r()-d.lastFail<8 then return nil,("%s waiting - retrying shortly"):format(aZ),"wait"
-end return"cratesmart",("%s waiting - opening it%s"):format(aZ,(d.learned and d.learned.mode~="window")and" directly"or""),"ok"
-end if(d.on or d.waiting)and not o2 then local o3=d.title..tostring(d.rolledAt)if d.told~=o3 then d.told=o3 u(d.title.." is not ticked - leaving it to the game")
-end end if d.rolled and not d.waiting and r()-d.rolledAt<6 and E.wanted(d.rolled)then return nil,d.rolled.." rolled - waiting for it to land","wait"
-end if i2<1 then a.matchSince=nil return nil,("0 free stations (%d/%d busy) - waiting for wax"):format(oZ,oZ),"wait"
-end local i5=kp()if not i5 then return nil,"BuyPrompt of RolledSquishyPlaceHolder missing","bad"end local dF=cK()
-if dF and lN(dF.name)then a.matchSince=nil if not e.Crates then return nil,("%s on the pad - crate opening is off"):format(dF.name),"idle"end
-if r()-d.lastFail<8 then return nil,("%s on the pad - could not open it"):format(dF.name),"bad"end return"cratewin",("%s on the pad - opening its window"):format(dF.name),"ok"
-end local bj=g3()if bj.state~="match"then a.matchSince=nil if bj.state=="skip"and not i5 .Enabled then return nil,bj.text.." (sold out)","idle"end
-return nil,bj.text,bj.level end if not i5 .Enabled then a.matchSince=nil return nil,"target on pad but Buy is off","wait"end
-local dG=r()if dG<a.noCashUntil then local o4,vN=ll()if o4 then return nil,("cash short: have $%s, price ~$%s"):format(au(o4),au(vN)),"bad"end
-return nil,("cash short? have $%s - retry in %ds"):format(au(aO()),math.ceil(a.noCashUntil-dG)),"bad"end if dG-a.lastBuyAt<e.BuyGap then return nil,"cooldown after last buy","wait"end
-a.matchSince=a.matchSince or dG local o5=dG-a.matchSince if o5<e.Confirm then return nil,("confirming %s (%.2fs)"):format(bj.shown,o5),"ok"end
-return"buy",("buying %s via %s"):format(bj.shown,bj.src),"ok"end local function ay(vO,vP,...)if a.busy then return end
-a.busy,a.busyText=true,vO local vQ,o6=pcall(vP,...)a.busy,a.busyText=false,""if not vQ and o6~=gd then u("ERR "..tostring(o6))end
-end local function vR()local bM,vS,vT=oY()a.reason,a.level=vS,vT if bM=="place"then ay("waxing...",o.place)elseif bM=="crate"then ay("opening crate...",eQ,true)
-elseif bM=="cratesmart"then ay("opening crate...",d.smart)elseif bM=="cratewin"then ay("opening the crate window...",hm)
-elseif bM=="nocrate"then ay("discarding crate...",eQ,false)elseif bM=="sell"then ay("selling...",oS)elseif bM=="buy"then ay("buying...",lE,false)
-elseif e.Collect and not a.matchSince and r()-a.lastCollect>=e.Every then ay("collecting money...",vK)end end
-function dD(fH,vU)if fH==a.running then return end a.running=fH if not vU then e.AutoStart=fH end if fH then a.capHit,a.placeFails,a.cashFails,a.sellFails,a.crateFails=false,0,0,0,0
-d.lastFail,d.summonFails,d.ignoreUntil=0,0,0 a.noCashUntil,a.matchSince=0,nil a.lastCollect=r()a.plot=a3()or a.plot
-u("START")else a.reason="stopped"u("STOP")end end do local bk=eq(W.auto)if type(bk)=="string"then bk=bk:gsub("%s+$","")
-if bk~=""then a.autoload=bk local vV=k_(bk)u(vV and("loaded config "..bk)or("config "..bk.." could not be loaded"))
+local cf=j.srv()local av=o.glazeFor if av then local dl=av.st local nV=dl.Parent and dl:GetAttribute("HasSquishy")and dl:GetAttribute("PourId")==av.id
+local nW=nV and o.left(dl)if nW then av.ends=cf+nW end if not nV then o.glazeFor,o.afterUntil=nil,q()+1.5 if not o.done[av.id or"?"]then
+o.done[av.id or"?"],o.doneN=true,o.doneN+1 if o.doneN>400 then o.done,o.doneN={[av.id or"?"]=true},1 end local uM=av.before
+task.spawn(function()pcall(o.finishedOne,av,uM)end)end elseif av.ends-cf>e.GlazeLead*3+60 or cf>av.ends+90 then
+o.glazeFor,o.afterUntil=nil,q()+1.5 o.later[av.id or"?"]=q()+120 x(("station %s is not finishing yet (%s left) - glaze team off again"):format(dl.Name,o.clock(av.ends-cf)))
+end end if e.TeamGlaze~=""and not o.glazeFor then local uN=o.speedRatio(e.TeamGlaze)for zo,bK in ipairs(o.list)do
+if bK.sure and(bK.ends-cf)*uN[bK.long and 2 or 1]<=e.GlazeLead and q()>=(o.later[bK.id or"?"]or 0)and not o.done[bK.id or"?"]then
+o.glazeFor=bK task.spawn(function()bK.before=o.glazeCount()end)break end end end local aB,fl="",""if e.TeamGlaze~=""and(o.glazeFor or q()<(o.afterUntil or 0))then
+aB,fl=e.TeamGlaze,o.glazeFor and(" - station "..o.glazeFor.st.Name.." finishes soon")or""elseif e.TeamWax~=""and(o.placing or o.aboutToPlace())then
+aB,fl=e.TeamWax," - placing a butter"elseif e.TeamFull~=""and o.allBusy()then aB,fl=e.TeamFull," - every station is busy"
+else aB=e.TeamNormal end o.want=aB local dm=o.current()o.cur=dm if aB~=""and dm~=aB and q()>=(o.nextTry or 0)then
+o.nextTry=q()+1.1 if o.equip(aB)then x("team: "..aB..fl)else o.nextTry=q()+3 end end local il=o.list[1]o.msg=("on: %s%s | next wax done %s"):format(dm~=""and dm or"(not a saved team)",(aB~=""and aB~=dm)and(" -> "..aB)or"",
+il and("in "..o.clock(il.ends-cf).." (st "..il.st.Name..")")or"- none running")end function o.clock(bl)bl=math.max(0,math.floor(bl))
+if bl>=3600 then return("%d:%02d:%02d"):format(math.floor(bl/3600),math.floor((bl%3600)/60),bl%60)end return("%d:%02d"):format(math.floor(bl/60),bl%60)
+end function o.allBusy()local uO,uP=ed()return uP>0 and uO==0 end function o.aboutToPlace()if not c.running then return false end
+local nX=T()if not(nX and aQ(nX))then return false end local uQ=ed()return uQ>0 end function o.mult(nY,uR,nZ)return{(1+nY)*(1+nZ),(1+nY+uR)*(1+nZ)}end
+function o.speedNow()local function im(uS)return tonumber(F:GetAttribute(uS))or 0 end return o.mult(im("PetWaxSpeed"),im("PetLongWax"),im("PetSocialWax"))
+end function o.speedOf(uT)local uU,n0=o.teams()if not n0 then return nil end for zp,n1 in ipairs(uU)do if n1 .name==uT then
+local io={}for zq,uV in ipairs(n1 .pets or{})do for zr,n2 in ipairs(n0 .pets or{})do if tostring(n2 .id)==tostring(uV)then io[#io+1]=n2 break end end
+end local n3=y.caps()local n4,uW=y.stats(io)return o.mult(math.min(n4 .waxSpeed or 0,n3 .waxSpeed or 0.25),math.min(n4 .longWax or 0,n3 .longWax or 0.3),uW.socialWax or 0)
+end end return nil end function o.speedRatio(uX)local n5,ip=o.speedNow(),o.speedOf(uX)if not ip then return{1,1}end
+return{n5[1]/ip[1],n5[2]/ip[2]}end function o.glazeSoon()return e.Teams and e.TeamGlaze~=""and(o.glazeFor~=nil or q()<(o.afterUntil or 0))
+end y.CAPS={income=0.5,price=0.25,waxSpeed=0.25,offline=1,luck=3,waxStirPerMinute=30,cratePulls=4,glaze=0.25,glazeUp=0.5,headStart=0.4,cashGiftPerMinute=9,newFind=2,longWax=0.3}
+y.ROUND={luck=true,luckyPull=true,crate=true,waxStir=true,socialLuck=true,cashGift=true}y.buildMsg,y.fuseMsg,y.fused,y.builds="","",0,0
+function y.need()return F:GetAttribute("FusePass")==true and 3 or 7 end function y.caps()local iq=j.info()return(iq and type(iq.Caps)=="table")and iq.Caps or y.CAPS
+end function y.value(n6,ir)local fm=j.info()local cg=fm and fm.Pets[n6]if not(cg and type(cg.boost)=="table")then return nil end
+local bL if type(fm.boostValue)=="function"then local uY,uZ=pcall(fm.boostValue,n6,(ir~=""and ir)or nil)bL=uY and tonumber(uZ)or nil
+end if not bL then bL=cg.boost.value or 0 if ir=="Big"then local n7=bL*1.5 bL=y.ROUND[cg.boost.kind]and math.max(bL+1,math.floor(n7+0.5))or n7
+end end return cg.boost.kind,bL,cg.boost.every end function y.stats(u0)local bM,is={},{}for zs,n8 in ipairs(u0)do
+local aG,fn,n9=y.value(n8 .name,n8 .variant or"")if aG then if aG:sub(1,6)=="social"then is[aG]=math.max(is[aG]or 0,fn)
+elseif aG=="waxStir"or aG=="cashGift"then bM[aG]=(bM[aG]or 0)+fn*60/(n9 or 60)elseif aG=="luckyPull"then bM.luckyPull=(bM.luckyPull or 0)+fn/(n9 or 10)
+else bM[aG]=(bM[aG]or 0)+fn end end end return bM,is end function y.glazeGain(u1,fo)local dn,it,zt={0.003,0.0005,0.0002},{1.5,2,2.5},nil
+local u2=dn[1]+dn[2]+dn[3]local u3=tonumber(F:GetAttribute("GuildUpGlaze"))or 0 local ci={}for fp=1,3 do ci[fp]=dn[fp]+u1*dn[fp]/u2+(fp==1 and u3 or 0)end
+local iu={ci[1]*(1-fo),ci[2]*(1-fo)+ci[1]*fo,ci[3]+ci[2]*fo}return iu[1]*(it[1]-1)+iu[2]*(it[2]-1)+iu[3]*(it[3]-1)
+end function y.score(fq,u4)local iv=y.caps()local fr,fs=y.stats(u4)local function bm(n_)return math.min(fr[n_]or 0,iv[n_]or math.huge)end
+local u5=(1+bm("income"))*(1+(fs.socialIncome or 0))*(1+math.min(fr.cashGift or 0,iv.cashGiftPerMinute or 9)/60)
+local u6=1+bm("luck")+(fr.luckyPull or 0)+(fs.socialLuck or 0)local oa=u6*(1+bm("newFind"))local dp=math.log(u5)
+local u7=math.max(tonumber(F:GetAttribute("WaxStations"))or 18,1)local iw=(1+bm("waxSpeed")+bm("longWax"))*(1+(fs.socialWax or 0))
++math.min(fr.waxStir or 0,iv.waxStirPerMinute or 30)/60/u7 local u8=1-(1-bm("headStart"))*(1-(fs.socialHeadStart or 0))
+if fq=="farm"then return dp+0.7*math.log(oa)+0.1*math.log(iw)end if fq=="full"then return dp+0.4*math.log(iw)+0.02*math.log(oa)end
+if fq=="glaze"then return y.glazeGain(bm("glaze"),bm("glazeUp"))+0.001*dp end if fq=="wax"then return-math.log(1-0.5*u8)+0.001*dp+0.001*math.log(iw)end
+return dp end function y.best(ob,cj,u9,ix)ix=ix or{}local am,dq={},{}local function oc(u_)local od={}for va,vb in ipairs(u_)do od[va]=cj[vb]end return od end
+local function iy(oe)local iz=y.score(ob,oc(oe))for zu,vc in ipairs(oe)do if ix[cj[vc].id]then iz=iz+1e-7 end end
+return iz end for zv=1,math.min(u9,#cj)do local ft,iA for iB=1,#cj do if not dq[iB]then am[#am+1]=iB local of=iy(am)
+am[#am]=nil if not iA or of>iA+1e-12 then ft,iA=iB,of end end end if not ft then break end dq[ft]=true am[#am+1]=ft
+end for zw=1,6 do task.wait()local og,oh=false,iy(am)for iC=1,#am do for iD=1,#cj do if not dq[iD]then local oi=am[iC]
+am[iC]=iD local oj=iy(am)if oj>oh+1e-9 then dq[oi],dq[iD],oh,og=nil,true,oj,true else am[iC]=oi end end end end
+if not og then break end end local ol={}for vd,ve in ipairs(am)do ol[vd]=tostring(cj[ve].id)end return ol,y.score(ob,oc(am))
+end function y.count(om,oo,vf)local dr,ds={},0 local op,oq={},{}for zx,vg in ipairs(oo.arriving or{})do op[tostring(vg)]=true end
+for zy,ck in ipairs(oo.pets or{})do oq[tostring(ck.id)]=true if ck.name==om and not op[tostring(ck.id)]then if ck.variant=="Big"then ds=ds+1 elseif(ck.variant or"")==""then dr[#dr+1]=ck end
+end end if not vf then for zz,dt in ipairs(j.recent or{})do if dt.name==om and not oq[dt.id]and q()-dt.at<20 then
+if dt.variant=="Big"then ds=ds+1 else dr[#dr+1]=dt end end end end return dr,ds end function y.goal(vh)local ot=e.Pets[vh]return ot and tonumber(ot.f)or 0 end
+function y.wantMore(ou,vi,ov)local iE=y.goal(ou)if iE<=0 or not ov then return true end local vj,ow=y.count(ou,ov)
+if ow>=iE then return false end if vi=="Big"then return true end return#vj<y.need()*(iE-ow)end function y.status(ox,oy)
+local fu=y.goal(ox)if fu<=0 or not oy then return nil end local vk,iF=y.count(ox,oy)if iF>=fu then return("Big %d/%d done"):format(iF,fu)end
+return("%d/%d to fuse, Big %d/%d"):format(math.min(#vk,y.need()),y.need(),iF,fu)end function y.wear(iG)local iH={}
+for zA,vl in ipairs(iG)do iH[tostring(vl)]=true end for zB=1,3 do local cl=j.data()if not cl then return false end
+for zC,oz in ipairs(cl.equipped or{})do if not iH[tostring(oz)]then j.call("unequip",oz)task.wait(0.3)end end
+cl=j.data()local oA={}for zD,vm in ipairs(cl.equipped or{})do oA[tostring(vm)]=true end for zE,oB in ipairs(iG)do
+if not oA[tostring(oB)]then j.call("equip",oB)task.wait(0.3)end end task.wait(0.4)cl=j.data()local iI,oC=0,true
+for zF,vn in ipairs(cl.equipped or{})do iI=iI+1 if not iH[tostring(vn)]then oC=false end end if oC and iI==#iG then return true end
+end return false end function y.saveTeam(oD,oE)if not y.wear(oE)then return false,"could not put the pets on"end
+local vo=o.teams()local bN for vp,vq in ipairs(vo)do if vq.name==oD then bN=vp break end end local cm if bN then
+cm=j.call("teamSave",bN)else cm=j.call("teamNew")if type(cm)=="table"and cm.ok and cm.index then bN=cm.index task.wait(0.3)
+j.call("teamRename",{index=bN,name=oD})end end task.wait(0.4)local iJ=j.data()local oF=iJ and iJ.teams and bN and iJ.teams[bN]
+if not oF then return false,"the game did not save it"end local oG={}for zG,vr in ipairs(oF.pets or{})do oG[tostring(vr)]=true end
+for zH,vs in ipairs(oE)do if not oG[tostring(vs)]then return false,"saved, but not with these pets"end end return true
+end y.ROLES={{"TeamNormal","farm"},{"TeamFull","full"},{"TeamGlaze","glaze"},{"TeamWax","wax"}}function y.quiet()
+if o.placing or o.glazeSoon()then return false end local vt=j.srv()for zI,vu in ipairs(o.list or{})do if vu.ends-vt<(e.GlazeLead or 45)+90 then return false end end
+return true end function y.plan()local du=j.data()if not du then return{}end local oH={}for zJ,vv in ipairs(du.arriving or{})do oH[tostring(vv)]=true end
+local dv={}for zK,fv in ipairs(du.pets or{})do if not oH[tostring(fv.id)]then dv[#dv+1]={id=tostring(fv.id),name=fv.name,variant=fv.variant or""}end
+end local oI={}for zL,oJ in ipairs(dv)do oI[oJ.id]=oJ end local oK=tonumber(du.slots)or 3 local iK,oL={},{}for zM,fw in ipairs(y.ROLES)do
+local dw=e[fw[1]]if dw~=""and not oL[dw]then oL[dw]=true local iL,dx,oM={},{},false for zN,oN in ipairs(du.teams or{})do
+if oN.name==dw then for zO,vw in ipairs(oN.pets or{})do local iM=oI[tostring(vw)]if iM then iL[iM.id]=true dx[#dx+1]=iM else oM=true end
+end end end local iN,oO=y.best(fw[2],dv,oK,iL)local oP=y.score(fw[2],dx)local oQ=#iN==#dx for zP,vx in ipairs(iN)do if not iL[vx]then oQ=false end end
+if not oQ and(oM or#dx<math.min(oK,#dv)or oO>oP+1e-4)then iK[#iK+1]={team=dw,role=fw[2],ids=iN,gain=oO-oP}end
+end end return iK end function y.rebuild(vy)local oR=y.plan()if#oR==0 then y.buildMsg="teams are already the best your pets allow"return true end
+if not y.quiet()then y.buildMsg="a wax finishes soon - rebuilding the teams after it"return false end o.editing,o.editingSince=true,q()
+local fy=true local vC,vD=pcall(function()for zQ,dy in ipairs(oR)do local vz,vA=y.saveTeam(dy.team,dy.ids)local oS=j.data()
+local iO={}for zR,vB in ipairs(dy.ids)do for zS,iP in ipairs(oS and oS.pets or{})do if tostring(iP.id)==vB then iO[#iO+1]=j.nice(iP.name,iP.variant)end
+end end if vz then x(("TEAM %s rebuilt (%s): %s"):format(dy.team,vy or"pets changed",table.concat(iO,", ")))else fy=false x(("TEAM %s: %s"):format(dy.team,tostring(vA)))end
+end end)o.editing,o.nextTry=false,0 if not vC then fy=false x("TEAM BUILD ERR "..tostring(vD))end y.builds=y.builds+1
+y.buildMsg=fy and("teams rebuilt "..os.date("%H:%M"))or"a team could not be saved - see the log"return fy end
+function y.fuseTick()if not e.AutoFuse or o.editing then return end local fz=j.data()if not fz then return end
+local iQ=y.need()local iR,fA={},{}for zT,vE in ipairs(fz.teams or{})do for zU,vF in ipairs(vE.pets or{})do iR[tostring(vF)]=true end end
+for zV,vG in ipairs(fz.equipped or{})do fA[tostring(vG)]=true end y.failUntil=y.failUntil or{}for bO,vH in pairs(e.Pets)do
+local oT=tonumber(vH.f)or 0 local iS,vI=y.count(bO,fz,true)if oT>0 and vI<oT and#iS>=iQ and q()>=(y.failUntil[bO]or 0)then
+table.sort(iS,function(fB,fC)local oU=(fA[tostring(fB.id)]and 4 or 0)+(iR[tostring(fB.id)]and 2 or 0)+(fB.named and 1 or 0)
+local oV=(fA[tostring(fC.id)]and 4 or 0)+(iR[tostring(fC.id)]and 2 or 0)+(fC.named and 1 or 0)if oU~=oV then return oU<oV end
+return tostring(fB.id)<tostring(fC.id)end)local fD,iT={},{}for fE=1,iQ do fD[fE]=tostring(iS[fE].id)if fA[fD[fE]]then iT[#iT+1]=fD[fE]end
+end o.editing,o.editingSince=true,q()for zW,vJ in ipairs(iT)do j.call("unequip",vJ)task.wait(0.3)end local fF=j.call("fuse",{ids=fD})
+o.editing,o.nextTry=false,0 if type(fF)=="table"and fF.ok then y.fused=y.fused+1 y.dirtyAt=q()x(("FUSED %d %s -> Big %s"):format(iQ,j.nice(bO),j.nice(bO)))
+y.fuseMsg=("fused a Big %s %s"):format(j.nice(bO),os.date("%H:%M"))else y.failUntil[bO]=q()+120 x(("fuse %s failed: %s"):format(j.nice(bO),type(fF)=="table"and tostring(fF.reason or"no reason given")or"no answer"))
+end return end end end function y.tick()pcall(y.fuseTick)if not e.AutoBuild or not e.Teams then return end local oW=j.data()
+if not oW then return end local bP={}for zX,vK in ipairs(oW.pets or{})do bP[#bP+1]=tostring(vK.id)end table.sort(bP)
+bP=table.concat(bP,",")if bP~=y.sig then y.sig,y.dirtyAt=bP,q()end local vL=(y.dirtyAt and q()-y.dirtyAt>8)or q()-(y.lastBuild or 0)>900
+if vL and not o.editing then local vM=y.rebuild(y.dirtyAt and"pets changed"or"check")if vM then y.dirtyAt,y.lastBuild=nil,q()end
+end end r.bb,r.fx,r.post,r.hud=setmetatable({},{__mode="k"}),setmetatable({},{__mode="k"}),{},{}r.watch=setmetatable({},{__mode="k"})
+r.mem,r.memPeak,r.fps=0,0,0 function r.isFx(bQ)return bQ:IsA("ParticleEmitter")or bQ:IsA("Trail")or bQ:IsA("Beam")or bQ:IsA("Fire")or bQ:IsA("Smoke")
+or bQ:IsA("Sparkles")or bQ:IsA("Light")end function r.muteOne(aw)if not e.Lite or not aw.Parent then return end
+local fG=(aw:IsA("BillboardGui")and r.bb)or(r.isFx(aw)and r.fx)or nil if not fG or fG[aw]~=nil then return end
+fG[aw]=aw.Enabled if aw.Enabled then aw.Enabled=false end r.watch[aw]=aw:GetPropertyChangedSignal("Enabled"):Connect(function()
+if e.Lite and aw.Enabled then fG[aw]=true aw.Enabled=false end end)end function r.lite(oX)e.Lite=oX if oX then
+task.spawn(function()for vN,vO in ipairs(aC:GetDescendants())do if not e.Lite then return end pcall(r.muteOne,vO)
+if vN%600==0 then task.wait()end end end)if not r.addConn then r.queue={}r.addConn=P(aC.DescendantAdded:Connect(function(iU)
+if e.Lite and(iU:IsA("BillboardGui")or r.isFx(iU))then r.queue[#r.queue+1]=iU end end))end local iV=game:GetService("Lighting")
+for zY,dz in ipairs(iV:GetChildren())do if dz:IsA("PostEffect")and dz.Enabled and r.post[dz]==nil then r.post[dz]=true dz.Enabled=false end
+end pcall(function()r.oldShadows=r.oldShadows==nil and iV.GlobalShadows or r.oldShadows iV.GlobalShadows=false end)
+pcall(function()r.oldDeco=r.oldDeco==nil and aC.Terrain.Decoration or r.oldDeco aC.Terrain.Decoration=false end)
+else for zZ,vP in pairs(r.watch)do pcall(function()vP:Disconnect()end)end for oY,vQ in pairs(r.bb)do pcall(function()if oY.Parent then oY.Enabled=vQ end end)end
+for oZ,vR in pairs(r.fx)do pcall(function()if oZ.Parent then oZ.Enabled=vR end end)end for o0 in pairs(r.post)do pcall(function()if o0 .Parent then o0 .Enabled=true end end)end
+r.bb,r.fx=setmetatable({},{__mode="k"}),setmetatable({},{__mode="k"})r.watch,r.post,r.queue=setmetatable({},{__mode="k"}),{},{}
+local vS=game:GetService("Lighting")if r.oldShadows~=nil then pcall(function()vS.GlobalShadows=r.oldShadows end)r.oldShadows=nil end
+if r.oldDeco~=nil then pcall(function()aC.Terrain.Decoration=r.oldDeco end)r.oldDeco=nil end end end r.MINE={SABFarmGui=true,SABToggle=true,SABError=true,SAB_Bridge=true}
+function r.hideHud(o1)e.HideHud=o1 local iW=F:FindFirstChildOfClass("PlayerGui")if not iW then return end if o1 then
+for z0,dA in ipairs(iW:GetChildren())do if dA:IsA("ScreenGui")and not r.MINE[dA.Name]and dA.Enabled then r.hud[dA]=true dA.Enabled=false end
+end if not r.hudConn then r.hudConn=P(iW.ChildAdded:Connect(function(dB)if e.HideHud and dB:IsA("ScreenGui")and not r.MINE[dB.Name]then
+task.defer(function()if e.HideHud and dB.Enabled then r.hud[dB]=true dB.Enabled=false end end)end end))end else
+for o2 in pairs(r.hud)do pcall(function()if o2 .Parent then o2 .Enabled=true end end)end r.hud={}end end r.CAPS={0,30,15,10}
+function r.cap(iX)e.FpsCap=iX local o3=(type(setfpscap)=="function"and setfpscap)or(type(set_fps_cap)=="function"and set_fps_cap)
+if not o3 then return false end return pcall(o3,iX==0 and 60 or iX)end function r.render(o4)e.NoRender=o4 pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(not o4)end)
+end function r.restoreAll()pcall(r.lite,false)pcall(r.hideHud,false)pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(true)end)
+if(e.FpsCap or 0)~=0 then pcall(r.cap,0)end end function r.rejoinSame(o5)if c.rejoining then return end x("REJOIN this server ("..o5 ..")")
+pcall(eg)if c.autoload then pcall(eF,c.autoload)end g7()local vT=pcall(function()game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId,game.JobId,F)
+end)task.delay(25,function()if c.alive then cR(o5 ..", same server failed")end end)return vT end function r.tick()
+local iY=r.queue if e.Lite and iY and#iY>0 then r.queue={}for vU,vV in ipairs(iY)do pcall(r.muteOne,vV)if vU%300==0 then task.wait()end end
+end local o6=e.Lite and c.plot and c.plot:FindFirstChild("WaxStations")if o6 then for z1,vW in ipairs(o6:GetChildren())do
+local o7=vW:FindFirstChild("SquishyPlaceHolder")local bR=o7 and o7:FindFirstChild("TimerGui")if bR and bR:IsA("BillboardGui")then
+if r.bb[bR]==nil then pcall(r.muteOne,bR)elseif bR.Enabled then r.bb[bR]=true bR.Enabled=false end end end end
+local vX,dC=pcall(function()return game:GetService("Stats"):GetTotalMemoryUsageMb()end)if vX and type(dC)=="number"then
+r.mem=dC r.memPeak=math.max(r.memPeak,dC)if(e.MemLimit or 0)>0 and dC>e.MemLimit then r.over=(r.over or 0)+1 if r.over>=30 and not c.busy then
+r.over=-600 r.rejoinSame(("memory %d MB > %d MB"):format(dC,e.MemLimit))end elseif(r.over or 0)>0 then r.over=0
+end end if q()-(r.noteAt or 0)>1800 then r.noteAt=q()x(("health: %d fps, %d MB (peak %d)"):format(math.floor(r.fps+0.5),r.mem,r.memPeak))
+end end c.sellWords={"sell","trash","discard","dispose","bin"}local function iZ(fH)if type(fH)~="string"then return false end
+fH=fH:lower()for z2,vY in ipairs(c.sellWords)do if fH:find(vY,1,true)then return true end end return false end
+local function vZ()local o8=ao:FindFirstChild("Remotes")local i0=o8 and o8:FindFirstChild("SellSquishy")if not(i0 and i0:IsA("RemoteEvent"))then return false end
+if not pcall(function()i0:FireServer()end)then return false end return aj(function()return T()==nil end,1.5)end
+local function v0()if c.sellSpot and c.sellSpot.Parent then return c.sellSpot end if q()-c.sellSearchAt<20 then return nil end
+c.sellSearchAt=q()local o9=aD()local o_=o9 and o9 .HumanoidRootPart.Position local dD,pa for z3,cn in ipairs((c.plot or aC):GetDescendants())do
+if cn:IsA("ProximityPrompt")and(iZ(cn.ActionText)or iZ(cn.ObjectText)or iZ(cn.Name))then local pb=kx(cn)local i1=(pb and o_)and(pb-o_).Magnitude or 1e9
+if i1<=400 and(not dD or i1<pa)then dD,pa=cn,i1 end end end c.sellSpot=dD c.noSellSpot=(dD==nil)return dD end
+local function pc()local i2=T()if not i2 then c.holding=false return false end if aQ(i2)then return false end
+local i3=ac(V(i2))if vZ()then c.sold,c.holding,c.sellFails=c.sold+1,false,0 c.carryBlind,c.attrStale=q()+2.5,0
+x("SOLD "..i3)return true end local co=v0()if co then local pd=cE(co)if pd then b7(pd,co)local pe=T()if pe and not aQ(pe)then
+local v1,v2=eR(co,function()return T()==nil end,function()return co.Enabled end)if v1 then c.sold,c.holding,c.sellFails=c.sold+1,false,0
+x(("SOLD %s at %s via %s"):format(i3,eb(co),v2))return true end end end end c.sellFails=c.sellFails+1 x("could not sell "..i3 .." ("..c.sellFails..")")
+return false end local v3={"bounce","lift","lever","wheel","holder","waxstation","squishystack","shadow","crate","skin"}
+local function v4(cp)local fI=eb(cp):lower()for z4,v5 in ipairs(v3)do if fI:find(v5,1,true)then return 0 end end
+local aN,ad=cp.Name:lower(),0 local function aH(v6,v7)return v6:find(v7,1,true)~=nil end if aH(aN,"collect")then ad=ad+60 end
+if aH(aN,"cash")or aH(aN,"money")then ad=ad+45 end if aH(aN,"income")or aH(aN,"claim")then ad=ad+35 end if aH(aN,"coin")or aH(aN,"earn")or aH(aN,"green")then ad=ad+20 end
+if aN=="pad"or aN=="touch"then ad=ad+25 end if ad==0 and(aH(fI,"collect")or aH(fI,"cash")or aH(fI,"money"))then ad=25 end
+if ad==0 then return 0 end local dE=cp.Color if dE.G>0.5 and dE.G>dE.R*1.4 and dE.G>dE.B*1.4 then ad=ad+15 end
+if math.min(cp.Size.X,cp.Size.Y,cp.Size.Z)<2 then ad=ad+5 end return ad end local function v8()if c.padPart and c.padPart.Parent then return c.padPart end
+if not c.plot or q()-c.padSearchAt<20 then return nil end c.padSearchAt=q()local fJ,dF,i4={},nil,29 for z5,fK in ipairs(c.plot:GetDescendants())do
+if fK:IsA("BasePart")then local fL=v4(fK)if fL>0 then fJ[#fJ+1]={s=fL,p=fK}if fL>i4 then dF,i4=fK,fL end end end
+end table.sort(fJ,function(v9,v_)return v9 .s>v_.s end)c.padCands,c.padPart=fJ,dF if dF then x("collect pad: "..eb(dF).." (score "..i4 ..")")end
+return dF end local i5="SAB_pad_v1.txt"local function wa(wb)if type(writefile)=="function"then pcall(writefile,i5,table.concat({wb:GetComponents()},","))end
+end local function wc()if type(isfile)~="function"or type(readfile)~="function"then return nil end local wd,pf=pcall(function()if isfile(i5)then return readfile(i5)end end)
+if not wd or type(pf)~="string"then return nil end local fM={}for we in pf:gmatch("[^,]+")do fM[#fM+1]=tonumber(we)end
+if#fM==12 then return CFrame.new(unpack(fM))end end local function wf(i6,fN,wg)local wh=hf(i6)local i7=c.plot and c.plot:FindFirstChild("RolledSquishyPlaceHolder")
+local aI=(i7 and i7:IsA("BasePart"))and(i7 .Position-fN)or Vector3 .new(1,0,0)aI=Vector3 .new(aI.X,0,aI.Z)if aI.Magnitude<0.05 then aI=Vector3 .new(1,0,0)end
+aI=aI.Unit for wi=0,7 do local fO=wi*math.pi/4 local wj=Vector3 .new(aI.X*math.cos(fO)-aI.Z*math.sin(fO),0,aI.X*math.sin(fO)+aI.Z*math.cos(fO))
+local fP=fN+wj*(wg+5)local i8=lO(fP.X,fN.Y,fP.Z)if i8 and math.abs(i8 .Y-fN.Y)<8 then b6(i6,Vector3 .new(fP.X,i8 .Y+wh,fP.Z))
+if hg(i6,0.7)then return true end end end return false end local function wk()c.lastCollect=q()local dG=aD()if not dG then return end
+local pg,wl=dG.HumanoidRootPart,hf(dG)local dH,ph,dI,i9=nil,4,nil,"?"local i_=c.plot and c.plot:FindFirstChild("RolledSquishyPlaceHolder")
+if c.manualPad and i_ and i_:IsA("BasePart")then dH,i9=(i_.CFrame*c.manualPad).Position,"manual pad"else local aZ=v8()
+if aZ then dH=Vector3 .new(aZ.Position.X,aZ.Position.Y+aZ.Size.Y/2+wl,aZ.Position.Z)ph,dI,i9=math.max(aZ.Size.X,aZ.Size.Z)/2,aZ,aZ.Name
+end end if not dH then x("COLLECT: pad not found - stand on it and tap SET PAD")return end local ja=aR()b6(dG,dH)
+if dI and type(firetouchinterest)=="function"then pcall(firetouchinterest,pg,dI,0)end af(e.PadDwell)if dI and type(firetouchinterest)=="function"then pcall(firetouchinterest,pg,dI,1)end
+af(0.5)c.collected=c.collected+1 local jb=aR()x(("COLLECTED (%s) %s"):format(i9,(ja and jb and jb>ja)and("+$"..ay(jb-ja))or"no cash change seen"))
+wf(dG,dH,ph)end local dJ local function pj()if c.capHit then if e.AutoStart and q()-(c.capAt or 0)>300 then c.capHit,c.placeFails=false,0
+x("trying again after being stopped for 5 minutes")dJ(true,true)else return nil,c.capMsg,"bad"end end if c.busy then return nil,c.busyText,"ok"end
+if not aD()then return nil,"waiting for character","wait"end if not c.plot or not c.plot.Parent then c.plot,c.padPart,c.sellSpot=a7(),nil,nil
+if not c.plot then return nil,"own plot not found yet","wait"end end if not next(e.Targets)then return nil,"nothing ticked - pick a butter in the BUTTERS tab","bad"
+end local jc,pk=ed()local fQ=T()if fQ then local cq=ac(V(fQ))if not aQ(fQ)then local jd=(N.gift and V(N.gift)==V(fQ)and q()-N.giftAt<600)and"gift"or"not ticked"
+if not e.SellJunk then return nil,("holding %s (%s) - selling is off"):format(cq,jd),"bad"end if c.sellFails>=3 then
+return nil,("holding %s (%s) - selling is not working, tap SELL"):format(cq,jd),"bad"end return"sell",("selling %s (%s)"):format(cq,jd),"warn"
+end if jc<1 then return nil,("holding %s - 0 free stations"):format(cq),"wait"end if o.glazeSoon()then return nil,("holding %s - glaze team is on for a wax that is finishing, placing right after"):format(cq),"wait"end
+return"place",("waxing %s (%d free)"):format(cq,jc),"ok"end c.holding=false if e.Crates and not d.waiting and q()-(d.scanAt or 0)>1 and q()>(d.quietUntil or 0)then
+d.scanAt=q()local je=c.plot:FindFirstChild("CrateStand")if je then for z6,dK in ipairs(je:GetDescendants())do
+if dK:IsA("ProximityPrompt")and dK.Enabled and hv(dK)then local a0=dK.ObjectText if a0==""then a0=b0(je,"TitleLabel")or""end
+if a0~=""and H.wanted(a0)then local wm=d_(a0):gsub("crate$","")local pl for pm in pairs(Q.members)do if d_(pm)==wm then pl=pm end end
+d.waiting,d.at,d.title,d.prompt=true,q(),a0,dK d.data={name=(a0:gsub("%s","")),rarity=pl,title=a0}x(a0 .." found waiting on your stand")
+end break end end end end local pn=H.wanted(d.data and d.data.name)or H.wanted(d.title)if e.Crates and(d.on or d.waiting)and pn then
+local a1=d.title if q()<(d.ignoreUntil or 0)then return nil,("%s - its buttons do not respond to me, press Open yourself"):format(a1),"bad"
+end if d.on then if c.crateFails>=3 then d.ignoreUntil,c.crateFails=q()+120,0 x("could not press the "..a1 .." buttons 3 times - leaving it to you for 2 min")
+return nil,("%s window open - press Open yourself"):format(a1),"bad"end if q()-d.lastFail<8 then return nil,("%s window open - could not press its buttons"):format(a1),"bad"
+end if d.byYou and q()-d.openedAt<60 then return nil,("%s window is yours - tap Open or Discard (I step in after %ds)"):format(
+a1,math.ceil(60-(q()-d.openedAt))),"idle"end return"cratesmart",("opening %s"):format(a1),"ok"end if d.summonFails>=3 then
+return nil,("%s waiting - could not open it, open it by hand"):format(a1),"bad"end if q()-d.lastFail<8 then return nil,("%s waiting - retrying shortly"):format(a1),"wait"
+end return"cratesmart",("%s waiting - opening it%s"):format(a1,(d.learned and d.learned.mode~="window")and" directly"or""),"ok"
+end if(d.on or d.waiting)and not pn then local po=d.title..tostring(d.rolledAt)if d.told~=po then d.told=po x(d.title.." is not ticked - leaving it to the game")
+end end if d.rolled and not d.waiting and q()-d.rolledAt<6 and H.wanted(d.rolled)then return nil,d.rolled.." rolled - waiting for it to land","wait"
+end if jc<1 then c.matchSince=nil return nil,("0 free stations (%d/%d busy) - waiting for wax"):format(pk,pk),"wait"
+end local jf=kK()if not jf then return nil,"BuyPrompt of RolledSquishyPlaceHolder missing","bad"end local dL=cS()
+if dL and l8(dL.name)then c.matchSince=nil if not e.Crates then return nil,("%s on the pad - crate opening is off"):format(dL.name),"idle"end
+if q()-d.lastFail<8 then return nil,("%s on the pad - could not open it"):format(dL.name),"bad"end return"cratewin",("%s on the pad - opening its window"):format(dL.name),"ok"
+end local bn=hd()if bn.state~="match"then c.matchSince=nil if bn.state=="skip"and not jf.Enabled then return nil,bn.text.." (sold out)","idle"end
+return nil,bn.text,bn.level end if not jf.Enabled then c.matchSince=nil return nil,"target on pad but Buy is off","wait"end
+local dM=q()if dM<c.noCashUntil then local pp,wn=lG()if pp then return nil,("cash short: have $%s, price ~$%s"):format(ay(pp),ay(wn)),"bad"end
+return nil,("cash short? have $%s - retry in %ds"):format(ay(aR()),math.ceil(c.noCashUntil-dM)),"bad"end if dM-c.lastBuyAt<e.BuyGap then return nil,"cooldown after last buy","wait"end
+c.matchSince=c.matchSince or dM local pq=dM-c.matchSince if pq<e.Confirm then return nil,("confirming %s (%.2fs)"):format(bn.shown,pq),"ok"end
+return"buy",("buying %s via %s"):format(bn.shown,bn.src),"ok"end A.skip,A.skipN,A.n,A.calls,A.fails,A.nextAt,A.msg={},0,0,0,0,0,"off"
+function A.can(bo,wo)local jg=bo:GetAttribute("PourOwner")if type(jg)~="number"or jg==j.uid or not bo:GetAttribute("HasSquishy")then return false end
+if bo:GetAttribute("PourLong")~=true or bo:GetAttribute("PourFull")==true then return false end local jh=bo:GetAttribute("PourId")
+if jh==nil or A.skip[jh]then return false end local pr,ji,wp=bo:GetAttribute("Helpers"),0,tostring(j.uid)if type(pr)=="string"then
+for wq in pr:gmatch("[^,%s]+")do ji=ji+1 if wq==wp then return false end end end if ji>=6 then return false end
+local fR=o.left(bo)if not fR then local ps=tonumber(bo:GetAttribute("PourEnd"))fR=ps and(ps-wo)end if not fR or fR<=75 then return false end
+local jj=game:GetService("Players"):GetPlayerByUserId(jg)if not jj or jj:GetAttribute("WaxHelpOff")==true then return false end
+return true,jj,jh end function A.list()local jk,wr={},j.srv()local pt=aC:FindFirstChild("Plots")for z7,pu in ipairs(pt and pt:GetChildren()or{})do
+local pv=pu~=c.plot and pu:FindFirstChild("WaxStations")for z8,jl in ipairs(pv and pv:GetChildren()or{})do local ws,wt,wu=A.can(jl,wr)
+local jm=ws and jl:FindFirstChild("SquishyPlaceHolder")if jm and jm:IsA("BasePart")then jk[#jk+1]={st=jl,p=wt,id=wu,part=jm}end
+end end return jk end function A.due()return e.Help and c.running and q()>=A.nextAt end function A.skipIt(pw,px)
+A.skip[pw],A.skipN=px,A.skipN+1 if A.skipN>600 then A.skip,A.skipN={[pw]=px},1 end end function A.goHome()local jn,dN=aD(),A.home
+A.home=nil if jn and dN and(jn.HumanoidRootPart.Position-dN.Position).Magnitude>20 then pcall(b6,jn,dN.Position,dN.Position+dN.LookVector)
+end end function A.step()local jo,py=A.list(),aD()if#jo==0 or not py then A.nextAt=q()+15 A.msg=("helped %d waxes here%s | none to help right now"):format(A.n,A.calls>0 and(", "..A.calls.." for the guild")or"")
+A.goHome()return end local pz=py.HumanoidRootPart local jp=pz.Position table.sort(jo,function(wv,ww)return(wv.part.Position-jp).Magnitude<(ww.part.Position-jp).Magnitude end)
+local a2=jo[1]A.home=A.home or pz.CFrame if(a2 .part.Position-jp).Magnitude>12 then b7(a2 .part,nil)end af(0.2)
+local dO=ao:FindFirstChild("Remotes")dO=dO and dO:FindFirstChild("ClanRequest")if not dO then A.nextAt,A.msg=q()+60,"the game's help remote is missing"return end
+local pA,dP=pcall(function()return dO:InvokeServer("help",a2 .st:GetAttribute("PourOwner"),tonumber(a2 .st.Name))end)
+if pA and type(dP)=="table"and dP.ok then A.n,A.fails=A.n+1,0 A.skipIt(a2 .id,"helped")x(("HELPED %s's wax (station %s)"):format(a2 .p.DisplayName,a2 .st.Name))
+A.msg=("helped %d waxes here%s"):format(A.n,A.calls>0 and(", "..A.calls.." for the guild")or"")else local pB=(pA and type(dP)=="table"and tostring(dP.reason or"refused"))or("error: "..tostring(dP))
+A.skipIt(a2 .id,pB)A.fails=A.fails+1 if A.fails<=3 then x(("help refused for %s's wax: %s"):format(a2 .p.DisplayName,pB))end
+if A.fails>=5 then A.fails,A.nextAt,A.msg=0,q()+60,"the server keeps refusing helps - trying again in a minute"
+A.goHome()end end A.nextAt=math.max(A.nextAt,q()+0.4)end function A.onCall(a3)if not e.HelpGuild or type(a3)~="table"or a3 .p~="help"or a3 .mine or a3 .u==j.uid or not a3 .u then return end
+task.delay(1+math.random()*2,function()if not(c.alive and e.HelpGuild)then return end local dQ=ao:FindFirstChild("Remotes")
+dQ=dQ and dQ:FindFirstChild("ClanRequest")if not dQ then return end local pC,dR=pcall(function()return dQ:InvokeServer("callHelp",a3 .u)end)
+local pD=tostring(a3 .n or a3 .un or a3 .u)if pC and type(dR)=="table"and dR.ok then A.calls=A.calls+1 x(("HELPED guildmate %s's wax from here (their call)"):format(pD))
+else x(("guild call from %s: %s"):format(pD,(pC and type(dR)=="table"and tostring(dR.reason or"refused"))or tostring(dR)))
+end end)end local function ar(wx,wy,...)if c.busy then return end c.busy,c.busyText=true,wx local wz,pE=pcall(wy,...)
+c.busy,c.busyText=false,""if not wz and pE~=go then x("ERR "..tostring(pE))end end local function wA()local bp,wB,wC=pj()
+c.reason,c.level=wB,wC if bp=="place"then ar("waxing...",o.place)elseif bp=="crate"then ar("opening crate...",e0,true)
+elseif bp=="cratesmart"then ar("opening crate...",d.smart)elseif bp=="cratewin"then ar("opening the crate window...",hx)
+elseif bp=="nocrate"then ar("discarding crate...",e0,false)elseif bp=="sell"then ar("selling...",pc)elseif bp=="buy"then ar("buying...",lZ,false)
+elseif e.Collect and not c.matchSince and q()-c.lastCollect>=e.Every then ar("collecting money...",wk)elseif not bp and not c.matchSince and A.due()then
+ar("helping a wax...",A.step)elseif A.home and not e.Help then ar("coming back...",A.goHome)end end function dJ(fS,wD)
+if fS==c.running then return end c.running=fS if not wD then e.AutoStart=fS end if fS then c.capHit,c.placeFails,c.cashFails,c.sellFails,c.crateFails=false,0,0,0,0
+d.lastFail,d.summonFails,d.ignoreUntil=0,0,0 c.noCashUntil,c.matchSince=0,nil c.lastCollect=q()c.plot=a7()or c.plot
+x("START")else c.reason="stopped"x("STOP")end end do local bq=eA(ab.auto)if type(bq)=="string"then bq=bq:gsub("%s+$","")
+if bq~=""then c.autoload=bq local wE=lu(bq)x(wE and("loaded config "..bq)or("config "..bq.." could not be loaded"))
 end end end local l={bg=Color3 .fromRGB(16,17,22),panel=Color3 .fromRGB(26,28,36),panel2=Color3 .fromRGB(38,41,52),
 line=Color3 .fromRGB(52,56,70),text=Color3 .fromRGB(236,238,244),dim=Color3 .fromRGB(140,146,162),accent=Color3 .fromRGB(88,101,242),good=Color3 .fromRGB(46,190,115),warn=Color3 .fromRGB(240,170,60),
-bad=Color3 .fromRGB(235,80,80),}local vW={ok=l.good,wait=l.warn,warn=l.warn,bad=l.bad,idle=l.dim}local o7={Common=Color3 .fromRGB(170,175,185),Rare=Color3 .fromRGB(80,150,245),Epic=Color3 .fromRGB(175,95,240),
+bad=Color3 .fromRGB(235,80,80),}local wF={ok=l.good,wait=l.warn,warn=l.warn,bad=l.bad,idle=l.dim}local pF={Common=Color3 .fromRGB(170,175,185),Rare=Color3 .fromRGB(80,150,245),Epic=Color3 .fromRGB(175,95,240),
 Legendary=Color3 .fromRGB(240,190,60),Mythic=Color3 .fromRGB(240,70,140),Celestial=Color3 .fromRGB(120,150,255),
 Divine=Color3 .fromRGB(240,130,60),Dream=Color3 .fromRGB(225,200,120),["Sugar Rush"]=Color3 .fromRGB(240,110,210),
-Picnic=Color3 .fromRGB(240,100,90),Limited=Color3 .fromRGB(235,80,80),}local function F(vX,vY,vZ)local v0,i6=pcall(Instance.new,vX)
-if not v0 then a.uiErrs=a.uiErrs+1 return nil end for v1,v2 in pairs(vY)do if not pcall(function()i6[v1]=v2 end)then a.uiErrs=a.uiErrs+1 end
-end i6 .Parent=vZ return i6 end local function ad(v3,v4)F("UICorner",{CornerRadius=UDim.new(0,v4 or 6)},v3)end
-local c={}local i7=C:FindFirstChildOfClass("PlayerGui")or C:WaitForChild("PlayerGui")local o8=i7:FindFirstChild("SABFarmGui")
-if o8 then o8:Destroy()end local i8=F("ScreenGui",{Name="SABFarmGui",ResetOnSpawn=false,DisplayOrder=999,IgnoreGuiInset=true},i7)
-local ac={w=320,h=330,head=30,strip=38,tabs=26}c.root=F("Frame",{Name="Root",Size=UDim2 .new(0,ac.w,0,ac.h),Position=UDim2 .new(0,a.winPos and a.winPos[1]or 10,0,a.winPos and a.winPos[2]or 44),
-BackgroundColor3=l.bg,BorderSizePixel=0,Active=true,ClipsDescendants=true},i8)ad(c.root,10)F("UIStroke",{Color=l.line,Thickness=1},c.root)
-local a0=UDim2 .new(1,0,1,0)local function A(o9,o_)return UDim2 .new(o9,0,0,0),UDim2 .new(o_,(o9+o_>0.99)and 0 or-4,1,0)end
-local function z(v5,v6,v7,v8,v9,v_)local pa=F("TextButton",{Text=v6,Position=v9,Size=v_,BackgroundColor3=v7,BorderSizePixel=0,
-Font=Enum.Font.GothamBold,TextSize=v8,TextColor3=l.text,AutoButtonColor=true},v5)ad(pa,6)return pa end local function fI(wa,wb,wc,wd,we)
-local i9=F("TextBox",{Text=wb,PlaceholderText=wc,Position=wd,Size=we,BackgroundColor3=l.panel2,BorderSizePixel=0,Font=Enum.Font.Gotham,TextSize=13,TextColor3=l.text,PlaceholderColor3=l.dim,
-ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left},wa)ad(i9,6)F("UIPadding",{PaddingLeft=UDim.new(0,8)},i9)
-return i9 end local fJ=aG.CurrentCamera local function wf()local wg,fK=pcall(function()return fJ and fJ.ViewportSize end)
-if wg and fK and fK.X>50 and fK.Y>50 then return fK end end local function bl(dH)local i_=wf()if not(i_ and dH and dH.Parent)then return end
-local wh=pcall(function()local fL,pb=dH.AbsolutePosition,dH.AbsoluteSize local ja=70 local pc=math.clamp(fL.X,ja-pb.X,i_.X-ja)
-local pd=math.clamp(fL.Y,0,i_.Y-math.min(pb.Y,ja))if math.abs(pc-fL.X)>0.5 or math.abs(pd-fL.Y)>0.5 then dH.Position=UDim2 .new(0,math.floor(pc),0,math.floor(pd))
-end end)return wh end local function fM(wi)local wj,jb=pcall(function()return wi.AbsolutePosition end)if wj and jb then return{math.floor(jb.X),math.floor(jb.Y)}end
-end local ck={}a.dragMoved={}local function pe(dI,pf,jc)O(dI.InputBegan:Connect(function(cl)if cl.UserInputType~=Enum.UserInputType.MouseButton1 and cl.UserInputType~=Enum.UserInputType.Touch then return end
-local jd={start=cl.Position,from=pf.Position,moved=0,target=pf,input=cl,onDrop=jc}ck[dI],a.dragMoved[dI]=jd,0
-local je je=cl.Changed:Connect(function()if cl.UserInputState==Enum.UserInputState.End and ck[dI]==jd then ck[dI]=nil
-if je then je:Disconnect()end if jc then jc(jd.moved)end end end)end))end O(jZ.InputChanged:Connect(function(fN)
-if fN.UserInputType~=Enum.UserInputType.MouseMovement and fN.UserInputType~=Enum.UserInputType.Touch then return end
-for wk,aL in pairs(ck)do local jf=aL.target if jf and jf.Parent then local pg,ph=fN.Position.X-aL.start.X,fN.Position.Y-aL.start.Y
-aL.moved=math.max(aL.moved,math.abs(pg)+math.abs(ph))a.dragMoved[wk]=aL.moved jf.Position=UDim2 .new(aL.from.X.Scale,aL.from.X.Offset+pg,aL.from.Y.Scale,aL.from.Y.Offset+ph)
-end end end))O(jZ.InputEnded:Connect(function(fO)if fO.UserInputType~=Enum.UserInputType.MouseButton1 and fO.UserInputType~=Enum.UserInputType.Touch then return end
-for wl,fP in pairs(ck)do if fP.input==fO or fO.UserInputType==Enum.UserInputType.MouseButton1 then ck[wl]=nil
-if fP.onDrop then fP.onDrop(fP.moved)end end end end))local function H(wm,wn,wo,wp,wq,wr,ws)return F("TextLabel",{Text=wn,Position=wr or UDim2 .new(0,0,0,0),Size=ws or a0,BackgroundTransparency=1,
-Font=wq and Enum.Font.GothamBold or Enum.Font.Gotham,TextSize=wo,TextColor3=wp,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true},wm)
-end c.title=F("Frame",{Size=UDim2 .new(1,0,0,ac.head),BackgroundColor3=l.panel,BorderSizePixel=0,Active=true},c.root)
-c.dot=F("Frame",{Size=UDim2 .new(0,9,0,9),Position=UDim2 .new(0,11,0.5,-4),BackgroundColor3=l.dim,BorderSizePixel=0},c.title)
-ad(c.dot,5)H(c.title,"SAB  BUTTER FARM  "..bQ,12,l.text,true,UDim2 .new(0,28,0,0),UDim2 .new(1,-120,1,0))c.minB=z(c.title,"-",l.panel2,14,UDim2 .new(1,-78,0.5,-10),UDim2 .new(0,34,0,20))
-c.xB=z(c.title,"X",l.bad,12,UDim2 .new(1,-40,0.5,-10),UDim2 .new(0,34,0,20))c.strip=F("Frame",{Position=UDim2 .new(0,0,0,ac.head),Size=UDim2 .new(1,0,0,ac.strip),BackgroundColor3=l.bg,BorderSizePixel=0},c.root)
-c.bar=F("Frame",{Size=UDim2 .new(0,4,1,-10),Position=UDim2 .new(0,9,0,5),BackgroundColor3=l.warn,BorderSizePixel=0},c.strip)
-ad(c.bar,2)c.reason=H(c.strip,"starting",12,l.text,false,UDim2 .new(0,20,0,2),UDim2 .new(1,-28,1,-4))c.tabs=F("Frame",{Position=UDim2 .new(0,0,0,ac.head+ac.strip),Size=UDim2 .new(1,0,0,ac.tabs),BackgroundTransparency=1},c.root)
-c.tabFarm=z(c.tabs,"FARM",l.accent,9,UDim2 .new(0,6,0,0),UDim2 .new(1/6,-7,1,-4))c.tabBut=z(c.tabs,"BUTTERS",l.panel2,9,UDim2 .new(1/6,1,0,0),UDim2 .new(1/6,-2,1,-4))
-c.tabCrt=z(c.tabs,"CRATES",l.panel2,9,UDim2 .new(2/6,1,0,0),UDim2 .new(1/6,-2,1,-4))c.tabPet=z(c.tabs,"PETS",l.panel2,9,UDim2 .new(3/6,1,0,0),UDim2 .new(1/6,-2,1,-4))
-c.tabTeam=z(c.tabs,"TEAMS",l.panel2,9,UDim2 .new(4/6,1,0,0),UDim2 .new(1/6,-2,1,-4))c.tabSet=z(c.tabs,"SETUP",l.panel2,9,UDim2 .new(5/6,1,0,0),UDim2 .new(1/6,-7,1,-4))
-local function cm()local jg=F("ScrollingFrame",{Position=UDim2 .new(0,0,0,ac.head+ac.strip+ac.tabs),Size=UDim2 .new(1,0,1,-(ac.head+ac.strip+ac.tabs)),
-BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=l.line,CanvasSize=UDim2 .new(0,0,0,100)},c.root)
-F("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder},jg)F("UIPadding",{PaddingLeft=UDim.new(0,8),PaddingRight=UDim.new(0,10),PaddingTop=UDim.new(0,4),PaddingBottom=UDim.new(0,8)},jg)
-return jg end c.farm,c.but,c.set,c.crt=cm(),cm(),cm(),cm()c.pet,c.team=cm(),cm()c.but.Visible,c.set.Visible,c.crt.Visible,c.pet.Visible,c.team.Visible=false,false,false,false,false
-local fQ,dJ,D=0,12,nil local function ar(pj,wt)fQ,dJ=fQ+1,dJ+pj+6 return F("Frame",{Size=UDim2 .new(1,0,0,pj),BackgroundTransparency=1,LayoutOrder=fQ},wt or c.farm)
-end local function dK(wu)H(ar(14),wu,10,l.dim,true)end D=ar(34)c.startB=z(D,"START",l.good,14,A(0,0.68))c.killB=z(D,"KILL",l.bad,14,A(0.68,0.32))
-local wv=ar(42)local function dL(pk,ww,jh)local ji=F("Frame",{Position=UDim2 .new((pk-1)/jh,0,0,0),Size=UDim2 .new(1/jh,pk<jh and-4 or 0,1,0),
-BackgroundColor3=l.panel,BorderSizePixel=0},wv)ad(ji,6)local pl=H(ji,"0",15,l.text,true,UDim2 .new(0,0,0,3),UDim2 .new(1,0,0,21))
-local wx=H(ji,ww,9,l.dim,false,UDim2 .new(0,0,0,24),UDim2 .new(1,0,0,14))pl.TextXAlignment,wx.TextXAlignment=Enum.TextXAlignment.Center,Enum.TextXAlignment.Center
-return pl end c.sBought,c.sPlaced,c.sSold,c.sColl,c.sFree=dL(1,"BOUGHT",5),dL(2,"WAXED",5),dL(3,"SOLD",5),dL(4,"MONEY",5),dL(5,"FREE",5)
-c.info=H(ar(40),"",10,l.dim,false)c.tgt=H(ar(26),"",10,l.good,false)dK("MONEY COLLECT")D=ar(28)c.secB=fI(D,tostring(e.Every),"60",A(0,0.2))
-H(D,"sec",11,l.dim,false,A(0.21,0.09))c.secSet=z(D,"SET",l.accent,12,A(0.3,0.2))c.colT=z(D,"COLLECT: ON",l.accent,11,A(0.5,0.5))
-D=ar(26)c.padB=z(D,"SET PAD (stand on it)",l.panel2,10,A(0,0.55))c.padL=H(D,"",10,l.dim,false,A(0.56,0.44))dK("BUTTERS YOU DID NOT TICK, AND CRATES")
-D=ar(28)c.sellT=z(D,"SELL THEM: ON",l.accent,11,A(0,0.55))c.sellB=z(D,"SELL NOW",l.warn,11,A(0.55,0.45))D=ar(28)
-c.crateT=z(D,"OPEN CRATES: ON",l.accent,11,A(0,0.55))c.crateB=z(D,"OPEN NOW",l.warn,11,A(0.55,0.45))dK("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")
-D=ar(28)c.arT=z(D,"AUTO ROLL: OFF",l.panel2,11,A(0,0.5))c.arL=H(D,"",9,l.dim,false,A(0.52,0.48))dK("TOOLS")D=ar(30)
-c.buyB=z(D,"BUY",l.warn,10,A(0,0.5))c.plB=z(D,"WAX",l.good,10,A(0.5,0.5))dK("LOG")c.log=F("TextLabel",{Size=a0,BackgroundColor3=l.panel,BorderSizePixel=0,Font=Enum.Font.Code,
-TextSize=10,TextColor3=l.text,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
-TextWrapped=true,Text=""},ar(84))ad(c.log,6)F("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingTop=UDim.new(0,4),PaddingRight=UDim.new(0,6)},c.log)
-c.farm.CanvasSize=UDim2 .new(0,0,0,dJ)fQ,dJ=0,12 local function ae(wy)return ar(wy,c.set)end local function dM(wz)H(ae(14),wz,10,l.dim,true)end
-dM("SETTINGS FILE  (saved on your phone)")D=ae(28)c.cfgName=fI(D,"default","config name",A(0,0.5))c.cfgSave=z(D,"SAVE",l.good,11,A(0.5,0.25))
-c.cfgLoad=z(D,"LOAD",l.accent,11,A(0.75,0.25))D=ae(26)c.cfgPrev=z(D,"<",l.panel2,11,A(0,0.13))c.cfgPick=z(D,"(none saved)",l.panel2,10,A(0.13,0.74))
-c.cfgNext=z(D,">",l.panel2,11,A(0.87,0.13))D=ae(26)c.cfgAuto=z(D,"LOAD IT ON LAUNCH: OFF",l.panel2,10,A(0,1))
-c.cfgMsg=H(ae(26),"",10,l.dim,false)dM("START BY ITSELF")D=ae(26)c.autoB=z(D,"INSTALL F.exec",l.accent,10,A(0,1))
-c.autoMsg=H(ae(30),"",10,l.dim,false)D=ae(28)c.startT=z(D,"START FARMING ON LOAD: ON",l.accent,10,A(0,1))H(ae(26),"Pressing START or STOP also sets this, so saving the config keeps whatever you were doing.",10,l.dim,false)
-dM("IF THE GAME DROPS ME")D=ae(28)c.rejT=z(D,"AUTO REJOIN: ON",l.accent,11,A(0,0.55))c.rejB=z(D,"REJOIN NOW",l.warn,11,A(0.55,0.45))
-c.rejMsg=H(ae(30),"",10,l.dim,false)dM("SMOOTHER RUNNING  (for long / overnight runs)")D=ae(28)c.pfLite=z(D,"LITE MODE: OFF",l.panel2,10,A(0,0.5))
-c.pfHud=z(D,"HIDE GAME HUD: OFF",l.panel2,10,A(0.5,0.5))D=ae(28)c.pfFps=z(D,"FPS CAP: GAME",l.panel2,10,A(0,0.5))
-c.pfRender=z(D,"STOP 3D: OFF",l.panel2,10,A(0.5,0.5))D=ae(28)c.pfMem=fI(D,tostring(e.MemLimit),"2000",A(0,0.24))
-H(D,"MB: rejoin this server above it (0 = never)",9,l.dim,false,A(0.26,0.52))c.pfMemSet=z(D,"SET",l.accent,11,A(0.8,0.2))
-c.pfInfo=H(ae(18),"",10,l.text,false)H(ae(66),"LITE MODE turns off floating labels, sparkles and lighting extras; the screen stays normal. HIDE GAME HUD hides the game's own menus. A lower FPS CAP keeps the phone cooler overnight. STOP 3D blanks the world behind this window. All of it goes back to normal when switched off or on KILL.",9,l.dim,false)
-dM("THE ROUND SAB BUTTON")H(ae(30),"Tap it to hide or show this window. Hold and drag it anywhere on screen. The farm keeps running either way.",10,l.dim,false)
-c.set.CanvasSize=UDim2 .new(0,0,0,dJ)local pm=F("ScreenGui",{Name="SABToggle",ResetOnSpawn=false,DisplayOrder=1000,IgnoreGuiInset=true},i7)
-c.tgRoot=F("Frame",{Size=UDim2 .new(0,40,0,40),Position=a.togPos and UDim2 .new(0,a.togPos[1],0,a.togPos[2])or UDim2 .new(0,10,0.45,-20),
-BackgroundColor3=l.accent,BorderSizePixel=0,Active=true},pm)ad(c.tgRoot,20)F("UIStroke",{Color=l.line,Thickness=1},c.tgRoot)
-c.tgBtn=F("TextButton",{Text="SAB",Size=a0,BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=l.text,AutoButtonColor=false},c.tgRoot)
-c.tgDot=F("Frame",{Size=UDim2 .new(0,7,0,7),Position=UDim2 .new(1,-9,0,2),BackgroundColor3=l.dim,BorderSizePixel=0},c.tgRoot)
-ad(c.tgDot,4)local a1={built=false,boxes={},at=0}local function pn(po,jj)e.Targets[po]=jj or nil local jk=a1 .boxes[po]
-if jk then jk.Text=jj and"X"or""jk.BackgroundColor3=jj and l.good or l.panel2 end end local function jl()for wA,pp in pairs(a1 .boxes)do
-local pq=e.Targets[wA]==true pp.Text=pq and"X"or""pp.BackgroundColor3=pq and l.good or l.panel2 end end local dN
-local function wB()local wC=0 local jm=F("Frame",{Size=UDim2 .new(1,0,0,30),BackgroundTransparency=1,LayoutOrder=1},c.but)
-c.butInfo=H(jm,"",10,l.dim,false,A(0,0.5))local wD=z(jm,"CLEAR",l.panel2,10,A(0.5,0.24))local wE=z(jm,"REFRESH",l.panel2,10,A(0.74,0.26))
-wD.MouseButton1Click:Connect(function()for wF in pairs(e.Targets)do e.Targets[wF]=nil end jl()end)wE.MouseButton1Click:Connect(function()
-M.at=0 gO()dN(true)end)return wC end dN=function(wG)if not gO()then if not c.butEmpty then c.butEmpty=H(F("Frame",{Size=UDim2 .new(1,0,0,40),BackgroundTransparency=1,LayoutOrder=2},c.but),
-"butter list not loaded yet - open this tab again in a moment",11,l.warn,false)end return end if a1 .built and not wG and a1 .at==M.at then return end
-for zl,jn in ipairs(c.but:GetChildren())do if jn:IsA("Frame")or jn:IsA("TextButton")then jn:Destroy()end end a1 .boxes,c.butEmpty={},nil
-wB()local jo,jp=36,1 local function pr(ps)jp=jp+1 local wH=F("Frame",{Size=UDim2 .new(1,0,0,ps),BackgroundTransparency=1,LayoutOrder=jp},c.but)
-jo=jo+ps+6 return wH end for zm,fR in ipairs(M.rarOrder)do local wI=pr(24)local wJ=o7[fR]or l.text local jq=F("Frame",{Size=a0,BackgroundColor3=l.panel,BorderSizePixel=0},wI)
-ad(jq,6)H(jq,"  "..fR:upper(),11,wJ,true,UDim2 .new(0,4,0,0),UDim2 .new(1,-70,1,0))local wK=z(jq,"ALL",l.panel2,9,UDim2 .new(1,-62,0.5,-9),UDim2 .new(0,56,0,18))
-local wL=fR wK.MouseButton1Click:Connect(function()local pt=M.members[wL]or{}local pu=false for zn,wM in ipairs(pt)do if not e.Targets[wM]then pu=true break end end
-for zo,wN in ipairs(pt)do pn(wN,pu)end end)for zp,jr in ipairs(M.members[fR]or{})do local wO=pr(22)local fS=F("TextButton",{Text="",Size=a0,BackgroundColor3=l.bg,BorderSizePixel=0,
-AutoButtonColor=true},wO)ad(fS,5)H(fS,"   "..aa(jr),11,l.text,false,UDim2 .new(0,4,0,0),UDim2 .new(1,-40,1,0))
-local js=F("TextButton",{Text="",Size=UDim2 .new(0,22,0,16),Position=UDim2 .new(1,-28,0.5,-8),BackgroundColor3=l.panel2,BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=10,
-TextColor3=l.text,AutoButtonColor=false},fS)ad(js,4)a1 .boxes[jr]=js local pv=jr local function pw()pn(pv,not e.Targets[pv])end
-fS.MouseButton1Click:Connect(pw)js.MouseButton1Click:Connect(pw)end end jl()c.but.CanvasSize=UDim2 .new(0,0,0,jo+10)
-a1 .built,a1 .at=true,M.at end function E.paint()for wP,px in pairs(E.boxes)do local py=e.CrateTicks[wP]==true
-px.Text=py and"X"or""px.BackgroundColor3=py and l.good or l.panel2 end if c.crtInfo then local jt,ju=0,0 for zq in pairs(E.boxes)do jt=jt+1 end
-for zr,wQ in pairs(e.CrateTicks)do if wQ then ju=ju+1 end end c.crtInfo.Text=("%d crates, %d ticked"):format(jt,ju)
-end if c.crtAll then c.crtAll.Text=e.Crates and"OPEN TICKED CRATES: ON"or"OPEN TICKED CRATES: OFF"c.crtAll.BackgroundColor3=e.Crates and l.accent or l.panel2
-end end function E.build()for zs,jv in ipairs(c.crt:GetChildren())do if jv:IsA("Frame")or jv:IsA("TextButton")then jv:Destroy()end
-end E.boxes={}local jw,jx=12,0 local function fT(pz)jx=jx+1 jw=jw+pz+6 return F("Frame",{Size=UDim2 .new(1,0,0,pz),BackgroundTransparency=1,LayoutOrder=jx},c.crt)
-end local jy=fT(28)c.crtInfo=H(jy,"",10,l.dim,false,A(0,0.5))local wR=z(jy,"CLEAR",l.panel2,10,A(0.5,0.24))local wS=z(jy,"REFRESH",l.panel2,10,A(0.74,0.26))
-O(wR.MouseButton1Click:Connect(function()e.CrateTicks={}E.paint()end))O(wS.MouseButton1Click:Connect(function()E.build()end))
-c.crtAll=z(fT(28),"",l.accent,11,A(0,1))O(c.crtAll.MouseButton1Click:Connect(function()e.Crates=not e.Crates E.paint()end))
-H(fT(30),"Only ticked crates are opened. Any other crate is left alone - the game spins it away by itself.",10,l.dim,false)
-for zt,a2 in ipairs(E.list())do local wT=fT(24)local dO=F("TextButton",{Text="",Size=a0,BackgroundColor3=l.panel,BorderSizePixel=0,AutoButtonColor=true},wT)
-ad(dO,5)H(dO,"  "..(a2 .title or a2 .name)..(a2 .guess and"  (?)"or""),11,o7[a2 .rar or""]or l.text,true,UDim2 .new(0,4,0,0),UDim2 .new(0.62,0,1,0))
-H(dO,a2 .price and("$"..au(a2 .price))or(a2 .rar or""),9,l.dim,false,UDim2 .new(0.62,0,0,0),UDim2 .new(0.25,0,1,0))
-local jz=F("TextButton",{Text="",Size=UDim2 .new(0,22,0,16),Position=UDim2 .new(1,-28,0.5,-8),BackgroundColor3=l.panel2,BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=10,
-TextColor3=l.text,AutoButtonColor=false},dO)ad(jz,4)E.boxes[a2 .k]=jz local pA=a2 .k local function pB()e.CrateTicks[pA]=(not e.CrateTicks[pA])or nil
-E.paint()end O(dO.MouseButton1Click:Connect(pB))O(jz.MouseButton1Click:Connect(pB))end c.crt.CanvasSize=UDim2 .new(0,0,0,jw+10)
-E.built=E.at E.paint()end local pC="farm"local function bm(af)pC=af c.farm.Visible,c.but.Visible,c.set.Visible=(af=="farm"),(af=="but"),(af=="set")
-c.crt.Visible=(af=="crt")c.pet.Visible,c.team.Visible=(af=="pet"),(af=="team")c.tabCrt.BackgroundColor3=(af=="crt")and l.accent or l.panel2
-c.tabPet.BackgroundColor3=(af=="pet")and l.accent or l.panel2 c.tabTeam.BackgroundColor3=(af=="team")and l.accent or l.panel2
-if af=="pet"and not j.built then pcall(j.build)end if af=="team"and not o.built then pcall(o.build)end if af=="crt"and(E.built~=E.at or not next(E.boxes))then E.build()end
-c.tabFarm.BackgroundColor3=(af=="farm")and l.accent or l.panel2 c.tabBut.BackgroundColor3=(af=="but")and l.accent or l.panel2
-c.tabSet.BackgroundColor3=(af=="set")and l.accent or l.panel2 if af=="but"then dN(false)end end local function N(pD,pE,wU,wV)
-pD.Text=pE and wU or wV pD.BackgroundColor3=pE and l.accent or l.panel2 end j.RC={Common=Color3 .fromRGB(120,220,120),Rare=Color3 .fromRGB(90,170,255),Epic=Color3 .fromRGB(190,110,255),
-Legendary=Color3 .fromRGB(255,215,60),Mythic=Color3 .fromRGB(255,90,150),Exotic=Color3 .fromRGB(90,235,215)}function j.paintRow(pF)
-local bN=j.rows and j.rows[pF]if not bN then return end local dP=e.Pets[pF]or{}bN.b.BackgroundColor3=dP.b and l.good or l.panel2
-bN.g.BackgroundColor3=dP.g and l.accent or l.panel2 bN.g.Text=dP.g and"BIG"or"ANY"bN.w.BackgroundColor3=dP.w and l.warn or l.panel2
-local jA=tonumber(dP.f)or 0 bN.f.Text=jA>0 and(jA.." BIG")or"FUSE"bN.f.BackgroundColor3=jA>0 and l.good or l.panel2
-end function j.flag(jB,fU)local aM=e.Pets[jB]or{}if fU=="f"then local pG=((tonumber(aM.f)or 0)+1)%4 aM.f=pG>0 and pG or nil
-elseif aM[fU]then aM[fU]=nil else aM[fU]=true end e.Pets[jB]=(aM.b or aM.g or aM.w or aM.f)and aM or nil j.paintRow(jB)
-end function j.paintAll()for wW in pairs(j.rows or{})do j.paintRow(wW)end if c.pbT then N(c.pbT,e.PetBuy,"AUTO ADOPT: ON","AUTO ADOPT: OFF")
-N(c.pwT,e.PetWish,"AUTO WISH: ON","AUTO WISH: OFF")N(c.pfT,e.AutoFuse,"AUTO FUSE: ON","AUTO FUSE: OFF")end end
-function j.live()if not j.built then j.build()return end if r()-(j.liveAt or 0)<1 then return end j.liveAt=r()
-local pH=j.wishes()local dQ=j.data()for fV,fW in pairs(j.rows)do fW.name.Text=j.nice(fV)..(pH[fV]and("   * wish %dm"):format(math.ceil(pH[fV]/60))or"")
-local pI=x.status(fV,dQ)fW.desc.Text=pI and(pI.." | "..fW.boostText)or fW.boostText end local pJ=tonumber(C:GetAttribute("PetWishCredits"))or 0
-c.pInfo.Text=("pets %d/%d | cash $%s%s\nadopt: %s\nwish: %s"):format(dQ and#(dQ.pets or{})or 0,dQ and tonumber(dQ.maxOwned)or 60,
-au(j.money()),pJ>0 and(" | free wishes "..pJ)or"",j.buyMsg~=""and j.buyMsg or"-",j.wishMsg~=""and j.wishMsg or"-")
-end function j.build()local fX=j.info()for zu,jC in ipairs(c.pet:GetChildren())do if jC:IsA("Frame")or jC:IsA("TextLabel")then jC:Destroy()end
-end j.rows={}local jD,fY=0,12 local function cn(pK)jD,fY=jD+1,fY+pK+6 return F("Frame",{Size=UDim2 .new(1,0,0,pK),BackgroundTransparency=1,LayoutOrder=jD},c.pet)
-end local jE=cn(28)c.pbT=z(jE,"AUTO ADOPT: OFF",l.panel2,9,A(0,0.34))c.pwT=z(jE,"AUTO WISH: OFF",l.panel2,9,A(0.34,0.33))
-c.pfT=z(jE,"AUTO FUSE: OFF",l.panel2,9,A(0.67,0.33))c.pbT.MouseButton1Click:Connect(function()e.PetBuy=not e.PetBuy j.paintAll()end)
-c.pwT.MouseButton1Click:Connect(function()e.PetWish=not e.PetWish j.paintAll()end)c.pfT.MouseButton1Click:Connect(function()e.AutoFuse=not e.AutoFuse j.paintAll()end)
-c.pInfo=H(cn(44),"",10,l.dim,false)H(cn(52),"BUY: adopt it whenever it is in the pen.  ANY/BIG: BIG = only its Big version.  WISH: keep a wish on it here (2x its price, 20 min, one per pet per server).  FUSE: how many Bigs you want - buying and wishing stop once there is enough, and AUTO FUSE makes them.",9,l.dim,false)
-if not fX then H(cn(30),"pet list not loaded yet - open this tab again in a moment",11,l.warn,false)c.pet.CanvasSize=UDim2 .new(0,0,0,fY)
-j.built=false return end local co={}for zv,pL in ipairs(j.order())do local jF=fX.Pets[pL].rarity or"?"co[jF]=co[jF]or{}
-table.insert(co[jF],pL)end local cp={}for zw,pM in ipairs(fX.Rarities or{})do if co[pM]then cp[#cp+1]=pM end end
-for pN in pairs(co)do if not table.find(cp,pN)then cp[#cp+1]=pN end end for zx,fZ in ipairs(cp)do local pO=F("Frame",{Size=a0,BackgroundColor3=l.panel,BorderSizePixel=0},cn(22))
-ad(pO,6)H(pO,"  "..fZ:upper(),11,j.RC[fZ]or l.text,true)for zy,f0 in ipairs(co[fZ])do local bO=F("Frame",{Size=a0,BackgroundColor3=l.bg,BorderSizePixel=0},cn(38))
-ad(bO,5)local wX=H(bO,j.nice(f0),11,j.RC[fZ]or l.text,true,UDim2 .new(0,6,0,2),UDim2 .new(1,-150,0,17))local wY,wZ=pcall(function()return fX.describe(f0)end)
-local pP=wY and tostring(wZ)or""local w0=H(bO,pP,9,l.dim,false,UDim2 .new(0,6,0,19),UDim2 .new(1,-150,0,17))local pQ=z(bO,"BUY",l.panel2,8,UDim2 .new(1,-144,0.5,-11),UDim2 .new(0,32,0,22))
-local pR=z(bO,"ANY",l.panel2,8,UDim2 .new(1,-110,0.5,-11),UDim2 .new(0,32,0,22))local pS=z(bO,"WISH",l.panel2,8,UDim2 .new(1,-76,0.5,-11),UDim2 .new(0,34,0,22))
-local pT=z(bO,"FUSE",l.panel2,8,UDim2 .new(1,-40,0.5,-11),UDim2 .new(0,38,0,22))local f1=f0 pQ.MouseButton1Click:Connect(function()j.flag(f1,"b")end)
-pR.MouseButton1Click:Connect(function()j.flag(f1,"g")end)pS.MouseButton1Click:Connect(function()j.flag(f1,"w")end)
-pT.MouseButton1Click:Connect(function()j.flag(f1,"f")end)j.rows[f0]={b=pQ,g=pR,w=pS,f=pT,name=wX,desc=w0,boostText=pP}
-end end c.pet.CanvasSize=UDim2 .new(0,0,0,fY+10)j.built=true j.paintAll()end function q.paint()N(c.pfLite,e.Lite,"LITE MODE: ON","LITE MODE: OFF")
-N(c.pfHud,e.HideHud,"HIDE GAME HUD: ON","HIDE GAME HUD: OFF")N(c.pfRender,e.NoRender,"STOP 3D: ON","STOP 3D: OFF")
-N(c.pfFps,(e.FpsCap or 0)~=0,"FPS CAP: "..tostring(e.FpsCap),"FPS CAP: GAME")if not c.pfMem:IsFocused()then c.pfMem.Text=tostring(e.MemLimit)end
-end function q.applyAll()if e.Lite then q.lite(true)end if e.HideHud then q.hideHud(true)end if e.NoRender then q.render(true)end
-if(e.FpsCap or 0)~=0 then q.cap(e.FpsCap)end q.paint()end O(c.pfLite.MouseButton1Click:Connect(function()q.lite(not e.Lite)q.paint()end))
-O(c.pfHud.MouseButton1Click:Connect(function()q.hideHud(not e.HideHud)q.paint()end))O(c.pfRender.MouseButton1Click:Connect(function()q.render(not e.NoRender)q.paint()end))
-O(c.pfFps.MouseButton1Click:Connect(function()local w1=table.find(q.CAPS,e.FpsCap or 0)or 1 local pU=q.CAPS[(w1%#q.CAPS)+1]
-if not q.cap(pU)and pU~=0 then u("this executor cannot cap fps")end q.paint()end))O(c.pfMemSet.MouseButton1Click:Connect(function()
-local jG=tonumber(c.pfMem.Text)if jG and jG>=0 then e.MemLimit=math.floor(jG)end q.paint()end))function o.names()
-local jH={"(none)"}for zz,w2 in ipairs((o.teams()))do jH[#jH+1]=w2 .name end return jH end function o.cycle(jI,w3)
-local f2=o.names()local w4=e[jI]~=""and e[jI]or"(none)"local f3=table.find(f2,w4)or 1 f3=((f3-1+w3)%#f2)+1 e[jI]=f2[f3]=="(none)"and""or f2[f3]
-o.paint()end function o.paint()if not o.built then return end N(c.tmT,e.Teams,"AUTO TEAMS: ON","AUTO TEAMS: OFF")
-N(c.tmBuild,e.AutoBuild,"AUTO BUILD TEAMS: ON","AUTO BUILD TEAMS: OFF")local jJ={}for zA,w5 in ipairs((o.teams()))do jJ[w5 .name]=true end
-for w6,pV in pairs(o.pick)do local cq=e[w6]pV.Text=cq==""and"(none)"or(jJ[cq]and cq or(cq.." (missing)"))pV.TextColor3=(cq~=""and not jJ[cq])and l.bad or l.text
-end if not c.tmLead:IsFocused()then c.tmLead.Text=tostring(e.GlazeLead)end c.tmInfo.Text=(o.msg or"")..("\nswitches %d | finished %d | glazed %d | fused %d"):format(o.switches,o.finished,o.glazed,x.fused)
-..(x.buildMsg~=""and("\n"..x.buildMsg)or"")local w7,f4=j.srv(),{}for zB,f5 in ipairs(o.list or{})do f4[#f4+1]=("st %-2s %-22s %9s  helps %d"):format(f5 .st.Name,aa(Q(f5 .name)):sub(1,22),o.clock(f5 .ends-w7),f5 .helps)
-end c.tmList.Text=#f4>0 and table.concat(f4,"\n")or"no waxes running"end function o.build()for zC,jK in ipairs(c.team:GetChildren())do
-if jK:IsA("Frame")or jK:IsA("TextLabel")then jK:Destroy()end end o.pick={}local jL,jM=0,12 local function bn(pW)
-jL,jM=jL+1,jM+pW+6 return F("Frame",{Size=UDim2 .new(1,0,0,pW),BackgroundTransparency=1,LayoutOrder=jL},c.team)
-end local function dR(w8)H(bn(14),w8,10,l.dim,true)end local function f6(f7)local jN=bn(26)local w9=z(jN,"<",l.panel2,11,A(0,0.14))
-local pX=z(jN,"(none)",l.panel,10,A(0.14,0.72))local w_=z(jN,">",l.panel2,11,A(0.86,0.14))w9 .MouseButton1Click:Connect(function()o.cycle(f7,-1)end)
-w_.MouseButton1Click:Connect(function()o.cycle(f7,1)end)pX.MouseButton1Click:Connect(function()o.cycle(f7,1)end)
-o.pick[f7]=pX end c.tmT=z(bn(28),"AUTO TEAMS: OFF",l.panel2,11,A(0,1))c.tmT.MouseButton1Click:Connect(function()
-e.Teams=not e.Teams if e.Teams and e.TeamNormal==""then e.TeamNormal=o.current()end o.paint()end)c.tmInfo=H(bn(42),"",10,l.dim,false)
-local pY=bn(26)c.tmBuild=z(pY,"AUTO BUILD TEAMS: OFF",l.panel2,9,A(0,0.62))c.tmBuildNow=z(pY,"BUILD NOW",l.warn,9,A(0.62,0.38))
-c.tmBuild.MouseButton1Click:Connect(function()e.AutoBuild=not e.AutoBuild o.paint()end)c.tmBuildNow.MouseButton1Click:Connect(function()
-if o.editing then return end x.buildMsg="building..."task.spawn(function()local xa,xb=pcall(x.rebuild,"you asked")if not xa then u("BUILD ERR "..tostring(xb))end end)
-end)dR("NORMAL TEAM  (worn the rest of the time)")f6("TeamNormal")dR("FULL TEAM  (every station busy: money + wax speed)")
-f6("TeamFull")dR("GLAZE TEAM  (worn just before a wax finishes)")f6("TeamGlaze")local jO=bn(26)c.tmLead=fI(jO,tostring(e.GlazeLead),"45",A(0,0.2))
-H(jO,"sec before it finishes",10,l.dim,false,A(0.22,0.5))local xc=z(jO,"SET",l.accent,11,A(0.75,0.25))xc.MouseButton1Click:Connect(function()
-local f8=tonumber(c.tmLead.Text)if f8 and f8>=5 and f8<=600 then e.GlazeLead=math.floor(f8)else c.tmLead.Text=tostring(e.GlazeLead)end
-o.paint()end)dR("WAX TEAM  (worn while a butter is placed: head starts)")f6("TeamWax")dR("YOUR WAXES  (time left, helps)")
-c.tmList=F("TextLabel",{Size=a0,BackgroundColor3=l.panel,BorderSizePixel=0,Font=Enum.Font.Code,TextSize=9,TextColor3=l.text,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
-TextWrapped=false,Text=""},bn(150))ad(c.tmList,6)F("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingTop=UDim.new(0,4)},c.tmList)
-H(bn(92),"Teams are the loadouts you saved in the game's Teams page. Every running wax goes at the speed of the pets you wear right now (the times below are the stations' own countdowns), head starts are decided when a butter is placed, and the glaze is rolled when a wax finishes. So: WAX team (head starts) while placing, GLAZE team at a finish, FULL (money + wax speed) while every station is busy, NORMAL (money + luck) while stations wait for Apple Pies. The lead counts in glaze-team time. While AUTO TEAMS is on it keeps putting the right team back.",9,l.dim,false)
-c.team.CanvasSize=UDim2 .new(0,0,0,jM+10)o.built=true o.paint()end local function xd()c.secB.Text=tostring(e.Every)
-N(c.colT,e.Collect,"COLLECT: ON","COLLECT: OFF")N(c.sellT,e.SellJunk,"SELL THEM: ON","SELL THEM: OFF")N(c.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")
-N(c.arT,e.AutoRoll,"AUTO ROLL: ON","AUTO ROLL: OFF")N(c.rejT,e.Rejoin,"AUTO REJOIN: ON","AUTO REJOIN: OFF")N(c.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")
-if e.AutoStart~=a.running then dD(e.AutoStart,true)end if a.winPos then c.root.Position=UDim2 .new(0,a.winPos[1],0,a.winPos[2])end
-if a.togPos then c.tgRoot.Position=UDim2 .new(0,a.togPos[1],0,a.togPos[2])end bl(c.root)bl(c.tgRoot)a.lastCollect=r()
-jl()E.paint()pcall(j.paintAll)pcall(o.paint)pcall(q.applyAll)end local function xe(pZ)task.spawn(function()pZ.TextColor3=l.bad
-task.wait(0.8)if a.alive then pZ.TextColor3=l.text end end)end local function p0()local p1=c.secB.Text:match("^%s*(%d+)%s*$")
-local dS=p1 and tonumber(p1)if not dS or dS<1 then c.secB.Text=tostring(e.Every)xe(c.secB)u("interval must be a whole number >= 1")
-return end if dS==e.Every then return end e.Every,a.lastCollect=dS,r()u("collect every "..dS.."s")end local function K(xf,xg)O(xf.MouseButton1Click:Connect(xg))end
-K(c.secSet,p0)O(c.secB.FocusLost:Connect(p0))K(c.colT,function()e.Collect,a.lastCollect=not e.Collect,r()N(c.colT,e.Collect,"COLLECT: ON","COLLECT: OFF")
-end)K(c.sellT,function()e.SellJunk=not e.SellJunk N(c.sellT,e.SellJunk,"SELL THEM: ON","SELL THEM: OFF")end)K(c.sellB,function()
-a.sellFails=0 task.spawn(ay,"selling...",oS)end)K(c.arT,function()e.AutoRoll=not e.AutoRoll task.spawn(y.apply,"you asked",true)
-end)K(c.crateT,function()e.Crates=not e.Crates N(c.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")end)K(c.crateB,function()
-d.lastFail,d.summonFails,d.ignoreUntil,a.crateFails=0,0,0,0 task.spawn(ay,"opening crate...",eQ,true)end)K(c.padB,function()
-a.plot=a3()or a.plot local p2,jP=aP(),a.plot and a.plot:FindFirstChild("RolledSquishyPlaceHolder")if not(p2 and jP and jP:IsA("BasePart"))then u("SET PAD: need character and plot")return end
-a.manualPad=jP.CFrame:ToObjectSpace(p2 .HumanoidRootPart.CFrame)vA(a.manualPad)u("collect pad saved at your position")
-end)K(c.startB,function()dD(not a.running)end)K(c.buyB,function()a.plot=a3()or a.plot task.spawn(ay,"buying (manual)...",lE,true)
-end)K(c.plB,function()a.plot=a3()or a.plot task.spawn(ay,"waxing (manual)...",lJ)end)K(c.tabFarm,function()bm("farm")end)
-K(c.tabBut,function()bm("but")end)K(c.tabSet,function()bm("set")end)K(c.tabCrt,function()bm("crt")end)K(c.tabPet,function()bm("pet")end)
-K(c.tabTeam,function()bm("team")end)local function xh(jQ)a.hidden=jQ c.root.Visible=not jQ c.tgBtn.Text=jQ and"SAB+"or"SAB"
-end pe(c.tgBtn,c.tgRoot,function()bl(c.tgRoot)a.togPos=fM(c.tgRoot)or a.togPos end)K(c.tgBtn,function()if(a.dragMoved[c.tgBtn]or 0)<8 then xh(not a.hidden)end
-a.dragMoved[c.tgBtn]=0 end)local as,ai={},0 local function bo()as=k1()if#as==0 then c.cfgPick.Text="(none saved)"
-ai=0 return end if ai<1 or ai>#as then ai=1 end c.cfgPick.Text=as[ai]..("  (%d/%d)"):format(ai,#as)end local function p3()
-local p4=a.autoload~=nil c.cfgAuto.Text=p4 and("LOAD IT ON LAUNCH: "..a.autoload)or"LOAD IT ON LAUNCH: OFF"c.cfgAuto.BackgroundColor3=p4 and l.accent or l.panel2
-end local function jR()local p5=c.cfgName.Text:gsub("^%s+",""):gsub("%s+$","")if p5~=""then return p5 end return(ai>0 and as[ai])or""
-end K(c.cfgSave,function()a.winPos=fM(c.root)or a.winPos a.togPos=fM(c.tgRoot)or a.togPos local p6,p7=ev(jR())
-c.cfgMsg.Text=p6 and("saved as "..p7)or("could not save: "..p7)c.cfgMsg.TextColor3=p6 and l.good or l.bad bo()
-u(c.cfgMsg.Text)end)local function xi(jS)local jT,p8=k_(jS)c.cfgMsg.Text=jT and("loaded "..p8)or("could not load: "..p8)
-c.cfgMsg.TextColor3=jT and l.good or l.bad if jT then c.cfgName.Text=jS xd()task.spawn(y.apply,"config "..jS)
-end u(c.cfgMsg.Text)end K(c.cfgLoad,function()xi(jR())end)K(c.cfgPick,function()bo()if ai>0 then c.cfgName.Text=as[ai]end
-end)K(c.cfgPrev,function()if#as==0 then bo()return end ai=(ai-2)%#as+1 bo()c.cfgName.Text=as[ai]end)K(c.cfgNext,function()
-if#as==0 then bo()return end ai=ai%#as+1 bo()c.cfgName.Text=as[ai]end)K(c.cfgAuto,function()if a.autoload then
-lb(nil)c.cfgMsg.Text="it will not load a config on launch"else local dT=jR()local p9=false for zD,xj in ipairs(k1())do if xj==dT then p9=true end end
-local xk=p9 or ev(dT)if xk and dT~=""then lb(dT)bo()c.cfgMsg.Text=dT.." will load every time the script starts"
-else c.cfgMsg.Text="name the config and save it first"end end c.cfgMsg.TextColor3=l.dim p3()end)K(c.autoB,function()
-local p_,qa=rW()c.autoMsg.Text=p_ and("installed. "..qa)or("failed: "..qa)c.autoMsg.TextColor3=p_ and l.good or l.bad
-u(c.autoMsg.Text)end)K(c.startT,function()e.AutoStart=not e.AutoStart N(c.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")
-end)K(c.rejT,function()e.Rejoin=not e.Rejoin N(c.rejT,e.Rejoin,"AUTO REJOIN: ON","AUTO REJOIN: OFF")end)K(c.rejB,function()cJ("you asked")end)
-local bP=false K(c.minB,function()bP=not bP c.tabs.Visible=not bP if bP then c.farm.Visible,c.but.Visible,c.set.Visible,c.crt.Visible=false,false,false,false
-c.pet.Visible,c.team.Visible=false,false else bm(pC)end c.root.Size=UDim2 .new(0,ac.w,0,bP and(ac.head+ac.strip)or ac.h)
-c.minB.Text=bP and"+"or"-"end)local function f9()if not a.alive then return end a.alive,a.running=false,false
-pcall(q.restoreAll)pcall(d7)for zE,xl in ipairs(ge)do pcall(function()xl:Disconnect()end)end if d.oldNC then pcall(function()hookmetamethod(game,"__namecall",d.oldNC)end)end
-pcall(function()i8:Destroy()end)pcall(function()pm:Destroy()end)if bR.SAB_KILL==f9 then bR.SAB_KILL=nil end end
-bR.SAB_KILL=f9 K(c.killB,f9)K(c.xB,f9)pe(c.title,c.root,function()bl(c.root)a.winPos=fM(c.root)or a.winPos end)
-local function qb()local dU,dV=a.reason,a.level if a.busy then dU,dV=a.busyText,"ok"elseif not a.running then
-local zF,qc,xm=oY()if a.capHit then dU,dV=qc,"bad"else dU,dV="[stopped] "..qc,(xm=="bad")and"bad"or"idle"end a.reason,a.level=dU,dV
-end c.reason.Text=dU c.bar.BackgroundColor3=vW[dV]or l.dim c.dot.BackgroundColor3=a.running and l.good or(a.capHit and l.bad or l.dim)
-c.tgDot.BackgroundColor3=c.dot.BackgroundColor3 c.tgRoot.BackgroundColor3=a.hidden and l.panel2 or l.accent c.startB.Text=a.running and"STOP"or"START"
-N(c.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")c.startB.BackgroundColor3=a.running and l.warn or l.good
-local xn,xo=d4()c.sBought.Text,c.sPlaced.Text,c.sSold.Text=tostring(a.bought),tostring(a.placed),tostring(a.sold)
-c.sColl.Text,c.sFree.Text=tostring(a.collected),xn.."/"..xo local qd=(a.running and e.Collect)and math.max(0,math.ceil(e.Every-(r()-a.lastCollect)))or nil
-local qe=P()c.info.Text=("cash $%s | rolls %d | gifts %d | crates %d\nin hands: %s%s\nnext collect: %s"):format(
-au(aO()),a.rolls,a.gifts,a.crates,qe and aa(Q(qe))or"nothing",d.on and("   ["..d.title.." window open]")or"",
-qd and("in "..qd.."s")or"off")local cr=rx()c.tgt.Text=(#cr==0)and"NOTHING TICKED - open the BUTTERS tab"or("buying: "..((#cr<=3)and table.concat(cr,", ")or(#cr.." butters ticked")))
-c.tgt.TextColor3=(#cr==0)and l.bad or l.good c.padL.Text=a.manualPad and"pad: saved"or(a.padPart and("auto: "..a.padPart.Name)or"pad: not found")
-c.log.Text=table.concat(dY,"\n")if c.butInfo then c.butInfo.Text=("%d butters, %d rarities\n%d ticked"):format(M.n,#M.rarOrder,#cr)
-end if c.but.Visible and a1 .at~=M.at then dN(false)end if c.crt.Visible then if E.built~=E.at then E.build()else E.paint()end
-end if c.pet.Visible then j.live()end if c.set.Visible then c.pfInfo.Text=("%d fps | memory %d MB (peak %d)"):format(math.floor(q.fps+0.5),q.mem,q.memPeak)
-end if c.team.Visible then o.paint()end N(c.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")N(c.arT,e.AutoRoll,"AUTO ROLL: ON","AUTO ROLL: OFF")
-local qf=(y.rec.on and"on"or"")..(y.rec.off and((y.rec.on and"/"or"").."off")or"")c.arL.Text=y.msg~=""and y.msg or("game: %s | learned: %s%s"):format(y.isOn()and"ON"or"off",
-qf~=""and qf or"nothing yet",#y.rec.rules>0 and", choices"or"")c.arL.TextColor3=y.msg~=""and l.warn or l.dim end
-bR.SAB={S=a,CFG=e,EV=J,U=c,sg=i8,CAT=M,LEARN=V,buildList=dN,logAll=cs,evAll=ct,AR=y,CR=E,PF=q,PX=j,TM=o,CRATE=d,FU=x}
-u(bQ.." loaded")if a.uiErrs>0 then u("UI: "..a.uiErrs.." properties skipped")end bm("farm")bl(c.root)bl(c.tgRoot)
-if fJ then pcall(function()O(fJ:GetPropertyChangedSignal("ViewportSize"):Connect(function()task.wait(0.2)bl(c.root)
-bl(c.tgRoot)end))end)end bo()p3()if a.config and a.config~=""then c.cfgName.Text=a.config end N(c.colT,e.Collect,"COLLECT: ON","COLLECT: OFF")
-N(c.sellT,e.SellJunk,"SELL THEM: ON","SELL THEM: OFF")N(c.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")
-N(c.rejT,e.Rejoin,"AUTO REJOIN: ON","AUTO REJOIN: OFF")N(c.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")
-c.secB.Text=tostring(e.Every)pcall(q.applyAll)pcall(qb)task.spawn(function()local qg=rU()c.rejMsg.Text="after a rejoin it restarts with the newest version from GitHub"..(qg and("\n(backup: "..qg..")")or"")
-local qh=eq(W.exec)if qh and not qh:find("SAB autoloader v2",1,true)then cF(W.exec,W.stub)u("autoexec updated: it now loads the newest version from GitHub")
-end c.autoMsg.Text=(eq(W.exec)~=nil)and"autoexec loader is installed (loads from GitHub)"or"not installed yet"
-pcall(r2)end)task.spawn(function()while a.alive do local xp,xq=pcall(qb)if not xp then u("UI ERR "..tostring(xq))end
-task.wait((a.hidden or bP)and 1.5 or 0.25)end end)task.spawn(function()local xr,xs=pcall(sa)if not xr then u("HOOK ERR "..tostring(xs))end
-end)task.spawn(function()pcall(qW)if d.loadSeq and not d.learned then local f_={}for qi=1,20 do if d.loadSeq[qi]then f_[#f_+1]=d.loadSeq[qi]end end
-if#f_>0 then d.learned={seq=f_,mode=d.loadMode}u("remembered how to open crates directly")end end if gO()then u(("catalog: %d butters in %d rarities"):format(M.n,#M.rarOrder))end
-local xt,qj=pcall(vC)if xt and qj and a.alive and not a.manualPad then a.manualPad=qj end end)task.spawn(function()
-while a.alive do local jU,jV=pcall(j.buyTick)if not jU then u("PET ERR "..tostring(jV))task.wait(5)end jU,jV=pcall(j.wishTick)
-if not jU then u("WISH ERR "..tostring(jV))task.wait(5)end task.wait(0.75)end end)task.spawn(function()local ga,qk=0,r()
-O(game:GetService("RunService").Heartbeat:Connect(function()ga=ga+1 end))q.noteAt=r()while a.alive do task.wait(1)
-local ql=r()q.fps,ga,qk=ga/math.max(ql-qk,0.001),0,ql local xu,xv=pcall(q.tick)if not xu then u("PERF ERR "..tostring(xv))task.wait(5)end
-end end)task.spawn(function()task.wait(10)while a.alive do local xw,xx=pcall(x.tick)if not xw then u("FUSE ERR "..tostring(xx))task.wait(10)end
-task.wait(4)end end)task.spawn(function()while a.alive do local xy,xz=pcall(o.tick)if not xy then u("TEAM ERR "..tostring(xz))task.wait(3)end
-task.wait(0.25)end end)task.spawn(function()while a.alive do task.wait(20)pcall(d7)end end)pcall(y.watchCache)
-if type(hookmetamethod)=="function"and type(getnamecallmethod)=="function"then pcall(function()local xC=(type(newcclosure)=="function")and newcclosure or function(xA)return xA end
-local jW local qm=(type(setnamecallmethod)=="function")and setnamecallmethod or nil jW=hookmetamethod(game,"__namecall",xC(function(qn,...)
-local dW=getnamecallmethod()if a.alive and(dW=="InvokeServer"or dW=="FireServer")then local qo,qp=pcall(function()return qn.Name end)
-if qo and qp=="CrateAction"and not d.replaying then pcall(d.saw,dW,...)elseif qo and qp=="AutoRollAction"and not y.replaying then pcall(y.saw,dW,...)end
-if qm then qm(dW)end end return jW(qn,...)end))d.oldNC=jW end)end if gc then O(C.Idled:Connect(function()pcall(function()gc:CaptureController()gc:ClickButton2(Vector2 .new())end)end))
-end task.spawn(function()for zG=1,90 do if not a.alive then return end if C:GetAttribute("AutoRollOn")~=nil and aP()and(a.plot or a3())then break end
-task.wait(1)end task.wait(2)if e.AutoRoll then y.apply("joined")end while a.alive do task.wait(30)if a.alive and e.AutoRoll and a.running and not y.isOn()and not cK()and not P()
-and not d.waiting and not d.on and not a.busy then y.apply("it was off")end end end)task.spawn(function()if not e.AutoStart then return end
-a.reason,a.level="waiting for the game to load, then starting","wait"for zH=1,120 do if not a.alive then return end
-if a.running then return end a.plot=a.plot or a3()if aP()and a.plot and next(e.Targets)then dD(true,true)u("started by itself")
-return end task.wait(1)end if a.alive and not a.running then u("gave up waiting to start - tap START")end end)
-task.spawn(function()a.plot=a3()a.lastCollect=r()while a.alive do if a.running then local xD,qq=pcall(vR)if not xD and qq~=gd then u("LOOP ERR "..tostring(qq))end
-end task.wait(0.1)end end)gb("loaded - window is at the top left")end local xF,jX=xpcall(qu,function(xE)return tostring(xE).."\n"..debug.traceback()end)
-if not xF then pcall(function()warn("SAB "..bQ.." ERROR: "..tostring(jX))end)gb("ERROR while starting - see the red box")
-pcall(function()setclipboard("SAB "..bQ.." ERROR: "..tostring(jX))end)pcall(function()local qr=(type(getgenv)=="function"and getgenv())or _G
-if type(qr.SAB_KILL)=="function"then qr.SAB_KILL()end for zI,xG in ipairs({"SABFarmGui","SABToggle"})do local qs=C.PlayerGui:FindFirstChild(xG)
-if qs then qs:Destroy()end end end)pcall(function()local dX=Instance.new("ScreenGui")dX.Name="SABError"dX.ResetOnSpawn=false
-dX.DisplayOrder=1000 local aF=Instance.new("TextBox")aF.Size=UDim2 .new(0,340,0,170)aF.Position=UDim2 .new(0,10,0,50)
-aF.BackgroundColor3=Color3 .fromRGB(90,20,20)aF.TextColor3=Color3 .new(1,1,1)aF.TextSize=11 aF.TextWrapped=true
-aF.ClearTextOnFocus=false aF.TextXAlignment=Enum.TextXAlignment.Left aF.TextYAlignment=Enum.TextYAlignment.Top
-aF.Text="SAB "..bQ.." failed to start. Send this text:\n"..tostring(jX)aF.Parent=dX dX.Parent=C:WaitForChild("PlayerGui")
+Picnic=Color3 .fromRGB(240,100,90),Limited=Color3 .fromRGB(235,80,80),}local function J(wG,wH,wI)local wJ,jq=pcall(Instance.new,wG)
+if not wJ then c.uiErrs=c.uiErrs+1 return nil end for wK,wL in pairs(wH)do if not pcall(function()jq[wK]=wL end)then c.uiErrs=c.uiErrs+1 end
+end jq.Parent=wI return jq end local function ag(wM,wN)J("UICorner",{CornerRadius=UDim.new(0,wN or 6)},wM)end
+local a={}local jr=F:FindFirstChildOfClass("PlayerGui")or F:WaitForChild("PlayerGui")local pG=jr:FindFirstChild("SABFarmGui")
+if pG then pG:Destroy()end local js=J("ScreenGui",{Name="SABFarmGui",ResetOnSpawn=false,DisplayOrder=999,IgnoreGuiInset=true},jr)
+local ae={w=320,h=330,head=30,strip=38,tabs=26}a.root=J("Frame",{Name="Root",Size=UDim2 .new(0,ae.w,0,ae.h),Position=UDim2 .new(0,c.winPos and c.winPos[1]or 10,0,c.winPos and c.winPos[2]or 44),
+BackgroundColor3=l.bg,BorderSizePixel=0,Active=true,ClipsDescendants=true},js)ag(a.root,10)J("UIStroke",{Color=l.line,Thickness=1},a.root)
+local a4=UDim2 .new(1,0,1,0)local function D(pH,pI)return UDim2 .new(pH,0,0,0),UDim2 .new(pI,(pH+pI>0.99)and 0 or-4,1,0)end
+local function C(wO,wP,wQ,wR,wS,wT)local pJ=J("TextButton",{Text=wP,Position=wS,Size=wT,BackgroundColor3=wQ,BorderSizePixel=0,
+Font=Enum.Font.GothamBold,TextSize=wR,TextColor3=l.text,AutoButtonColor=true},wO)ag(pJ,6)return pJ end local function fT(wU,wV,wW,wX,wY)
+local jt=J("TextBox",{Text=wV,PlaceholderText=wW,Position=wX,Size=wY,BackgroundColor3=l.panel2,BorderSizePixel=0,Font=Enum.Font.Gotham,TextSize=13,TextColor3=l.text,PlaceholderColor3=l.dim,
+ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left},wU)ag(jt,6)J("UIPadding",{PaddingLeft=UDim.new(0,8)},jt)
+return jt end local fU=aC.CurrentCamera local function wZ()local w0,fV=pcall(function()return fU and fU.ViewportSize end)
+if w0 and fV and fV.X>50 and fV.Y>50 then return fV end end local function br(dS)local ju=wZ()if not(ju and dS and dS.Parent)then return end
+local w1=pcall(function()local fW,pK=dS.AbsolutePosition,dS.AbsoluteSize local jv=70 local pL=math.clamp(fW.X,jv-pK.X,ju.X-jv)
+local pM=math.clamp(fW.Y,0,ju.Y-math.min(pK.Y,jv))if math.abs(pL-fW.X)>0.5 or math.abs(pM-fW.Y)>0.5 then dS.Position=UDim2 .new(0,math.floor(pL),0,math.floor(pM))
+end end)return w1 end local function fX(w2)local w3,jw=pcall(function()return w2 .AbsolutePosition end)if w3 and jw then return{math.floor(jw.X),math.floor(jw.Y)}end
+end local cr={}c.dragMoved={}local function pN(dT,pO,jx)P(dT.InputBegan:Connect(function(cs)if cs.UserInputType~=Enum.UserInputType.MouseButton1 and cs.UserInputType~=Enum.UserInputType.Touch then return end
+local jy={start=cs.Position,from=pO.Position,moved=0,target=pO,input=cs,onDrop=jx}cr[dT],c.dragMoved[dT]=jy,0
+local jz jz=cs.Changed:Connect(function()if cs.UserInputState==Enum.UserInputState.End and cr[dT]==jy then cr[dT]=nil
+if jz then jz:Disconnect()end if jx then jx(jy.moved)end end end)end))end P(kj.InputChanged:Connect(function(fY)
+if fY.UserInputType~=Enum.UserInputType.MouseMovement and fY.UserInputType~=Enum.UserInputType.Touch then return end
+for w4,aO in pairs(cr)do local jA=aO.target if jA and jA.Parent then local pP,pQ=fY.Position.X-aO.start.X,fY.Position.Y-aO.start.Y
+aO.moved=math.max(aO.moved,math.abs(pP)+math.abs(pQ))c.dragMoved[w4]=aO.moved jA.Position=UDim2 .new(aO.from.X.Scale,aO.from.X.Offset+pP,aO.from.Y.Scale,aO.from.Y.Offset+pQ)
+end end end))P(kj.InputEnded:Connect(function(fZ)if fZ.UserInputType~=Enum.UserInputType.MouseButton1 and fZ.UserInputType~=Enum.UserInputType.Touch then return end
+for w5,f0 in pairs(cr)do if f0 .input==fZ or fZ.UserInputType==Enum.UserInputType.MouseButton1 then cr[w5]=nil
+if f0 .onDrop then f0 .onDrop(f0 .moved)end end end end))local function K(w6,w7,w8,w9,w_,xa,xb)return J("TextLabel",{Text=w7,Position=xa or UDim2 .new(0,0,0,0),Size=xb or a4,BackgroundTransparency=1,
+Font=w_ and Enum.Font.GothamBold or Enum.Font.Gotham,TextSize=w8,TextColor3=w9,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true},w6)
+end a.title=J("Frame",{Size=UDim2 .new(1,0,0,ae.head),BackgroundColor3=l.panel,BorderSizePixel=0,Active=true},a.root)
+a.dot=J("Frame",{Size=UDim2 .new(0,9,0,9),Position=UDim2 .new(0,11,0.5,-4),BackgroundColor3=l.dim,BorderSizePixel=0},a.title)
+ag(a.dot,5)K(a.title,"SAB  BUTTER FARM  "..bV,12,l.text,true,UDim2 .new(0,28,0,0),UDim2 .new(1,-120,1,0))a.minB=C(a.title,"-",l.panel2,14,UDim2 .new(1,-78,0.5,-10),UDim2 .new(0,34,0,20))
+a.xB=C(a.title,"X",l.bad,12,UDim2 .new(1,-40,0.5,-10),UDim2 .new(0,34,0,20))a.strip=J("Frame",{Position=UDim2 .new(0,0,0,ae.head),Size=UDim2 .new(1,0,0,ae.strip),BackgroundColor3=l.bg,BorderSizePixel=0},a.root)
+a.bar=J("Frame",{Size=UDim2 .new(0,4,1,-10),Position=UDim2 .new(0,9,0,5),BackgroundColor3=l.warn,BorderSizePixel=0},a.strip)
+ag(a.bar,2)a.reason=K(a.strip,"starting",12,l.text,false,UDim2 .new(0,20,0,2),UDim2 .new(1,-28,1,-4))a.tabs=J("Frame",{Position=UDim2 .new(0,0,0,ae.head+ae.strip),Size=UDim2 .new(1,0,0,ae.tabs),BackgroundTransparency=1},a.root)
+a.tabFarm=C(a.tabs,"FARM",l.accent,9,UDim2 .new(0,6,0,0),UDim2 .new(1/6,-7,1,-4))a.tabBut=C(a.tabs,"BUTTERS",l.panel2,9,UDim2 .new(1/6,1,0,0),UDim2 .new(1/6,-2,1,-4))
+a.tabCrt=C(a.tabs,"CRATES",l.panel2,9,UDim2 .new(2/6,1,0,0),UDim2 .new(1/6,-2,1,-4))a.tabPet=C(a.tabs,"PETS",l.panel2,9,UDim2 .new(3/6,1,0,0),UDim2 .new(1/6,-2,1,-4))
+a.tabTeam=C(a.tabs,"TEAMS",l.panel2,9,UDim2 .new(4/6,1,0,0),UDim2 .new(1/6,-2,1,-4))a.tabSet=C(a.tabs,"SETUP",l.panel2,9,UDim2 .new(5/6,1,0,0),UDim2 .new(1/6,-7,1,-4))
+local function ct()local jB=J("ScrollingFrame",{Position=UDim2 .new(0,0,0,ae.head+ae.strip+ae.tabs),Size=UDim2 .new(1,0,1,-(ae.head+ae.strip+ae.tabs)),
+BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=l.line,CanvasSize=UDim2 .new(0,0,0,100)},a.root)
+J("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder},jB)J("UIPadding",{PaddingLeft=UDim.new(0,8),PaddingRight=UDim.new(0,10),PaddingTop=UDim.new(0,4),PaddingBottom=UDim.new(0,8)},jB)
+return jB end a.farm,a.but,a.set,a.crt=ct(),ct(),ct(),ct()a.pet,a.team=ct(),ct()a.but.Visible,a.set.Visible,a.crt.Visible,a.pet.Visible,a.team.Visible=false,false,false,false,false
+local f1,dU,E=0,12,nil local function an(pR,xc)f1,dU=f1+1,dU+pR+6 return J("Frame",{Size=UDim2 .new(1,0,0,pR),BackgroundTransparency=1,LayoutOrder=f1},xc or a.farm)
+end local function cu(xd)K(an(14),xd,10,l.dim,true)end E=an(34)a.startB=C(E,"START",l.good,14,D(0,0.68))a.killB=C(E,"KILL",l.bad,14,D(0.68,0.32))
+local xe=an(42)local function dV(pS,xf,jC)local jD=J("Frame",{Position=UDim2 .new((pS-1)/jC,0,0,0),Size=UDim2 .new(1/jC,pS<jC and-4 or 0,1,0),
+BackgroundColor3=l.panel,BorderSizePixel=0},xe)ag(jD,6)local pT=K(jD,"0",15,l.text,true,UDim2 .new(0,0,0,3),UDim2 .new(1,0,0,21))
+local xg=K(jD,xf,9,l.dim,false,UDim2 .new(0,0,0,24),UDim2 .new(1,0,0,14))pT.TextXAlignment,xg.TextXAlignment=Enum.TextXAlignment.Center,Enum.TextXAlignment.Center
+return pT end a.sBought,a.sPlaced,a.sSold,a.sColl,a.sFree=dV(1,"BOUGHT",5),dV(2,"WAXED",5),dV(3,"SOLD",5),dV(4,"MONEY",5),dV(5,"FREE",5)
+a.info=K(an(40),"",10,l.dim,false)a.tgt=K(an(26),"",10,l.good,false)cu("MONEY COLLECT")E=an(28)a.secB=fT(E,tostring(e.Every),"60",D(0,0.2))
+K(E,"sec",11,l.dim,false,D(0.21,0.09))a.secSet=C(E,"SET",l.accent,12,D(0.3,0.2))a.colT=C(E,"COLLECT: ON",l.accent,11,D(0.5,0.5))
+E=an(26)a.padB=C(E,"SET PAD (stand on it)",l.panel2,10,D(0,0.55))a.padL=K(E,"",10,l.dim,false,D(0.56,0.44))cu("BUTTERS YOU DID NOT TICK, AND CRATES")
+E=an(28)a.sellT=C(E,"SELL THEM: ON",l.accent,11,D(0,0.55))a.sellB=C(E,"SELL NOW",l.warn,11,D(0.55,0.45))E=an(28)
+a.crateT=C(E,"OPEN CRATES: ON",l.accent,11,D(0,0.55))a.crateB=C(E,"OPEN NOW",l.warn,11,D(0.55,0.45))cu("HELP OTHER PLAYERS' WAXES  (10% off their wax each)")
+E=an(28)a.helpT=C(E,"HELP WAXES: OFF",l.panel2,10,D(0,0.5))a.helpGT=C(E,"GUILD CALLS: OFF",l.panel2,10,D(0.5,0.5))
+a.helpL=K(an(14),"",9,l.dim,false)cu("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")E=an(28)a.arT=C(E,"AUTO ROLL: OFF",l.panel2,11,D(0,0.5))
+a.arL=K(E,"",9,l.dim,false,D(0.52,0.48))cu("TOOLS")E=an(30)a.buyB=C(E,"BUY",l.warn,10,D(0,0.5))a.plB=C(E,"WAX",l.good,10,D(0.5,0.5))
+cu("LOG")a.log=J("TextLabel",{Size=a4,BackgroundColor3=l.panel,BorderSizePixel=0,Font=Enum.Font.Code,TextSize=10,TextColor3=l.text,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+TextWrapped=true,Text=""},an(84))ag(a.log,6)J("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingTop=UDim.new(0,4),PaddingRight=UDim.new(0,6)},a.log)
+a.farm.CanvasSize=UDim2 .new(0,0,0,dU)f1,dU=0,12 local function ah(xh)return an(xh,a.set)end local function dW(xi)K(ah(14),xi,10,l.dim,true)end
+dW("SETTINGS FILE  (saved on your phone)")E=ah(28)a.cfgName=fT(E,"default","config name",D(0,0.5))a.cfgSave=C(E,"SAVE",l.good,11,D(0.5,0.25))
+a.cfgLoad=C(E,"LOAD",l.accent,11,D(0.75,0.25))E=ah(26)a.cfgPrev=C(E,"<",l.panel2,11,D(0,0.13))a.cfgPick=C(E,"(none saved)",l.panel2,10,D(0.13,0.74))
+a.cfgNext=C(E,">",l.panel2,11,D(0.87,0.13))E=ah(26)a.cfgAuto=C(E,"LOAD IT ON LAUNCH: OFF",l.panel2,10,D(0,1))
+a.cfgMsg=K(ah(26),"",10,l.dim,false)dW("START BY ITSELF")E=ah(26)a.autoB=C(E,"INSTALL F.exec",l.accent,10,D(0,1))
+a.autoMsg=K(ah(30),"",10,l.dim,false)E=ah(28)a.startT=C(E,"START FARMING ON LOAD: ON",l.accent,10,D(0,1))K(ah(26),"Pressing START or STOP also sets this, so saving the config keeps whatever you were doing.",10,l.dim,false)
+dW("IF THE GAME DROPS ME")E=ah(28)a.rejT=C(E,"AUTO REJOIN: ON",l.accent,11,D(0,0.55))a.rejB=C(E,"REJOIN NOW",l.warn,11,D(0.55,0.45))
+a.rejMsg=K(ah(30),"",10,l.dim,false)dW("SMOOTHER RUNNING  (for long / overnight runs)")E=ah(28)a.pfLite=C(E,"LITE MODE: OFF",l.panel2,10,D(0,0.5))
+a.pfHud=C(E,"HIDE GAME HUD: OFF",l.panel2,10,D(0.5,0.5))E=ah(28)a.pfFps=C(E,"FPS CAP: GAME",l.panel2,10,D(0,0.5))
+a.pfRender=C(E,"STOP 3D: OFF",l.panel2,10,D(0.5,0.5))E=ah(28)a.pfMem=fT(E,tostring(e.MemLimit),"2000",D(0,0.24))
+K(E,"MB: rejoin this server above it (0 = never)",9,l.dim,false,D(0.26,0.52))a.pfMemSet=C(E,"SET",l.accent,11,D(0.8,0.2))
+a.pfInfo=K(ah(18),"",10,l.text,false)K(ah(66),"LITE MODE turns off floating labels, sparkles and lighting extras; the screen stays normal. HIDE GAME HUD hides the game's own menus. A lower FPS CAP keeps the phone cooler overnight. STOP 3D blanks the world behind this window. All of it goes back to normal when switched off or on KILL.",9,l.dim,false)
+dW("THE ROUND SAB BUTTON")K(ah(30),"Tap it to hide or show this window. Hold and drag it anywhere on screen. The farm keeps running either way.",10,l.dim,false)
+a.set.CanvasSize=UDim2 .new(0,0,0,dU)local pU=J("ScreenGui",{Name="SABToggle",ResetOnSpawn=false,DisplayOrder=1000,IgnoreGuiInset=true},jr)
+a.tgRoot=J("Frame",{Size=UDim2 .new(0,40,0,40),Position=c.togPos and UDim2 .new(0,c.togPos[1],0,c.togPos[2])or UDim2 .new(0,10,0.45,-20),
+BackgroundColor3=l.accent,BorderSizePixel=0,Active=true},pU)ag(a.tgRoot,20)J("UIStroke",{Color=l.line,Thickness=1},a.tgRoot)
+a.tgBtn=J("TextButton",{Text="SAB",Size=a4,BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=l.text,AutoButtonColor=false},a.tgRoot)
+a.tgDot=J("Frame",{Size=UDim2 .new(0,7,0,7),Position=UDim2 .new(1,-9,0,2),BackgroundColor3=l.dim,BorderSizePixel=0},a.tgRoot)
+ag(a.tgDot,4)local a5={built=false,boxes={},at=0}local function pV(pW,jE)e.Targets[pW]=jE or nil local jF=a5 .boxes[pW]
+if jF then jF.Text=jE and"X"or""jF.BackgroundColor3=jE and l.good or l.panel2 end end local function jG()for xj,pX in pairs(a5 .boxes)do
+local pY=e.Targets[xj]==true pX.Text=pY and"X"or""pX.BackgroundColor3=pY and l.good or l.panel2 end end local dX
+local function xk()local xl=0 local jH=J("Frame",{Size=UDim2 .new(1,0,0,30),BackgroundTransparency=1,LayoutOrder=1},a.but)
+a.butInfo=K(jH,"",10,l.dim,false,D(0,0.5))local xm=C(jH,"CLEAR",l.panel2,10,D(0.5,0.24))local xn=C(jH,"REFRESH",l.panel2,10,D(0.74,0.26))
+xm.MouseButton1Click:Connect(function()for xo in pairs(e.Targets)do e.Targets[xo]=nil end jG()end)xn.MouseButton1Click:Connect(function()
+Q.at=0 gZ()dX(true)end)return xl end dX=function(xp)if not gZ()then if not a.butEmpty then a.butEmpty=K(J("Frame",{Size=UDim2 .new(1,0,0,40),BackgroundTransparency=1,LayoutOrder=2},a.but),
+"butter list not loaded yet - open this tab again in a moment",11,l.warn,false)end return end if a5 .built and not xp and a5 .at==Q.at then return end
+for z9,jI in ipairs(a.but:GetChildren())do if jI:IsA("Frame")or jI:IsA("TextButton")then jI:Destroy()end end a5 .boxes,a.butEmpty={},nil
+xk()local jJ,jK=36,1 local function pZ(p0)jK=jK+1 local xq=J("Frame",{Size=UDim2 .new(1,0,0,p0),BackgroundTransparency=1,LayoutOrder=jK},a.but)
+jJ=jJ+p0+6 return xq end for z_,f2 in ipairs(Q.rarOrder)do local xr=pZ(24)local xs=pF[f2]or l.text local jL=J("Frame",{Size=a4,BackgroundColor3=l.panel,BorderSizePixel=0},xr)
+ag(jL,6)K(jL,"  "..f2:upper(),11,xs,true,UDim2 .new(0,4,0,0),UDim2 .new(1,-70,1,0))local xt=C(jL,"ALL",l.panel2,9,UDim2 .new(1,-62,0.5,-9),UDim2 .new(0,56,0,18))
+local xu=f2 xt.MouseButton1Click:Connect(function()local p1=Q.members[xu]or{}local p2=false for Aa,xv in ipairs(p1)do if not e.Targets[xv]then p2=true break end end
+for Ab,xw in ipairs(p1)do pV(xw,p2)end end)for Ac,jM in ipairs(Q.members[f2]or{})do local xx=pZ(22)local f3=J("TextButton",{Text="",Size=a4,BackgroundColor3=l.bg,BorderSizePixel=0,
+AutoButtonColor=true},xx)ag(f3,5)K(f3,"   "..ac(jM),11,l.text,false,UDim2 .new(0,4,0,0),UDim2 .new(1,-40,1,0))
+local jN=J("TextButton",{Text="",Size=UDim2 .new(0,22,0,16),Position=UDim2 .new(1,-28,0.5,-8),BackgroundColor3=l.panel2,BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=10,
+TextColor3=l.text,AutoButtonColor=false},f3)ag(jN,4)a5 .boxes[jM]=jN local p3=jM local function p4()pV(p3,not e.Targets[p3])end
+f3 .MouseButton1Click:Connect(p4)jN.MouseButton1Click:Connect(p4)end end jG()a.but.CanvasSize=UDim2 .new(0,0,0,jJ+10)
+a5 .built,a5 .at=true,Q.at end function H.paint()for xy,p5 in pairs(H.boxes)do local p6=e.CrateTicks[xy]==true
+p5 .Text=p6 and"X"or""p5 .BackgroundColor3=p6 and l.good or l.panel2 end if a.crtInfo then local jO,jP=0,0 for Ad in pairs(H.boxes)do jO=jO+1 end
+for Ae,xz in pairs(e.CrateTicks)do if xz then jP=jP+1 end end a.crtInfo.Text=("%d crates, %d ticked"):format(jO,jP)
+end if a.crtAll then a.crtAll.Text=e.Crates and"OPEN TICKED CRATES: ON"or"OPEN TICKED CRATES: OFF"a.crtAll.BackgroundColor3=e.Crates and l.accent or l.panel2
+end end function H.build()for Af,jQ in ipairs(a.crt:GetChildren())do if jQ:IsA("Frame")or jQ:IsA("TextButton")then jQ:Destroy()end
+end H.boxes={}local jR,jS=12,0 local function f4(p7)jS=jS+1 jR=jR+p7+6 return J("Frame",{Size=UDim2 .new(1,0,0,p7),BackgroundTransparency=1,LayoutOrder=jS},a.crt)
+end local jT=f4(28)a.crtInfo=K(jT,"",10,l.dim,false,D(0,0.5))local xA=C(jT,"CLEAR",l.panel2,10,D(0.5,0.24))local xC=C(jT,"REFRESH",l.panel2,10,D(0.74,0.26))
+P(xA.MouseButton1Click:Connect(function()e.CrateTicks={}H.paint()end))P(xC.MouseButton1Click:Connect(function()H.build()end))
+a.crtAll=C(f4(28),"",l.accent,11,D(0,1))P(a.crtAll.MouseButton1Click:Connect(function()e.Crates=not e.Crates H.paint()end))
+K(f4(30),"Only ticked crates are opened. Any other crate is left alone - the game spins it away by itself.",10,l.dim,false)
+for Ag,a6 in ipairs(H.list())do local xD=f4(24)local dY=J("TextButton",{Text="",Size=a4,BackgroundColor3=l.panel,BorderSizePixel=0,AutoButtonColor=true},xD)
+ag(dY,5)K(dY,"  "..(a6 .title or a6 .name)..(a6 .guess and"  (?)"or""),11,pF[a6 .rar or""]or l.text,true,UDim2 .new(0,4,0,0),UDim2 .new(0.62,0,1,0))
+K(dY,a6 .price and("$"..ay(a6 .price))or(a6 .rar or""),9,l.dim,false,UDim2 .new(0.62,0,0,0),UDim2 .new(0.25,0,1,0))
+local jU=J("TextButton",{Text="",Size=UDim2 .new(0,22,0,16),Position=UDim2 .new(1,-28,0.5,-8),BackgroundColor3=l.panel2,BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=10,
+TextColor3=l.text,AutoButtonColor=false},dY)ag(jU,4)H.boxes[a6 .k]=jU local p8=a6 .k local function p9()e.CrateTicks[p8]=(not e.CrateTicks[p8])or nil
+H.paint()end P(dY.MouseButton1Click:Connect(p9))P(jU.MouseButton1Click:Connect(p9))end a.crt.CanvasSize=UDim2 .new(0,0,0,jR+10)
+H.built=H.at H.paint()end local p_="farm"local function bs(ai)p_=ai a.farm.Visible,a.but.Visible,a.set.Visible=(ai=="farm"),(ai=="but"),(ai=="set")
+a.crt.Visible=(ai=="crt")a.pet.Visible,a.team.Visible=(ai=="pet"),(ai=="team")a.tabCrt.BackgroundColor3=(ai=="crt")and l.accent or l.panel2
+a.tabPet.BackgroundColor3=(ai=="pet")and l.accent or l.panel2 a.tabTeam.BackgroundColor3=(ai=="team")and l.accent or l.panel2
+if ai=="pet"and not j.built then pcall(j.build)end if ai=="team"and not o.built then pcall(o.build)end if ai=="crt"and(H.built~=H.at or not next(H.boxes))then H.build()end
+a.tabFarm.BackgroundColor3=(ai=="farm")and l.accent or l.panel2 a.tabBut.BackgroundColor3=(ai=="but")and l.accent or l.panel2
+a.tabSet.BackgroundColor3=(ai=="set")and l.accent or l.panel2 if ai=="but"then dX(false)end end local function L(qa,qb,xE,xF)
+qa.Text=qb and xE or xF qa.BackgroundColor3=qb and l.accent or l.panel2 end j.RC={Common=Color3 .fromRGB(120,220,120),Rare=Color3 .fromRGB(90,170,255),Epic=Color3 .fromRGB(190,110,255),
+Legendary=Color3 .fromRGB(255,215,60),Mythic=Color3 .fromRGB(255,90,150),Exotic=Color3 .fromRGB(90,235,215)}function j.paintRow(qc)
+local bS=j.rows and j.rows[qc]if not bS then return end local dZ=e.Pets[qc]or{}bS.b.BackgroundColor3=dZ.b and l.good or l.panel2
+bS.g.BackgroundColor3=dZ.g and l.accent or l.panel2 bS.g.Text=dZ.g and"BIG"or"ANY"bS.w.BackgroundColor3=dZ.w and l.warn or l.panel2
+local jV=tonumber(dZ.f)or 0 bS.f.Text=jV>0 and(jV.." BIG")or"FUSE"bS.f.BackgroundColor3=jV>0 and l.good or l.panel2
+end function j.flag(jW,f5)local aP=e.Pets[jW]or{}if f5=="f"then local qd=((tonumber(aP.f)or 0)+1)%4 aP.f=qd>0 and qd or nil
+elseif aP[f5]then aP[f5]=nil else aP[f5]=true end e.Pets[jW]=(aP.b or aP.g or aP.w or aP.f)and aP or nil j.paintRow(jW)
+end function j.paintAll()for xG in pairs(j.rows or{})do j.paintRow(xG)end if a.pbT then L(a.pbT,e.PetBuy,"AUTO ADOPT: ON","AUTO ADOPT: OFF")
+L(a.pwT,e.PetWish,"AUTO WISH: ON","AUTO WISH: OFF")L(a.pfT,e.AutoFuse,"AUTO FUSE: ON","AUTO FUSE: OFF")end end
+function j.live()if not j.built then j.build()return end if q()-(j.liveAt or 0)<1 then return end j.liveAt=q()
+local qe=j.wishes()local d0=j.data()for f6,f7 in pairs(j.rows)do f7 .name.Text=j.nice(f6)..(qe[f6]and("   * wish %dm"):format(math.ceil(qe[f6]/60))or"")
+local qf=y.status(f6,d0)f7 .desc.Text=qf and(qf.." | "..f7 .boostText)or f7 .boostText end local qg=tonumber(F:GetAttribute("PetWishCredits"))or 0
+a.pInfo.Text=("pets %d/%d | cash $%s%s\nadopt: %s\nwish: %s"):format(d0 and#(d0 .pets or{})or 0,d0 and tonumber(d0 .maxOwned)or 60,
+ay(j.money()),qg>0 and(" | free wishes "..qg)or"",j.buyMsg~=""and j.buyMsg or"-",j.wishMsg~=""and j.wishMsg or"-")
+end function j.build()local f8=j.info()for Ah,jX in ipairs(a.pet:GetChildren())do if jX:IsA("Frame")or jX:IsA("TextLabel")then jX:Destroy()end
+end j.rows={}local jY,f9=0,12 local function cv(qh)jY,f9=jY+1,f9+qh+6 return J("Frame",{Size=UDim2 .new(1,0,0,qh),BackgroundTransparency=1,LayoutOrder=jY},a.pet)
+end local jZ=cv(28)a.pbT=C(jZ,"AUTO ADOPT: OFF",l.panel2,9,D(0,0.34))a.pwT=C(jZ,"AUTO WISH: OFF",l.panel2,9,D(0.34,0.33))
+a.pfT=C(jZ,"AUTO FUSE: OFF",l.panel2,9,D(0.67,0.33))a.pbT.MouseButton1Click:Connect(function()e.PetBuy=not e.PetBuy j.paintAll()end)
+a.pwT.MouseButton1Click:Connect(function()e.PetWish=not e.PetWish j.paintAll()end)a.pfT.MouseButton1Click:Connect(function()e.AutoFuse=not e.AutoFuse j.paintAll()end)
+a.pInfo=K(cv(44),"",10,l.dim,false)K(cv(52),"BUY: adopt it whenever it is in the pen.  ANY/BIG: BIG = only its Big version.  WISH: keep a wish on it here (2x its price, 20 min, one per pet per server).  FUSE: how many Bigs you want - buying and wishing stop once there is enough, and AUTO FUSE makes them.",9,l.dim,false)
+if not f8 then K(cv(30),"pet list not loaded yet - open this tab again in a moment",11,l.warn,false)a.pet.CanvasSize=UDim2 .new(0,0,0,f9)
+j.built=false return end local cw={}for Ai,qi in ipairs(j.order())do local j0=f8 .Pets[qi].rarity or"?"cw[j0]=cw[j0]or{}
+table.insert(cw[j0],qi)end local cx={}for Aj,qj in ipairs(f8 .Rarities or{})do if cw[qj]then cx[#cx+1]=qj end end
+for qk in pairs(cw)do if not table.find(cx,qk)then cx[#cx+1]=qk end end for Ak,f_ in ipairs(cx)do local ql=J("Frame",{Size=a4,BackgroundColor3=l.panel,BorderSizePixel=0},cv(22))
+ag(ql,6)K(ql,"  "..f_:upper(),11,j.RC[f_]or l.text,true)for Al,ga in ipairs(cw[f_])do local bT=J("Frame",{Size=a4,BackgroundColor3=l.bg,BorderSizePixel=0},cv(38))
+ag(bT,5)local xH=K(bT,j.nice(ga),11,j.RC[f_]or l.text,true,UDim2 .new(0,6,0,2),UDim2 .new(1,-150,0,17))local xI,xJ=pcall(function()return f8 .describe(ga)end)
+local qm=xI and tostring(xJ)or""local xK=K(bT,qm,9,l.dim,false,UDim2 .new(0,6,0,19),UDim2 .new(1,-150,0,17))local qn=C(bT,"BUY",l.panel2,8,UDim2 .new(1,-144,0.5,-11),UDim2 .new(0,32,0,22))
+local qo=C(bT,"ANY",l.panel2,8,UDim2 .new(1,-110,0.5,-11),UDim2 .new(0,32,0,22))local qp=C(bT,"WISH",l.panel2,8,UDim2 .new(1,-76,0.5,-11),UDim2 .new(0,34,0,22))
+local qq=C(bT,"FUSE",l.panel2,8,UDim2 .new(1,-40,0.5,-11),UDim2 .new(0,38,0,22))local gb=ga qn.MouseButton1Click:Connect(function()j.flag(gb,"b")end)
+qo.MouseButton1Click:Connect(function()j.flag(gb,"g")end)qp.MouseButton1Click:Connect(function()j.flag(gb,"w")end)
+qq.MouseButton1Click:Connect(function()j.flag(gb,"f")end)j.rows[ga]={b=qn,g=qo,w=qp,f=qq,name=xH,desc=xK,boostText=qm}
+end end a.pet.CanvasSize=UDim2 .new(0,0,0,f9+10)j.built=true j.paintAll()end function r.paint()L(a.pfLite,e.Lite,"LITE MODE: ON","LITE MODE: OFF")
+L(a.pfHud,e.HideHud,"HIDE GAME HUD: ON","HIDE GAME HUD: OFF")L(a.pfRender,e.NoRender,"STOP 3D: ON","STOP 3D: OFF")
+L(a.pfFps,(e.FpsCap or 0)~=0,"FPS CAP: "..tostring(e.FpsCap),"FPS CAP: GAME")if not a.pfMem:IsFocused()then a.pfMem.Text=tostring(e.MemLimit)end
+end function r.applyAll()if e.Lite then r.lite(true)end if e.HideHud then r.hideHud(true)end if e.NoRender then r.render(true)end
+if(e.FpsCap or 0)~=0 then r.cap(e.FpsCap)end r.paint()end P(a.pfLite.MouseButton1Click:Connect(function()r.lite(not e.Lite)r.paint()end))
+P(a.pfHud.MouseButton1Click:Connect(function()r.hideHud(not e.HideHud)r.paint()end))P(a.pfRender.MouseButton1Click:Connect(function()r.render(not e.NoRender)r.paint()end))
+P(a.pfFps.MouseButton1Click:Connect(function()local xL=table.find(r.CAPS,e.FpsCap or 0)or 1 local qr=r.CAPS[(xL%#r.CAPS)+1]
+if not r.cap(qr)and qr~=0 then x("this executor cannot cap fps")end r.paint()end))P(a.pfMemSet.MouseButton1Click:Connect(function()
+local j1=tonumber(a.pfMem.Text)if j1 and j1>=0 then e.MemLimit=math.floor(j1)end r.paint()end))function o.names()
+local j2={"(none)"}for Am,xM in ipairs((o.teams()))do j2[#j2+1]=xM.name end return j2 end function o.cycle(j3,xN)
+local gc=o.names()local xO=e[j3]~=""and e[j3]or"(none)"local gd=table.find(gc,xO)or 1 gd=((gd-1+xN)%#gc)+1 e[j3]=gc[gd]=="(none)"and""or gc[gd]
+o.paint()end function o.paint()if not o.built then return end L(a.tmT,e.Teams,"AUTO TEAMS: ON","AUTO TEAMS: OFF")
+L(a.tmBuild,e.AutoBuild,"AUTO BUILD TEAMS: ON","AUTO BUILD TEAMS: OFF")local j4={}for An,xP in ipairs((o.teams()))do j4[xP.name]=true end
+for xQ,qs in pairs(o.pick)do local cy=e[xQ]qs.Text=cy==""and"(none)"or(j4[cy]and cy or(cy.." (missing)"))qs.TextColor3=(cy~=""and not j4[cy])and l.bad or l.text
+end if not a.tmLead:IsFocused()then a.tmLead.Text=tostring(e.GlazeLead)end a.tmInfo.Text=(o.msg or"")..("\nswitches %d | finished %d | glazed %d | fused %d"):format(o.switches,o.finished,o.glazed,y.fused)
+..(y.buildMsg~=""and("\n"..y.buildMsg)or"")local xR,ge=j.srv(),{}for Ao,gf in ipairs(o.list or{})do ge[#ge+1]=("st %-2s %-22s %9s  helps %d"):format(gf.st.Name,ac(V(gf.name)):sub(1,22),o.clock(gf.ends-xR),gf.helps)
+end a.tmList.Text=#ge>0 and table.concat(ge,"\n")or"no waxes running"end function o.build()for Ap,j5 in ipairs(a.team:GetChildren())do
+if j5:IsA("Frame")or j5:IsA("TextLabel")then j5:Destroy()end end o.pick={}local j6,j7=0,12 local function bt(qt)
+j6,j7=j6+1,j7+qt+6 return J("Frame",{Size=UDim2 .new(1,0,0,qt),BackgroundTransparency=1,LayoutOrder=j6},a.team)
+end local function d1(xS)K(bt(14),xS,10,l.dim,true)end local function gg(gh)local j8=bt(26)local xT=C(j8,"<",l.panel2,11,D(0,0.14))
+local qu=C(j8,"(none)",l.panel,10,D(0.14,0.72))local xU=C(j8,">",l.panel2,11,D(0.86,0.14))xT.MouseButton1Click:Connect(function()o.cycle(gh,-1)end)
+xU.MouseButton1Click:Connect(function()o.cycle(gh,1)end)qu.MouseButton1Click:Connect(function()o.cycle(gh,1)end)
+o.pick[gh]=qu end a.tmT=C(bt(28),"AUTO TEAMS: OFF",l.panel2,11,D(0,1))a.tmT.MouseButton1Click:Connect(function()
+e.Teams=not e.Teams if e.Teams and e.TeamNormal==""then e.TeamNormal=o.current()end o.paint()end)a.tmInfo=K(bt(42),"",10,l.dim,false)
+local qv=bt(26)a.tmBuild=C(qv,"AUTO BUILD TEAMS: OFF",l.panel2,9,D(0,0.62))a.tmBuildNow=C(qv,"BUILD NOW",l.warn,9,D(0.62,0.38))
+a.tmBuild.MouseButton1Click:Connect(function()e.AutoBuild=not e.AutoBuild o.paint()end)a.tmBuildNow.MouseButton1Click:Connect(function()
+if o.editing then return end y.buildMsg="building..."task.spawn(function()local xV,xW=pcall(y.rebuild,"you asked")if not xV then x("BUILD ERR "..tostring(xW))end end)
+end)d1("NORMAL TEAM  (worn the rest of the time)")gg("TeamNormal")d1("FULL TEAM  (every station busy: money + wax speed)")
+gg("TeamFull")d1("GLAZE TEAM  (worn just before a wax finishes)")gg("TeamGlaze")local j9=bt(26)a.tmLead=fT(j9,tostring(e.GlazeLead),"45",D(0,0.2))
+K(j9,"sec before it finishes",10,l.dim,false,D(0.22,0.5))local xX=C(j9,"SET",l.accent,11,D(0.75,0.25))xX.MouseButton1Click:Connect(function()
+local gi=tonumber(a.tmLead.Text)if gi and gi>=5 and gi<=600 then e.GlazeLead=math.floor(gi)else a.tmLead.Text=tostring(e.GlazeLead)end
+o.paint()end)d1("WAX TEAM  (worn while a butter is placed: head starts)")gg("TeamWax")d1("YOUR WAXES  (time left, helps)")
+a.tmList=J("TextLabel",{Size=a4,BackgroundColor3=l.panel,BorderSizePixel=0,Font=Enum.Font.Code,TextSize=9,TextColor3=l.text,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
+TextWrapped=false,Text=""},bt(150))ag(a.tmList,6)J("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingTop=UDim.new(0,4)},a.tmList)
+K(bt(92),"Teams are the loadouts you saved in the game's Teams page. Every running wax goes at the speed of the pets you wear right now (the times below are the stations' own countdowns), head starts are decided when a butter is placed, and the glaze is rolled when a wax finishes. So: WAX team (head starts) while placing, GLAZE team at a finish, FULL (money + wax speed) while every station is busy, NORMAL (money + luck) while stations wait for Apple Pies. The lead counts in glaze-team time. While AUTO TEAMS is on it keeps putting the right team back.",9,l.dim,false)
+a.team.CanvasSize=UDim2 .new(0,0,0,j7+10)o.built=true o.paint()end local function xY()a.secB.Text=tostring(e.Every)
+L(a.colT,e.Collect,"COLLECT: ON","COLLECT: OFF")L(a.sellT,e.SellJunk,"SELL THEM: ON","SELL THEM: OFF")L(a.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")
+L(a.helpT,e.Help,"HELP WAXES: ON","HELP WAXES: OFF")L(a.helpGT,e.HelpGuild,"GUILD CALLS: ON","GUILD CALLS: OFF")
+L(a.arT,e.AutoRoll,"AUTO ROLL: ON","AUTO ROLL: OFF")L(a.rejT,e.Rejoin,"AUTO REJOIN: ON","AUTO REJOIN: OFF")L(a.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")
+if e.AutoStart~=c.running then dJ(e.AutoStart,true)end if c.winPos then a.root.Position=UDim2 .new(0,c.winPos[1],0,c.winPos[2])end
+if c.togPos then a.tgRoot.Position=UDim2 .new(0,c.togPos[1],0,c.togPos[2])end br(a.root)br(a.tgRoot)c.lastCollect=q()
+jG()H.paint()pcall(j.paintAll)pcall(o.paint)pcall(r.applyAll)end local function xZ(qw)task.spawn(function()qw.TextColor3=l.bad
+task.wait(0.8)if c.alive then qw.TextColor3=l.text end end)end local function qx()local qy=a.secB.Text:match("^%s*(%d+)%s*$")
+local d2=qy and tonumber(qy)if not d2 or d2<1 then a.secB.Text=tostring(e.Every)xZ(a.secB)x("interval must be a whole number >= 1")
+return end if d2==e.Every then return end e.Every,c.lastCollect=d2,q()x("collect every "..d2 .."s")end local function M(x0,x1)P(x0 .MouseButton1Click:Connect(x1))end
+M(a.secSet,qx)P(a.secB.FocusLost:Connect(qx))M(a.colT,function()e.Collect,c.lastCollect=not e.Collect,q()L(a.colT,e.Collect,"COLLECT: ON","COLLECT: OFF")
+end)M(a.sellT,function()e.SellJunk=not e.SellJunk L(a.sellT,e.SellJunk,"SELL THEM: ON","SELL THEM: OFF")end)M(a.sellB,function()
+c.sellFails=0 task.spawn(ar,"selling...",pc)end)M(a.arT,function()e.AutoRoll=not e.AutoRoll task.spawn(z.apply,"you asked",true)
+end)M(a.crateT,function()e.Crates=not e.Crates L(a.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")end)M(a.helpT,function()
+e.Help=not e.Help A.nextAt,A.msg=0,e.Help and"looking for waxes to help"or"off"L(a.helpT,e.Help,"HELP WAXES: ON","HELP WAXES: OFF")
+end)M(a.helpGT,function()e.HelpGuild=not e.HelpGuild L(a.helpGT,e.HelpGuild,"GUILD CALLS: ON","GUILD CALLS: OFF")
+end)M(a.crateB,function()d.lastFail,d.summonFails,d.ignoreUntil,c.crateFails=0,0,0,0 task.spawn(ar,"opening crate...",e0,true)
+end)M(a.padB,function()c.plot=a7()or c.plot local qz,j_=aD(),c.plot and c.plot:FindFirstChild("RolledSquishyPlaceHolder")
+if not(qz and j_ and j_:IsA("BasePart"))then x("SET PAD: need character and plot")return end c.manualPad=j_.CFrame:ToObjectSpace(qz.HumanoidRootPart.CFrame)
+wa(c.manualPad)x("collect pad saved at your position")end)M(a.startB,function()dJ(not c.running)end)M(a.buyB,function()
+c.plot=a7()or c.plot task.spawn(ar,"buying (manual)...",lZ,true)end)M(a.plB,function()c.plot=a7()or c.plot task.spawn(ar,"waxing (manual)...",l4)
+end)M(a.tabFarm,function()bs("farm")end)M(a.tabBut,function()bs("but")end)M(a.tabSet,function()bs("set")end)M(a.tabCrt,function()bs("crt")end)
+M(a.tabPet,function()bs("pet")end)M(a.tabTeam,function()bs("team")end)local function x2(ka)c.hidden=ka a.root.Visible=not ka
+a.tgBtn.Text=ka and"SAB+"or"SAB"end pN(a.tgBtn,a.tgRoot,function()br(a.tgRoot)c.togPos=fX(a.tgRoot)or c.togPos
+end)M(a.tgBtn,function()if(c.dragMoved[a.tgBtn]or 0)<8 then x2(not c.hidden)end c.dragMoved[a.tgBtn]=0 end)local ax,ak={},0
+local function bu()ax=ll()if#ax==0 then a.cfgPick.Text="(none saved)"ak=0 return end if ak<1 or ak>#ax then ak=1 end
+a.cfgPick.Text=ax[ak]..("  (%d/%d)"):format(ak,#ax)end local function qA()local qB=c.autoload~=nil a.cfgAuto.Text=qB and("LOAD IT ON LAUNCH: "..c.autoload)or"LOAD IT ON LAUNCH: OFF"
+a.cfgAuto.BackgroundColor3=qB and l.accent or l.panel2 end local function kb()local qC=a.cfgName.Text:gsub("^%s+",""):gsub("%s+$","")
+if qC~=""then return qC end return(ak>0 and ax[ak])or""end M(a.cfgSave,function()c.winPos=fX(a.root)or c.winPos
+c.togPos=fX(a.tgRoot)or c.togPos local qD,qE=eF(kb())a.cfgMsg.Text=qD and("saved as "..qE)or("could not save: "..qE)
+a.cfgMsg.TextColor3=qD and l.good or l.bad bu()x(a.cfgMsg.Text)end)local function x3(kc)local kd,qF=lu(kc)a.cfgMsg.Text=kd and("loaded "..qF)or("could not load: "..qF)
+a.cfgMsg.TextColor3=kd and l.good or l.bad if kd then a.cfgName.Text=kc xY()task.spawn(z.apply,"config "..kc)
+end x(a.cfgMsg.Text)end M(a.cfgLoad,function()x3(kb())end)M(a.cfgPick,function()bu()if ak>0 then a.cfgName.Text=ax[ak]end
+end)M(a.cfgPrev,function()if#ax==0 then bu()return end ak=(ak-2)%#ax+1 bu()a.cfgName.Text=ax[ak]end)M(a.cfgNext,function()
+if#ax==0 then bu()return end ak=ak%#ax+1 bu()a.cfgName.Text=ax[ak]end)M(a.cfgAuto,function()if c.autoload then
+lw(nil)a.cfgMsg.Text="it will not load a config on launch"else local d3=kb()local qG=false for Aq,x4 in ipairs(ll())do if x4==d3 then qG=true end end
+local x5=qG or eF(d3)if x5 and d3~=""then lw(d3)bu()a.cfgMsg.Text=d3 .." will load every time the script starts"
+else a.cfgMsg.Text="name the config and save it first"end end a.cfgMsg.TextColor3=l.dim qA()end)M(a.autoB,function()
+local qH,qI=sx()a.autoMsg.Text=qH and("installed. "..qI)or("failed: "..qI)a.autoMsg.TextColor3=qH and l.good or l.bad
+x(a.autoMsg.Text)end)M(a.startT,function()e.AutoStart=not e.AutoStart L(a.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")
+end)M(a.rejT,function()e.Rejoin=not e.Rejoin L(a.rejT,e.Rejoin,"AUTO REJOIN: ON","AUTO REJOIN: OFF")end)M(a.rejB,function()cR("you asked")end)
+local bU=false M(a.minB,function()bU=not bU a.tabs.Visible=not bU if bU then a.farm.Visible,a.but.Visible,a.set.Visible,a.crt.Visible=false,false,false,false
+a.pet.Visible,a.team.Visible=false,false else bs(p_)end a.root.Size=UDim2 .new(0,ae.w,0,bU and(ae.head+ae.strip)or ae.h)
+a.minB.Text=bU and"+"or"-"end)local function gj()if not c.alive then return end c.alive,c.running=false,false
+pcall(r.restoreAll)pcall(eg)for Ar,x6 in ipairs(gp)do pcall(function()x6:Disconnect()end)end if d.oldNC then pcall(function()hookmetamethod(game,"__namecall",d.oldNC)end)end
+pcall(function()js:Destroy()end)pcall(function()pU:Destroy()end)if bW.SAB_KILL==gj then bW.SAB_KILL=nil end end
+bW.SAB_KILL=gj M(a.killB,gj)M(a.xB,gj)pN(a.title,a.root,function()br(a.root)c.winPos=fX(a.root)or c.winPos end)
+local function qJ()local d4,d5=c.reason,c.level if c.busy then d4,d5=c.busyText,"ok"elseif not c.running then
+local As,qK,x7=pj()if c.capHit then d4,d5=qK,"bad"else d4,d5="[stopped] "..qK,(x7=="bad")and"bad"or"idle"end c.reason,c.level=d4,d5
+end a.reason.Text=d4 a.bar.BackgroundColor3=wF[d5]or l.dim a.dot.BackgroundColor3=c.running and l.good or(c.capHit and l.bad or l.dim)
+a.tgDot.BackgroundColor3=a.dot.BackgroundColor3 a.tgRoot.BackgroundColor3=c.hidden and l.panel2 or l.accent a.startB.Text=c.running and"STOP"or"START"
+L(a.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")a.startB.BackgroundColor3=c.running and l.warn or l.good
+local x8,x9=ed()a.sBought.Text,a.sPlaced.Text,a.sSold.Text=tostring(c.bought),tostring(c.placed),tostring(c.sold)
+a.sColl.Text,a.sFree.Text=tostring(c.collected),x8 .."/"..x9 local qL=(c.running and e.Collect)and math.max(0,math.ceil(e.Every-(q()-c.lastCollect)))or nil
+local qM=T()a.info.Text=("cash $%s | rolls %d | gifts %d | crates %d\nin hands: %s%s\nnext collect: %s"):format(
+ay(aR()),c.rolls,c.gifts,c.crates,qM and ac(V(qM))or"nothing",d.on and("   ["..d.title.." window open]")or"",
+qL and("in "..qL.."s")or"off")local cz=r7()a.tgt.Text=(#cz==0)and"NOTHING TICKED - open the BUTTERS tab"or("buying: "..((#cz<=3)and table.concat(cz,", ")or(#cz.." butters ticked")))
+a.tgt.TextColor3=(#cz==0)and l.bad or l.good a.padL.Text=c.manualPad and"pad: saved"or(c.padPart and("auto: "..c.padPart.Name)or"pad: not found")
+a.log.Text=table.concat(d8,"\n")if a.butInfo then a.butInfo.Text=("%d butters, %d rarities\n%d ticked"):format(Q.n,#Q.rarOrder,#cz)
+end if a.but.Visible and a5 .at~=Q.at then dX(false)end if a.crt.Visible then if H.built~=H.at then H.build()else H.paint()end
+end if a.pet.Visible then j.live()end if a.set.Visible then a.pfInfo.Text=("%d fps | memory %d MB (peak %d)"):format(math.floor(r.fps+0.5),r.mem,r.memPeak)
+end if a.team.Visible then o.paint()end if a.farm.Visible then a.helpL.Text=(e.Help or e.HelpGuild)and A.msg or"off"end
+L(a.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")L(a.arT,e.AutoRoll,"AUTO ROLL: ON","AUTO ROLL: OFF")
+local qN=(z.rec.on and"on"or"")..(z.rec.off and((z.rec.on and"/"or"").."off")or"")a.arL.Text=z.msg~=""and z.msg or("game: %s | learned: %s%s"):format(z.isOn()and"ON"or"off",
+qN~=""and qN or"nothing yet",#z.rec.rules>0 and", choices"or"")a.arL.TextColor3=z.msg~=""and l.warn or l.dim end
+bW.SAB={S=c,CFG=e,EV=N,U=a,sg=js,CAT=Q,LEARN=aa,buildList=dX,logAll=cA,evAll=cB,AR=z,CR=H,PF=r,PX=j,TM=o,CRATE=d,FU=y,HX=A}
+x(bV.." loaded")if c.uiErrs>0 then x("UI: "..c.uiErrs.." properties skipped")end bs("farm")br(a.root)br(a.tgRoot)
+if fU then pcall(function()P(fU:GetPropertyChangedSignal("ViewportSize"):Connect(function()task.wait(0.2)br(a.root)
+br(a.tgRoot)end))end)end bu()qA()if c.config and c.config~=""then a.cfgName.Text=c.config end L(a.colT,e.Collect,"COLLECT: ON","COLLECT: OFF")
+L(a.sellT,e.SellJunk,"SELL THEM: ON","SELL THEM: OFF")L(a.crateT,e.Crates,"OPEN CRATES: ON","OPEN CRATES: OFF")
+L(a.helpT,e.Help,"HELP WAXES: ON","HELP WAXES: OFF")L(a.helpGT,e.HelpGuild,"GUILD CALLS: ON","GUILD CALLS: OFF")
+L(a.rejT,e.Rejoin,"AUTO REJOIN: ON","AUTO REJOIN: OFF")L(a.startT,e.AutoStart,"START FARMING ON LOAD: ON","START FARMING ON LOAD: OFF")
+a.secB.Text=tostring(e.Every)pcall(r.applyAll)pcall(qJ)task.spawn(function()local qO=sv()a.rejMsg.Text="after a rejoin it restarts with the newest version from GitHub"..(qO and("\n(backup: "..qO..")")or"")
+local qP=eA(ab.exec)if qP and not qP:find("SAB autoloader v2",1,true)then cN(ab.exec,ab.stub)x("autoexec updated: it now loads the newest version from GitHub")
+end a.autoMsg.Text=(eA(ab.exec)~=nil)and"autoexec loader is installed (loads from GitHub)"or"not installed yet"
+pcall(sD)end)task.spawn(function()while c.alive do local x_,ya=pcall(qJ)if not x_ then x("UI ERR "..tostring(ya))end
+task.wait((c.hidden or bU)and 1.5 or 0.25)end end)task.spawn(function()local yb,yc=pcall(sM)if not yb then x("HOOK ERR "..tostring(yc))end
+end)task.spawn(function()pcall(rv)if d.loadSeq and not d.learned then local gk={}for qQ=1,20 do if d.loadSeq[qQ]then gk[#gk+1]=d.loadSeq[qQ]end end
+if#gk>0 then d.learned={seq=gk,mode=d.loadMode}x("remembered how to open crates directly")end end if gZ()then x(("catalog: %d butters in %d rarities"):format(Q.n,#Q.rarOrder))end
+local yd,qR=pcall(wc)if yd and qR and c.alive and not c.manualPad then c.manualPad=qR end end)task.spawn(function()
+while c.alive do local ke,kf=pcall(j.buyTick)if not ke then x("PET ERR "..tostring(kf))task.wait(5)end ke,kf=pcall(j.wishTick)
+if not ke then x("WISH ERR "..tostring(kf))task.wait(5)end task.wait(0.75)end end)task.spawn(function()local gl,qS=0,q()
+P(game:GetService("RunService").Heartbeat:Connect(function()gl=gl+1 end))r.noteAt=q()while c.alive do task.wait(1)
+local qT=q()r.fps,gl,qS=gl/math.max(qT-qS,0.001),0,qT local ye,yf=pcall(r.tick)if not ye then x("PERF ERR "..tostring(yf))task.wait(5)end
+end end)task.spawn(function()task.wait(10)while c.alive do local yg,yh=pcall(y.tick)if not yg then x("FUSE ERR "..tostring(yh))task.wait(10)end
+task.wait(4)end end)task.spawn(function()while c.alive do local yi,yj=pcall(o.tick)if not yi then x("TEAM ERR "..tostring(yj))task.wait(3)end
+task.wait(0.25)end end)task.spawn(function()local qU=ao:WaitForChild("Remotes",30)local qV=qU and qU:WaitForChild("ClanEvent",30)
+if qV and c.alive then P(qV.OnClientEvent:Connect(function(yk,yl)if yk=="call"then pcall(A.onCall,yl)end end))
+end end)task.spawn(function()while c.alive do task.wait(20)pcall(eg)end end)pcall(z.watchCache)if type(hookmetamethod)=="function"and type(getnamecallmethod)=="function"then
+pcall(function()local yn=(type(newcclosure)=="function")and newcclosure or function(ym)return ym end local kg
+local qW=(type(setnamecallmethod)=="function")and setnamecallmethod or nil kg=hookmetamethod(game,"__namecall",yn(function(qX,...)
+local d6=getnamecallmethod()if c.alive and(d6=="InvokeServer"or d6=="FireServer")then local qY,qZ=pcall(function()return qX.Name end)
+if qY and qZ=="CrateAction"and not d.replaying then pcall(d.saw,d6,...)elseif qY and qZ=="AutoRollAction"and not z.replaying then pcall(z.saw,d6,...)end
+if qW then qW(d6)end end return kg(qX,...)end))d.oldNC=kg end)end if gn then P(F.Idled:Connect(function()pcall(function()gn:CaptureController()gn:ClickButton2(Vector2 .new())end)end))
+end task.spawn(function()for At=1,90 do if not c.alive then return end if F:GetAttribute("AutoRollOn")~=nil and aD()and(c.plot or a7())then break end
+task.wait(1)end task.wait(2)if e.AutoRoll then z.apply("joined")end while c.alive do task.wait(30)if c.alive and e.AutoRoll and c.running and not z.isOn()and not cS()and not T()
+and not d.waiting and not d.on and not c.busy then z.apply("it was off")end end end)task.spawn(function()if not e.AutoStart then return end
+c.reason,c.level="waiting for the game to load, then starting","wait"for Au=1,120 do if not c.alive then return end
+if c.running then return end c.plot=c.plot or a7()if aD()and c.plot and next(e.Targets)then dJ(true,true)x("started by itself")
+return end task.wait(1)end if c.alive and not c.running then x("gave up waiting to start - tap START")end end)
+task.spawn(function()c.plot=a7()c.lastCollect=q()while c.alive do if c.running then local yo,q0=pcall(wA)if not yo and q0~=go then x("LOOP ERR "..tostring(q0))end
+end task.wait(0.1)end end)gm("loaded - window is at the top left")end local yq,kh=xpcall(q4,function(yp)return tostring(yp).."\n"..debug.traceback()end)
+if not yq then pcall(function()warn("SAB "..bV.." ERROR: "..tostring(kh))end)gm("ERROR while starting - see the red box")
+pcall(function()setclipboard("SAB "..bV.." ERROR: "..tostring(kh))end)pcall(function()local q1=(type(getgenv)=="function"and getgenv())or _G
+if type(q1 .SAB_KILL)=="function"then q1 .SAB_KILL()end for Av,yr in ipairs({"SABFarmGui","SABToggle"})do local q2=F.PlayerGui:FindFirstChild(yr)
+if q2 then q2:Destroy()end end end)pcall(function()local d7=Instance.new("ScreenGui")d7 .Name="SABError"d7 .ResetOnSpawn=false
+d7 .DisplayOrder=1000 local aJ=Instance.new("TextBox")aJ.Size=UDim2 .new(0,340,0,170)aJ.Position=UDim2 .new(0,10,0,50)
+aJ.BackgroundColor3=Color3 .fromRGB(90,20,20)aJ.TextColor3=Color3 .new(1,1,1)aJ.TextSize=11 aJ.TextWrapped=true
+aJ.ClearTextOnFocus=false aJ.TextXAlignment=Enum.TextXAlignment.Left aJ.TextYAlignment=Enum.TextYAlignment.Top
+aJ.Text="SAB "..bV.." failed to start. Send this text:\n"..tostring(kh)aJ.Parent=d7 d7 .Parent=F:WaitForChild("PlayerGui")
 end)end

@@ -40,6 +40,8 @@ local CFG = {
     TeamNormal = "", TeamFull = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
     Lite = false, HideHud = false, NoRender = false, FpsCap = 0, -- SETUP tab: smoother running
     MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
+    Help = false,                  -- step over to other players' waxes in this server and help them
+    HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -61,7 +63,7 @@ local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", la
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
-local PX, TM, PF, FU = {}, {}, {}, {} -- pets (adopt + wish), pet teams, smoother running, fusing; all they need lives inside them
+local PX, TM, PF, FU, HX = {}, {}, {}, {}, {} -- pets (adopt + wish), pet teams, smoother running, fusing, helping others' waxes
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 ---------------------------------------------------------------- utils
@@ -522,7 +524,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -3000,6 +3002,117 @@ local function decide()
     if w < CFG.Confirm then return nil, ("confirming %s (%.2fs)"):format(id.shown, w), "ok" end
     return "buy", ("buying %s via %s"):format(id.shown, id.src), "ok"
 end
+-- ---- helping other players' waxes
+-- The game's own Help button (ClanHandler.Prompts) sends ClanRequest("help", owner, station). The
+-- server only takes it from someone standing at the station ("Walk up to the wax station to help!",
+-- range 18 studs, tested Nov 18), so the farm steps next to one wax at a time, between its own jobs,
+-- and goes back where it was when none is left. A help takes 10% of their wax's full time off. The
+-- game's rules for its Help prompt are kept: long waxes only, not one you helped, under 6 helpers,
+-- over a minute left, not their 30% cap (PourFull), and not someone who turned helping off.
+-- Guildmates' "Need help with a wax" calls are answered with the game's own callHelp, from anywhere.
+HX.skip, HX.skipN, HX.n, HX.calls, HX.fails, HX.nextAt, HX.msg = {}, 0, 0, 0, 0, 0, "off"
+function HX.can(st, t)
+    local o = st:GetAttribute("PourOwner")
+    if type(o) ~= "number" or o == PX.uid or not st:GetAttribute("HasSquishy") then return false end
+    if st:GetAttribute("PourLong") ~= true or st:GetAttribute("PourFull") == true then return false end
+    local id = st:GetAttribute("PourId")
+    if id == nil or HX.skip[id] then return false end
+    local hs, n, me = st:GetAttribute("Helpers"), 0, tostring(PX.uid)
+    if type(hs) == "string" then
+        for u in hs:gmatch("[^,%s]+") do
+            n = n + 1
+            if u == me then return false end
+        end
+    end
+    if n >= 6 then return false end
+    local left = TM.left(st)
+    if not left then
+        local e = tonumber(st:GetAttribute("PourEnd"))
+        left = e and (e - t)
+    end
+    if not left or left <= 75 then return false end
+    local p = game:GetService("Players"):GetPlayerByUserId(o)
+    if not p or p:GetAttribute("WaxHelpOff") == true then return false end
+    return true, p, id
+end
+function HX.list()
+    local out, t = {}, PX.srv()
+    local plots = WS:FindFirstChild("Plots")
+    for _, plot in ipairs(plots and plots:GetChildren() or {}) do
+        local ws = plot ~= S.plot and plot:FindFirstChild("WaxStations")
+        for _, st in ipairs(ws and ws:GetChildren() or {}) do
+            local ok, p, id = HX.can(st, t)
+            local ph = ok and st:FindFirstChild("SquishyPlaceHolder")
+            if ph and ph:IsA("BasePart") then out[#out + 1] = { st = st, p = p, id = id, part = ph } end
+        end
+    end
+    return out
+end
+function HX.due() return CFG.Help and S.running and now() >= HX.nextAt end
+function HX.skipIt(id, why)
+    HX.skip[id], HX.skipN = why, HX.skipN + 1
+    if HX.skipN > 600 then HX.skip, HX.skipN = { [id] = why }, 1 end
+end
+function HX.goHome()
+    local c, h = char(), HX.home
+    HX.home = nil
+    if c and h and (c.HumanoidRootPart.Position - h.Position).Magnitude > 20 then
+        pcall(teleport, c, h.Position, h.Position + h.LookVector)
+    end
+end
+function HX.step()
+    local list, c = HX.list(), char()
+    if #list == 0 or not c then
+        HX.nextAt = now() + 15
+        HX.msg = ("helped %d waxes here%s | none to help right now"):format(HX.n, HX.calls > 0 and (", " .. HX.calls .. " for the guild") or "")
+        HX.goHome()
+        return
+    end
+    local hrp = c.HumanoidRootPart
+    local pos = hrp.Position
+    table.sort(list, function(a, b) return (a.part.Position - pos).Magnitude < (b.part.Position - pos).Magnitude end)
+    local w = list[1]
+    HX.home = HX.home or hrp.CFrame -- where to go back to when the round is done
+    if (w.part.Position - pos).Magnitude > 12 then standNear(w.part, nil) end
+    nap(0.2)
+    local r = RS:FindFirstChild("Remotes")
+    r = r and r:FindFirstChild("ClanRequest")
+    if not r then HX.nextAt, HX.msg = now() + 60, "the game's help remote is missing" return end
+    local ok, v = pcall(function() return r:InvokeServer("help", w.st:GetAttribute("PourOwner"), tonumber(w.st.Name)) end)
+    if ok and type(v) == "table" and v.ok then
+        HX.n, HX.fails = HX.n + 1, 0
+        HX.skipIt(w.id, "helped")
+        note(("HELPED %s's wax (station %s)"):format(w.p.DisplayName, w.st.Name))
+        HX.msg = ("helped %d waxes here%s"):format(HX.n, HX.calls > 0 and (", " .. HX.calls .. " for the guild") or "")
+    else
+        local why = (ok and type(v) == "table" and tostring(v.reason or "refused")) or ("error: " .. tostring(v))
+        HX.skipIt(w.id, why)
+        HX.fails = HX.fails + 1
+        if HX.fails <= 3 then note(("help refused for %s's wax: %s"):format(w.p.DisplayName, why)) end
+        if HX.fails >= 5 then -- something is off: wait a minute, go home
+            HX.fails, HX.nextAt, HX.msg = 0, now() + 60, "the server keeps refusing helps - trying again in a minute"
+            HX.goHome()
+        end
+    end
+    HX.nextAt = math.max(HX.nextAt, now() + 0.4)
+end
+function HX.onCall(c) -- ClanEvent("call", { p = preset, u = userId, n = name, ... })
+    if not CFG.HelpGuild or type(c) ~= "table" or c.p ~= "help" or c.mine or c.u == PX.uid or not c.u then return end
+    task.delay(1 + math.random() * 2, function()
+        if not (S.alive and CFG.HelpGuild) then return end
+        local r = RS:FindFirstChild("Remotes")
+        r = r and r:FindFirstChild("ClanRequest")
+        if not r then return end
+        local ok, v = pcall(function() return r:InvokeServer("callHelp", c.u) end)
+        local who = tostring(c.n or c.un or c.u)
+        if ok and type(v) == "table" and v.ok then
+            HX.calls = HX.calls + 1
+            note(("HELPED guildmate %s's wax from here (their call)"):format(who))
+        else
+            note(("guild call from %s: %s"):format(who, (ok and type(v) == "table" and tostring(v.reason or "refused")) or tostring(v)))
+        end
+    end)
+end
 local function runAction(label, fn, ...)
     if S.busy then return end
     S.busy, S.busyText = true, label
@@ -3019,6 +3132,10 @@ local function step()
     elseif act == "buy" then runAction("buying...", doBuy, false)
     elseif CFG.Collect and not S.matchSince and now() - S.lastCollect >= CFG.Every then
         runAction("collecting money...", doCollect)
+    elseif not act and not S.matchSince and HX.due() then
+        runAction("helping a wax...", HX.step) -- only when the farm has nothing of its own to do
+    elseif HX.home and not CFG.Help then
+        runAction("coming back...", HX.goHome) -- HELP was switched off mid-round
     end
 end
 function setRunning(v, quiet)
@@ -3243,6 +3360,11 @@ U.sellB = button(rw, "SELL NOW", C.warn, 11, at(0.55, 0.45))
 rw = row(28)
 U.crateT = button(rw, "OPEN CRATES: ON", C.accent, 11, at(0, 0.55))
 U.crateB = button(rw, "OPEN NOW", C.warn, 11, at(0.55, 0.45))
+caption("HELP OTHER PLAYERS' WAXES  (10% off their wax each)")
+rw = row(28)
+U.helpT = button(rw, "HELP WAXES: OFF", C.panel2, 10, at(0, 0.5))
+U.helpGT = button(rw, "GUILD CALLS: OFF", C.panel2, 10, at(0.5, 0.5))
+U.helpL = lbl(row(14), "", 9, C.dim, false)
 caption("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")
 rw = row(28)
 U.arT = button(rw, "AUTO ROLL: OFF", C.panel2, 11, at(0, 0.5))
@@ -3739,6 +3861,8 @@ local function applyLoaded()
     setToggle(U.colT, CFG.Collect, "COLLECT: ON", "COLLECT: OFF")
     setToggle(U.sellT, CFG.SellJunk, "SELL THEM: ON", "SELL THEM: OFF")
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+    setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
+    setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
     setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
@@ -3795,6 +3919,15 @@ end)
 click(U.crateT, function()
     CFG.Crates = not CFG.Crates
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+end)
+click(U.helpT, function()
+    CFG.Help = not CFG.Help
+    HX.nextAt, HX.msg = 0, CFG.Help and "looking for waxes to help" or "off"
+    setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
+end)
+click(U.helpGT, function()
+    CFG.HelpGuild = not CFG.HelpGuild
+    setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
 end)
 click(U.crateB, function()
     CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil, S.crateFails = 0, 0, 0, 0
@@ -4015,6 +4148,7 @@ local function refresh()
         U.pfInfo.Text = ("%d fps | memory %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak)
     end
     if U.team.Visible then TM.paint() end
+    if U.farm.Visible then U.helpL.Text = (CFG.Help or CFG.HelpGuild) and HX.msg or "off" end
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
@@ -4024,7 +4158,7 @@ local function refresh()
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
-    PX = PX, TM = TM, CRATE = CRATE, FU = FU }
+    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
@@ -4045,6 +4179,8 @@ if S.config and S.config ~= "" then U.cfgName.Text = S.config end
 setToggle(U.colT, CFG.Collect, "COLLECT: ON", "COLLECT: OFF")
 setToggle(U.sellT, CFG.SellJunk, "SELL THEM: ON", "SELL THEM: OFF")
 setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
+setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
 U.secB.Text = tostring(CFG.Every)
@@ -4120,6 +4256,13 @@ task.spawn(function() -- pet teams
         local ok, e = pcall(TM.tick)
         if not ok then note("TEAM ERR " .. tostring(e)) task.wait(3) end
         task.wait(0.25)
+    end
+end)
+task.spawn(function() -- guildmates' "Need help with a wax" calls
+    local r = RS:WaitForChild("Remotes", 30)
+    local e = r and r:WaitForChild("ClanEvent", 30)
+    if e and S.alive then
+        track(e.OnClientEvent:Connect(function(k, a) if k == "call" then pcall(HX.onCall, a) end end))
     end
 end)
 task.spawn(function() -- keep what the crates taught us

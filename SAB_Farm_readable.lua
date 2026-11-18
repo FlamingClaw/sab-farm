@@ -36,6 +36,8 @@ local CFG = {
     Pets = {},                     -- Pets[PetName] = { b = adopt it, g = Big only, w = keep a wish on it }
     Teams = false,                 -- TEAMS tab: switch saved pet teams by itself
     TeamNormal = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
+    Lite = false, HideHud = false, NoRender = false, FpsCap = 0, -- SETUP tab: smoother running
+    MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -57,7 +59,7 @@ local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", la
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
-local PX, TM = {}, {} -- pets (adopt + wish) and pet teams; everything else they need lives inside them
+local PX, TM, PF = {}, {}, {} -- pets (adopt + wish), pet teams, smoother running; all they need lives inside them
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 ---------------------------------------------------------------- utils
@@ -505,6 +507,8 @@ local function configText()
     local L = { "V|1" }
     L[#L + 1] = "N|Every|" .. tostring(CFG.Every)
     L[#L + 1] = "N|GlazeLead|" .. tostring(CFG.GlazeLead)
+    L[#L + 1] = "N|FpsCap|" .. tostring(CFG.FpsCap)
+    L[#L + 1] = "N|MemLimit|" .. tostring(CFG.MemLimit)
     for _, k in ipairs({ "TeamNormal", "TeamGlaze", "TeamWax" }) do L[#L + 1] = "S|" .. k .. "|" .. CFG[k] end
     do
         local t = {}
@@ -516,7 +520,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -546,6 +550,9 @@ local function applyConfig(raw)
         if a == "N" and b == "Every" then
             local n = tonumber(c)
             if n and n >= 1 then CFG.Every = math.floor(n) end
+        elseif a == "N" and (b == "FpsCap" or b == "MemLimit") then
+            local n = tonumber(c)
+            if n and n >= 0 then CFG[b] = math.floor(n) end
         elseif a == "N" and b == "GlazeLead" then
             local n = tonumber(c)
             if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) end
@@ -2061,6 +2068,132 @@ end
 function TM.glazeSoon() -- placing waits while the glaze team is covering a finish
     return CFG.Teams and CFG.TeamGlaze ~= "" and (TM.glazeFor ~= nil or now() < (TM.afterUntil or 0))
 end
+-- ---- smoother overnight running
+-- Measured on your phone (Nov 17): about 22 fps with the game's own Performance Mode already on.
+-- Switching the 3D view off did not raise fps (the phone is busy with the game's per-frame scripts),
+-- but turning the floating labels off did (+5 fps), and hiding the game's screens did (+3 fps).
+-- Everything here is client-side and undone when switched off or when the script is killed.
+PF.bb, PF.fx, PF.post, PF.hud = {}, {}, {}, {}
+PF.mem, PF.memPeak, PF.fps = 0, 0, 0
+function PF.isFx(d)
+    return d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") or d:IsA("Fire") or d:IsA("Smoke")
+        or d:IsA("Sparkles") or d:IsA("Light")
+end
+function PF.muteOne(d)
+    if not CFG.Lite or not d.Parent then return end
+    if d:IsA("BillboardGui") then
+        if PF.bb[d] == nil and d.Enabled then PF.bb[d] = true d.Enabled = false end
+    elseif PF.isFx(d) then
+        if PF.fx[d] == nil and d.Enabled then PF.fx[d] = true d.Enabled = false end
+    end
+end
+function PF.lite(on)
+    CFG.Lite = on
+    if on then
+        task.spawn(function()
+            for i, d in ipairs(WS:GetDescendants()) do
+                if not CFG.Lite then return end
+                pcall(PF.muteOne, d)
+                if i % 600 == 0 then task.wait() end -- spread over frames, never one long freeze
+            end
+        end)
+        if not PF.addConn then
+            PF.queue = {}
+            PF.addConn = track(WS.DescendantAdded:Connect(function(d)
+                if CFG.Lite and (d:IsA("BillboardGui") or PF.isFx(d)) then PF.queue[#PF.queue + 1] = d end
+            end))
+        end
+        local L = game:GetService("Lighting")
+        for _, e in ipairs(L:GetChildren()) do
+            if e:IsA("PostEffect") and e.Enabled and PF.post[e] == nil then PF.post[e] = true e.Enabled = false end
+        end
+        pcall(function() PF.oldShadows = PF.oldShadows == nil and L.GlobalShadows or PF.oldShadows L.GlobalShadows = false end)
+        pcall(function() PF.oldDeco = PF.oldDeco == nil and WS.Terrain.Decoration or PF.oldDeco WS.Terrain.Decoration = false end)
+    else
+        for d in pairs(PF.bb) do pcall(function() if d.Parent then d.Enabled = true end end) end
+        for d in pairs(PF.fx) do pcall(function() if d.Parent then d.Enabled = true end end) end
+        for d in pairs(PF.post) do pcall(function() if d.Parent then d.Enabled = true end end) end
+        PF.bb, PF.fx, PF.post, PF.queue = {}, {}, {}, {}
+        local L = game:GetService("Lighting")
+        if PF.oldShadows ~= nil then pcall(function() L.GlobalShadows = PF.oldShadows end) PF.oldShadows = nil end
+        if PF.oldDeco ~= nil then pcall(function() WS.Terrain.Decoration = PF.oldDeco end) PF.oldDeco = nil end
+    end
+end
+PF.MINE = { SABFarmGui = true, SABToggle = true, SABError = true, SAB_Bridge = true }
+function PF.hideHud(on)
+    CFG.HideHud = on
+    local pgui = plr:FindFirstChildOfClass("PlayerGui")
+    if not pgui then return end
+    if on then
+        for _, g in ipairs(pgui:GetChildren()) do
+            if g:IsA("ScreenGui") and not PF.MINE[g.Name] and g.Enabled then PF.hud[g] = true g.Enabled = false end
+        end
+        if not PF.hudConn then
+            PF.hudConn = track(pgui.ChildAdded:Connect(function(g)
+                if CFG.HideHud and g:IsA("ScreenGui") and not PF.MINE[g.Name] then
+                    task.defer(function() if CFG.HideHud and g.Enabled then PF.hud[g] = true g.Enabled = false end end)
+                end
+            end))
+        end
+    else
+        for g in pairs(PF.hud) do pcall(function() if g.Parent then g.Enabled = true end end) end
+        PF.hud = {}
+    end
+end
+PF.CAPS = { 0, 30, 15, 10 } -- 0 = leave the game's own limit alone
+function PF.cap(n)
+    CFG.FpsCap = n
+    local f = (type(setfpscap) == "function" and setfpscap) or (type(set_fps_cap) == "function" and set_fps_cap)
+    if not f then return false end
+    return pcall(f, n == 0 and 60 or n)
+end
+function PF.render(off)
+    CFG.NoRender = off
+    pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(not off) end)
+end
+function PF.restoreAll() -- KILL puts the game back exactly as it was
+    pcall(PF.lite, false)
+    pcall(PF.hideHud, false)
+    pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(true) end)
+    if (CFG.FpsCap or 0) ~= 0 then pcall(PF.cap, 0) end
+end
+function PF.rejoinSame(why) -- back into this same server, so its wishes and helpers stay
+    if S.rejoining then return end
+    note("REJOIN this server (" .. why .. ")")
+    pcall(saveLearn)
+    if S.autoload then pcall(saveConfig, S.autoload) end
+    queueSelf()
+    local ok = pcall(function()
+        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, plr)
+    end)
+    task.delay(25, function() if S.alive then rejoin(why .. ", same server failed") end end)
+    return ok
+end
+function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
+    local q = PF.queue
+    if CFG.Lite and q and #q > 0 then
+        PF.queue = {}
+        for i, d in ipairs(q) do pcall(PF.muteOne, d) if i % 300 == 0 then task.wait() end end
+    end
+    local ok, mb = pcall(function() return game:GetService("Stats"):GetTotalMemoryUsageMb() end)
+    if ok and type(mb) == "number" then
+        PF.mem = mb
+        PF.memPeak = math.max(PF.memPeak, mb)
+        if (CFG.MemLimit or 0) > 0 and mb > CFG.MemLimit then
+            PF.over = (PF.over or 0) + 1
+            if PF.over >= 30 and not S.busy then -- over the limit for 30 s straight
+                PF.over = -600 -- one try, then wait 10 min before another
+                PF.rejoinSame(("memory %d MB > %d MB"):format(mb, CFG.MemLimit))
+            end
+        elseif (PF.over or 0) > 0 then
+            PF.over = 0
+        end
+    end
+    if now() - (PF.noteAt or 0) > 1800 then -- a line in the log every 30 min, to see the night afterwards
+        PF.noteAt = now()
+        note(("health: %d fps, %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak))
+    end
+end
 S.sellWords = { "sell", "trash", "discard", "dispose", "bin" }
 local function sellish(t)
     if type(t) ~= "string" then return false end
@@ -2634,6 +2767,19 @@ rw = srow(28)
 U.rejT = button(rw, "AUTO REJOIN: ON", C.accent, 11, at(0, 0.55))
 U.rejB = button(rw, "REJOIN NOW", C.warn, 11, at(0.55, 0.45))
 U.rejMsg = lbl(srow(30), "", 10, C.dim, false)
+scap("SMOOTHER RUNNING  (for long / overnight runs)")
+rw = srow(28)
+U.pfLite = button(rw, "LITE MODE: OFF", C.panel2, 10, at(0, 0.5))
+U.pfHud = button(rw, "HIDE GAME HUD: OFF", C.panel2, 10, at(0.5, 0.5))
+rw = srow(28)
+U.pfFps = button(rw, "FPS CAP: GAME", C.panel2, 10, at(0, 0.5))
+U.pfRender = button(rw, "STOP 3D: OFF", C.panel2, 10, at(0.5, 0.5))
+rw = srow(28)
+U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", at(0, 0.24))
+lbl(rw, "MB: rejoin this server above it (0 = never)", 9, C.dim, false, at(0.26, 0.52))
+U.pfMemSet = button(rw, "SET", C.accent, 11, at(0.8, 0.2))
+U.pfInfo = lbl(srow(18), "", 10, C.text, false)
+lbl(srow(66), "LITE MODE turns off floating labels, sparkles and lighting extras; the screen stays normal. HIDE GAME HUD hides the game's own menus. A lower FPS CAP keeps the phone cooler overnight. STOP 3D blanks the world behind this window. All of it goes back to normal when switched off or on KILL.", 9, C.dim, false)
 scap("THE ROUND SAB BUTTON")
 lbl(srow(30), "Tap it to hide or show this window. Hold and drag it anywhere on screen. The farm keeps running either way.", 10, C.dim, false)
 U.set.CanvasSize = UDim2.new(0, 0, 0, total)
@@ -2923,6 +3069,36 @@ function PX.build()
     PX.paintAll()
 end
 
+-- ---- SETUP: smoother running
+function PF.paint()
+    setToggle(U.pfLite, CFG.Lite, "LITE MODE: ON", "LITE MODE: OFF")
+    setToggle(U.pfHud, CFG.HideHud, "HIDE GAME HUD: ON", "HIDE GAME HUD: OFF")
+    setToggle(U.pfRender, CFG.NoRender, "STOP 3D: ON", "STOP 3D: OFF")
+    setToggle(U.pfFps, (CFG.FpsCap or 0) ~= 0, "FPS CAP: " .. tostring(CFG.FpsCap), "FPS CAP: GAME")
+    if not U.pfMem:IsFocused() then U.pfMem.Text = tostring(CFG.MemLimit) end
+end
+function PF.applyAll() -- after a config load: put every switch into effect
+    if CFG.Lite then PF.lite(true) end
+    if CFG.HideHud then PF.hideHud(true) end
+    if CFG.NoRender then PF.render(true) end
+    if (CFG.FpsCap or 0) ~= 0 then PF.cap(CFG.FpsCap) end
+    PF.paint()
+end
+track(U.pfLite.MouseButton1Click:Connect(function() PF.lite(not CFG.Lite) PF.paint() end))
+track(U.pfHud.MouseButton1Click:Connect(function() PF.hideHud(not CFG.HideHud) PF.paint() end))
+track(U.pfRender.MouseButton1Click:Connect(function() PF.render(not CFG.NoRender) PF.paint() end))
+track(U.pfFps.MouseButton1Click:Connect(function()
+    local i = table.find(PF.CAPS, CFG.FpsCap or 0) or 1
+    local n = PF.CAPS[(i % #PF.CAPS) + 1]
+    if not PF.cap(n) and n ~= 0 then note("this executor cannot cap fps") end
+    PF.paint()
+end))
+track(U.pfMemSet.MouseButton1Click:Connect(function()
+    local n = tonumber(U.pfMem.Text)
+    if n and n >= 0 then CFG.MemLimit = math.floor(n) end
+    PF.paint()
+end))
+
 -- ---- TEAMS tab
 function TM.names()
     local t = { "(none)" }
@@ -3029,6 +3205,7 @@ local function applyLoaded()
     CR.paint()
     pcall(PX.paintAll)
     pcall(TM.paint)
+    pcall(PF.applyAll)
 end
 local function flash(box)
     task.spawn(function()
@@ -3227,6 +3404,7 @@ end)
 local function kill()
     if not S.alive then return end
     S.alive, S.running = false, false
+    pcall(PF.restoreAll)
     pcall(saveLearn)
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     if CRATE.oldNC then pcall(function() hookmetamethod(game, "__namecall", CRATE.oldNC) end) end
@@ -3284,6 +3462,9 @@ local function refresh()
         if CR.built ~= CR.at then CR.build() else CR.paint() end
     end
     if U.pet.Visible then PX.live() end
+    if U.set.Visible then
+        U.pfInfo.Text = ("%d fps | memory %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak)
+    end
     if U.team.Visible then TM.paint() end
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
@@ -3293,7 +3474,7 @@ local function refresh()
     U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
-    logAll = logAll, evAll = evAll, AR = AR, CR = CR,
+    logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
     PX = PX, TM = TM, CRATE = CRATE }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
@@ -3318,6 +3499,7 @@ setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
 U.secB.Text = tostring(CFG.Every)
+pcall(PF.applyAll) -- a config loaded at launch brings its smoother-running switches with it
 pcall(refresh)
 task.spawn(function()
     local p = findSelfPath()
@@ -3330,7 +3512,7 @@ task.spawn(function()
     while S.alive do
         local ok, e = pcall(refresh)
         if not ok then note("UI ERR " .. tostring(e)) end
-        task.wait(0.25)
+        task.wait((S.hidden or minimized) and 1.5 or 0.25) -- a hidden window needs far fewer redraws
     end
 end)
 task.spawn(function()
@@ -3358,6 +3540,18 @@ task.spawn(function() -- pets: adopt from the pen and keep wishes going
         ok, e = pcall(PX.wishTick)
         if not ok then note("WISH ERR " .. tostring(e)) task.wait(5) end
         task.wait(0.75)
+    end
+end)
+task.spawn(function() -- smoother running: fps, memory watchdog, labels added since
+    local frames, t0 = 0, now()
+    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 end))
+    PF.noteAt = now()
+    while S.alive do
+        task.wait(1)
+        local t = now()
+        PF.fps, frames, t0 = frames / math.max(t - t0, 0.001), 0, t
+        local ok, e = pcall(PF.tick)
+        if not ok then note("PERF ERR " .. tostring(e)) task.wait(5) end
     end
 end)
 task.spawn(function() -- pet teams

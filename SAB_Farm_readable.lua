@@ -2678,17 +2678,20 @@ local function remember(frame)
     if ok and ap then return { math.floor(ap.X), math.floor(ap.Y) } end
 end
 local dragging = {}
+S.dragMoved = {} -- how far the last press on each handle travelled (a tap is < 8 px)
+-- handle = the object your finger actually lands on. A button covering a frame takes the touch, so
+-- for a button the button itself has to be the handle (the frame under it never hears the touch).
 local function makeDraggable(handle, target, onDrop)
     track(handle.InputBegan:Connect(function(i)
         if i.UserInputType ~= Enum.UserInputType.MouseButton1 and i.UserInputType ~= Enum.UserInputType.Touch then return end
-        dragging[handle] = { start = i.Position, from = target.Position, moved = 0, target = target }
+        local d = { start = i.Position, from = target.Position, moved = 0, target = target, input = i, onDrop = onDrop }
+        dragging[handle], S.dragMoved[handle] = d, 0
         local cn
         cn = i.Changed:Connect(function()
-            if i.UserInputState == Enum.UserInputState.End then
-                local d = dragging[handle]
+            if i.UserInputState == Enum.UserInputState.End and dragging[handle] == d then
                 dragging[handle] = nil
                 if cn then cn:Disconnect() end
-                if d and onDrop then onDrop(d.moved) end
+                if onDrop then onDrop(d.moved) end
             end
         end)
     end))
@@ -2700,7 +2703,17 @@ track(UIS.InputChanged:Connect(function(i)
         if tgt and tgt.Parent then
             local dx, dy = i.Position.X - d.start.X, i.Position.Y - d.start.Y
             d.moved = math.max(d.moved, math.abs(dx) + math.abs(dy))
+            S.dragMoved[h] = d.moved
             tgt.Position = UDim2.new(d.from.X.Scale, d.from.X.Offset + dx, d.from.Y.Scale, d.from.Y.Offset + dy)
+        end
+    end
+end))
+track(UIS.InputEnded:Connect(function(i) -- backup: a release the input object itself never reported
+    if i.UserInputType ~= Enum.UserInputType.MouseButton1 and i.UserInputType ~= Enum.UserInputType.Touch then return end
+    for h, d in pairs(dragging) do
+        if d.input == i or i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging[h] = nil
+            if d.onDrop then d.onDrop(d.moved) end
         end
     end
 end))
@@ -2843,14 +2856,14 @@ U.set.CanvasSize = UDim2.new(0, 0, 0, total)
 
 -- ---- the floating button: hides and brings back the whole window, drag it anywhere
 local tg = mk("ScreenGui", { Name = "SABToggle", ResetOnSpawn = false, DisplayOrder = 1000, IgnoreGuiInset = true }, pg)
-U.tgRoot = mk("Frame", { Size = UDim2.new(0, 52, 0, 52),
-    Position = S.togPos and UDim2.new(0, S.togPos[1], 0, S.togPos[2]) or UDim2.new(0, 10, 0.45, -26),
+U.tgRoot = mk("Frame", { Size = UDim2.new(0, 40, 0, 40),
+    Position = S.togPos and UDim2.new(0, S.togPos[1], 0, S.togPos[2]) or UDim2.new(0, 10, 0.45, -20),
     BackgroundColor3 = C.accent, BorderSizePixel = 0, Active = true }, tg)
-round(U.tgRoot, 26)
+round(U.tgRoot, 20)
 mk("UIStroke", { Color = C.line, Thickness = 1 }, U.tgRoot)
 U.tgBtn = mk("TextButton", { Text = "SAB", Size = FILL, BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
-    TextSize = 13, TextColor3 = C.text, AutoButtonColor = false }, U.tgRoot)
-U.tgDot = mk("Frame", { Size = UDim2.new(0, 8, 0, 8), Position = UDim2.new(1, -11, 0, 3), BackgroundColor3 = C.dim,
+    TextSize = 11, TextColor3 = C.text, AutoButtonColor = false }, U.tgRoot)
+U.tgDot = mk("Frame", { Size = UDim2.new(0, 7, 0, 7), Position = UDim2.new(1, -9, 0, 2), BackgroundColor3 = C.dim,
     BorderSizePixel = 0 }, U.tgRoot)
 round(U.tgDot, 4)
 
@@ -3342,12 +3355,14 @@ local function setHidden(v)
     U.root.Visible = not v
     U.tgBtn.Text = v and "SAB+" or "SAB"
 end
-makeDraggable(U.tgRoot, U.tgRoot, function(moved)
+makeDraggable(U.tgBtn, U.tgRoot, function()
     clampIn(U.tgRoot)
     S.togPos = remember(U.tgRoot) or S.togPos
-    if moved < 8 then setHidden(not S.hidden) end -- a tap, not a drag
 end)
-click(U.tgBtn, function() setHidden(not S.hidden) end)
+click(U.tgBtn, function() -- the button's own tap; ignored when the press was really a drag
+    if (S.dragMoved[U.tgBtn] or 0) < 8 then setHidden(not S.hidden) end
+    S.dragMoved[U.tgBtn] = 0
+end)
 
 -- configs
 local picks, pick = {}, 0

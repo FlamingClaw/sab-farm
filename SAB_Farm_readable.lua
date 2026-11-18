@@ -35,7 +35,7 @@ local CFG = {
     PetBuy = false, PetWish = false, -- PETS tab master switches
     Pets = {},                     -- Pets[PetName] = { b = adopt it, g = Big only, w = keep a wish on it }
     Teams = false,                 -- TEAMS tab: switch saved pet teams by itself
-    TeamNormal = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
+    TeamNormal = "", TeamFull = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
     Lite = false, HideHud = false, NoRender = false, FpsCap = 0, -- SETUP tab: smoother running
     MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
 }
@@ -509,7 +509,7 @@ local function configText()
     L[#L + 1] = "N|GlazeLead|" .. tostring(CFG.GlazeLead)
     L[#L + 1] = "N|FpsCap|" .. tostring(CFG.FpsCap)
     L[#L + 1] = "N|MemLimit|" .. tostring(CFG.MemLimit)
-    for _, k in ipairs({ "TeamNormal", "TeamGlaze", "TeamWax" }) do L[#L + 1] = "S|" .. k .. "|" .. CFG[k] end
+    for _, k in ipairs({ "TeamNormal", "TeamFull", "TeamGlaze", "TeamWax" }) do L[#L + 1] = "S|" .. k .. "|" .. CFG[k] end
     do
         local t = {}
         for n, w in pairs(CFG.Pets) do
@@ -556,7 +556,7 @@ local function applyConfig(raw)
         elseif a == "N" and b == "GlazeLead" then
             local n = tonumber(c)
             if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) end
-        elseif a == "S" and (b == "TeamNormal" or b == "TeamGlaze" or b == "TeamWax") then
+        elseif a == "S" and (b == "TeamNormal" or b == "TeamFull" or b == "TeamGlaze" or b == "TeamWax") then
             CFG[b] = c
         elseif a == "P" and b ~= "" then
             if not pets then pets = {} end
@@ -1066,7 +1066,14 @@ function TM.place()
         TM.placing = true
         local t0 = now()
         while S.alive and TM.current() ~= CFG.TeamWax and now() - t0 < 5 do nap(0.1) end
-        if TM.current() == CFG.TeamWax then nap(0.25) else note("wax team did not come on in time - placing anyway") end
+        if TM.current() == CFG.TeamWax then
+            -- social pets (Elephant) reach your stats 1-2 s after a switch; wax time is fixed at placing
+            local exp, t1 = TM.expectSocialWax(CFG.TeamWax), now()
+            while S.alive and exp > 0 and (tonumber(plr:GetAttribute("PetSocialWax")) or 0) < exp - 1e-6 and now() - t1 < 4 do nap(0.1) end
+            nap(0.25)
+        else
+            note("wax team did not come on in time - placing anyway")
+        end
     end
     local ok, res = pcall(doPlace)
     TM.placing = false
@@ -2038,18 +2045,24 @@ function TM.tick()
             end
         end
     end
-    local want = ""
-    if CFG.TeamGlaze ~= "" and (TM.glazeFor or now() < (TM.afterUntil or 0)) then want = CFG.TeamGlaze
-    elseif TM.placing and CFG.TeamWax ~= "" then want = CFG.TeamWax
-    else want = CFG.TeamNormal end
+    -- 1 glaze at a finish, 2 wax while placing (or holding a ticked butter with a station free),
+    -- 3 FULL while every station is busy (only stir pets speed up running waxes), 4 NORMAL
+    local want, why = "", ""
+    if CFG.TeamGlaze ~= "" and (TM.glazeFor or now() < (TM.afterUntil or 0)) then
+        want, why = CFG.TeamGlaze, TM.glazeFor and (" - station " .. TM.glazeFor.st.Name .. " finishes soon") or ""
+    elseif CFG.TeamWax ~= "" and (TM.placing or TM.aboutToPlace()) then
+        want, why = CFG.TeamWax, " - placing a butter"
+    elseif CFG.TeamFull ~= "" and TM.allBusy() then
+        want, why = CFG.TeamFull, " - every station is busy"
+    else
+        want = CFG.TeamNormal
+    end
     TM.want = want
     local cur = TM.current()
     TM.cur = cur
     if want ~= "" and cur ~= want and now() >= (TM.nextTry or 0) then
         TM.nextTry = now() + 1.1
         if TM.equip(want) then
-            local why = (want == CFG.TeamGlaze and TM.glazeFor) and (" - station " .. TM.glazeFor.st.Name .. " finishes soon")
-                or ((want == CFG.TeamWax and TM.placing) and " - placing a butter" or "")
             note("team: " .. want .. why)
         else
             TM.nextTry = now() + 3
@@ -2064,6 +2077,37 @@ function TM.clock(s)
     s = math.max(0, math.floor(s))
     if s >= 3600 then return ("%d:%02d:%02d"):format(math.floor(s / 3600), math.floor((s % 3600) / 60), s % 60) end
     return ("%d:%02d"):format(math.floor(s / 60), s % 60)
+end
+function TM.allBusy()
+    local free, total = freeCount()
+    return total > 0 and free == 0
+end
+function TM.aboutToPlace() -- a ticked butter in hand and somewhere to put it: put the wax team on already
+    if not S.running then return false end
+    local held = carriedName()
+    if not (held and isTarget(held)) then return false end
+    local free = freeCount()
+    return free > 0
+end
+function TM.expectSocialWax(name) -- the best social wax pet in that team (only the best one counts)
+    local list, d = TM.teams()
+    local I = PX.info()
+    local best = 0
+    if not (I and d) then return 0 end
+    for _, t in ipairs(list) do
+        if t.name == name then
+            for _, id in ipairs(t.pets or {}) do
+                for _, p in ipairs(d.pets or {}) do
+                    local info = I.Pets[p.name]
+                    if tostring(p.id) == tostring(id) and info and info.boost and info.boost.kind == "socialWax" then
+                        local ok, v = pcall(function() return I.boostValue(p.name, (p.variant ~= "" and p.variant) or nil) end)
+                        best = math.max(best, (ok and tonumber(v)) or info.boost.value or 0)
+                    end
+                end
+            end
+        end
+    end
+    return best
 end
 function TM.glazeSoon() -- placing waits while the glaze team is covering a finish
     return CFG.Teams and CFG.TeamGlaze ~= "" and (TM.glazeFor ~= nil or now() < (TM.afterUntil or 0))
@@ -3161,6 +3205,8 @@ function TM.build()
     U.tmInfo = lbl(add(30), "", 10, C.dim, false)
     cap("NORMAL TEAM  (worn the rest of the time)")
     picker("TeamNormal")
+    cap("FULL TEAM  (worn while every station is busy)")
+    picker("TeamFull")
     cap("GLAZE TEAM  (worn just before a wax finishes)")
     picker("TeamGlaze")
     local f = add(26)
@@ -3180,7 +3226,7 @@ function TM.build()
         TextWrapped = false, Text = "" }, add(150))
     round(U.tmList, 6)
     mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 4) }, U.tmList)
-    lbl(add(78), "Teams are the loadouts you saved in the game's Teams page. A wax's time is fixed when it is placed and its glaze is rolled when it finishes, so the WAX team only needs to be on while placing and the GLAZE team only at the finish. A help never leaves a wax under 60 s, so 45 s is enough. While AUTO TEAMS is on it keeps putting your NORMAL team back.", 9, C.dim, false)
+    lbl(add(92), "Teams are the loadouts you saved in the game's Teams page. A wax's time is fixed when it is placed and its glaze is rolled when it finishes, so the WAX team only needs to be on while placing and the GLAZE team only at the finish. While every station is busy only wax-stir pets (Seal, Koala) still help, so the FULL team can be money + stir. A help never leaves a wax under 60 s, so 45 s is enough. While AUTO TEAMS is on it keeps putting the right team back.", 9, C.dim, false)
     U.team.CanvasSize = UDim2.new(0, 0, 0, y + 10)
     TM.built = true
     TM.paint()

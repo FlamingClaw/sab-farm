@@ -18,7 +18,7 @@ local twait = (task and task.wait) or wait
 local tspawn = (task and task.spawn) or function(f, ...) return coroutine.wrap(f)(...) end
 local clock = os.clock
 
-local B = { alive = true, S = {}, ran = 0, last = "starting", version = 1 }
+local B = { alive = true, S = {}, ran = 0, last = "starting", version = 2 }
 G.SAB_BRIDGE = B
 
 ---------------------------------------------------------------- base64
@@ -189,7 +189,10 @@ end
 
 -- uploads go through one queue so commits never collide
 local queue = {}
-function B.upload(path, text) queue[#queue + 1] = { path, text } end
+function B.upload(path, text) -- a newer upload of the same file replaces one still waiting
+  for _, job in ipairs(queue) do if job[1] == path then job[2] = text return end end
+  queue[#queue + 1] = { path, text }
+end
 tspawn(function()
   while B.alive or #queue > 0 do
     local job = table.remove(queue, 1)

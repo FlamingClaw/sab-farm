@@ -1,8 +1,8 @@
--- SAB BUTTER FARM v24 | Delta / Android
+-- SAB BUTTER FARM v25 | Delta / Android
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v24"
+local VERSION = "v25"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -32,6 +32,10 @@ local CFG = {
     ARrules = "", ARstop = "",     -- your Auto Roll choices, put back after a rejoin
     Confirm = 0.35,                -- match must hold this long before buying
     BuyGap = 1.2, PlaceTries = 3, PadDwell = 0.7,
+    PetBuy = false, PetWish = false, -- PETS tab master switches
+    Pets = {},                     -- Pets[PetName] = { b = adopt it, g = Big only, w = keep a wish on it }
+    Teams = false,                 -- TEAMS tab: switch saved pet teams by itself
+    TeamNormal = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -53,6 +57,7 @@ local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", la
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
+local PX, TM = {}, {} -- pets (adopt + wish) and pet teams; everything else they need lives inside them
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 local lastDump = ""
@@ -500,7 +505,19 @@ end
 local function configText()
     local L = { "V|1" }
     L[#L + 1] = "N|Every|" .. tostring(CFG.Every)
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll" }) do
+    L[#L + 1] = "N|GlazeLead|" .. tostring(CFG.GlazeLead)
+    for _, k in ipairs({ "TeamNormal", "TeamGlaze", "TeamWax" }) do L[#L + 1] = "S|" .. k .. "|" .. CFG[k] end
+    do
+        local t = {}
+        for n, w in pairs(CFG.Pets) do
+            local f = (w.b and "b" or "") .. (w.g and "g" or "") .. (w.w and "w" or "")
+            if f ~= "" then t[#t + 1] = n .. "|" .. f end
+        end
+        table.sort(t)
+        L[#L + 1] = "P|-"
+        for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
+    end
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -524,12 +541,23 @@ local function configText()
 end
 local function applyConfig(raw)
     if type(raw) ~= "string" or raw == "" then return false end
-    local tg, got, kt, gotK = {}, false, {}, false
+    local tg, got, kt, gotK, pets = {}, false, {}, false, nil
     for line in raw:gmatch("[^\n]+") do
         local a, b, c = line:match("^(%a)|([^|]*)|?(.*)$")
         if a == "N" and b == "Every" then
             local n = tonumber(c)
             if n and n >= 1 then CFG.Every = math.floor(n) end
+        elseif a == "N" and b == "GlazeLead" then
+            local n = tonumber(c)
+            if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) end
+        elseif a == "S" and (b == "TeamNormal" or b == "TeamGlaze" or b == "TeamWax") then
+            CFG[b] = c
+        elseif a == "P" and b ~= "" then
+            if not pets then pets = {} end
+            if b ~= "-" and c ~= "" then
+                pets[b] = { b = c:find("b", 1, true) and true or nil, g = c:find("g", 1, true) and true or nil,
+                    w = c:find("w", 1, true) and true or nil }
+            end
         elseif a == "B" then
             if CFG[b] ~= nil then CFG[b] = (c == "1") end
         elseif a == "S" and b == "rules" then
@@ -550,6 +578,7 @@ local function applyConfig(raw)
     end
     if got then CFG.Targets = tg end
     if gotK then CFG.CrateTicks = kt end -- an older config without crates keeps the default
+    if pets then CFG.Pets = pets end
     return true
 end
 local function saveConfig(name)
@@ -1025,6 +1054,19 @@ local function doPlace()
     return false
 end
 
+-- placing with the WAX team on: wax time is worked out by the server the moment the butter is placed
+function TM.place()
+    if CFG.Teams and CFG.TeamWax ~= "" then
+        TM.placing = true
+        local t0 = now()
+        while S.alive and TM.current() ~= CFG.TeamWax and now() - t0 < 5 do nap(0.1) end
+        if TM.current() == CFG.TeamWax then nap(0.25) else note("wax team did not come on in time - placing anyway") end
+    end
+    local ok, res = pcall(doPlace)
+    TM.placing = false
+    if not ok then error(res, 0) end
+    return res
+end
 -- Crates. The game opens the crate window by itself about two seconds after one is rolled;
 -- this presses Open! when a ticked butter can come out of it, and Discard when none can.
 local function isCrateName(n)
@@ -1143,11 +1185,11 @@ local function tapGui(b, done)
     end
     return false
 end
-local NOTCRATE = { LimitedSquishyPlaceHolder = 1, Lever = 1, WaxStations = 1, RolledSquishyPlaceHolder = 1, SquishyStack = 1 }
+CRATE.NOT = { LimitedSquishyPlaceHolder = 1, Lever = 1, WaxStations = 1, RolledSquishyPlaceHolder = 1, SquishyStack = 1 }
 local function safePrompt(d)
     local o = d.Parent
     while o and o ~= S.plot do
-        if NOTCRATE[o.Name] then return false end
+        if CRATE.NOT[o.Name] then return false end
         o = o.Parent
     end
     local a = (d.ActionText or ""):lower()
@@ -1451,8 +1493,69 @@ function CRATE.goneOrNew(held0)
         return h ~= nil and h ~= held0
     end
 end
+-- ---- opening a crate without its window (since the Nov update the server only accepts "open"
+-- from someone standing at the crate): step next to the stand, send CrateAction "open" ourselves,
+-- read the server's answer { ok, prize | reason }, and step back to where we were. No window, no taps.
+function CRATE.near()
+    local rem = RS:FindFirstChild("Remotes")
+    local r = rem and rem:FindFirstChild("CrateAction")
+    local c = char()
+    local stand = S.plot and S.plot:FindFirstChild("CrateStand")
+    local spot = stand and stand:FindFirstChild("Spot")
+    if not (r and c and spot) then return false, "no crate stand or remote" end
+    local hrp = c.HumanoidRootPart
+    local back = hrp.CFrame
+    local title, why = CRATE.title, "no answer"
+    local held0 = carriedName()
+    local holder = stand:FindFirstChild("Holder")
+    local function live() -- the crate's model sits in CrateStand.Holder while it waits
+        if not holder then return CRATE.waiting or CRATE.on end
+        for _, m in ipairs(holder:GetChildren()) do if m:IsA("Model") then return true end end
+        return false
+    end
+    for attempt = 1, 3 do
+        if not (CRATE.waiting or CRATE.on) or not live() then
+            CRATE.waiting, CRATE.on, CRATE.quietUntil = false, false, now() + 4
+            return true, "already gone"
+        end
+        if (hrp.Position - spot.Position).Magnitude > 8 then standNear(spot, CRATE.prompt) end
+        nap(0.12 + 0.15 * attempt) -- let the server see where we now stand
+        local box = {}
+        CRATE.replaying = true
+        task.spawn(function()
+            box.ok, box.v = pcall(function() return r:InvokeServer("open") end)
+            box.done = true
+        end)
+        waitFor(function() return box.done end, 6)
+        CRATE.replaying = false
+        local v = box.v
+        if box.done and box.ok and type(v) == "table" and v.ok then
+            S.crates, CRATE.fails, CRATE.nearFails = S.crates + 1, 0, 0
+            CRATE.waiting, CRATE.on, CRATE.quietUntil = false, false, now() + 4
+            note(("OPENED %s -> %s (no window)"):format(title, v.prize and prettyOf(key(tostring(v.prize))) or "?"))
+            waitFor(function() local h = carriedName() return h ~= nil and h ~= held0 end, 1.5)
+            if (hrp.Position - back.Position).Magnitude > 8 then pcall(function() teleport(c, back.Position, back.Position + back.LookVector) end) end
+            return true, "opened"
+        end
+        why = (box.done and box.ok and type(v) == "table") and tostring(v.reason or "refused, no reason given")
+            or (box.done and ("error: " .. tostring(v)) or "no answer in 6s")
+        nap(0.3)
+        if not live() then -- someone (you, or the game) opened it meanwhile
+            CRATE.waiting, CRATE.on, CRATE.quietUntil = false, false, now() + 4
+            return true, "already gone"
+        end
+    end
+    CRATE.nearFails = (CRATE.nearFails or 0) + 1
+    note(("crate: the server would not open %s next to the stand (%s)"):format(title, why))
+    return false, why
+end
 function CRATE.smart()
     local title = CRATE.title
+    if (CRATE.nearFails or 0) < 3 then
+        local ok = CRATE.near()
+        if ok then return true end
+        if CRATE.nearFails >= 3 then note("opening next to the stand failed 3 times - trying the older ways") end
+    end
     local L = CRATE.learned
     if L then
         local held0 = carriedName()
@@ -1655,11 +1758,315 @@ end
 
 -- Selling an unwanted butter. A capture of the real game shows the client sends
 -- SellSquishy:FireServer() with no arguments at all, so that is the first thing tried.
-local SELLW = { "sell", "trash", "discard", "dispose", "bin" }
+-- ---- pets: adopt ticked pets from Biscuit's pen and keep wishes running for them.
+-- Both go straight to the server (PetRequest), from anywhere on the map. The pen lives in
+-- ReplicatedStorage.PetMeadowSpawns: one child per pet in the pen (attributes Pet, Variant,
+-- ExpiresAt, and A_<userId> once that player adopted it - every player may adopt each pen pet once).
+-- Its "Wishes" attribute is JSON { PetName = serverTimeItEnds }: one wish per pet per server, 20 min.
+PX.HS = game:GetService("HttpService")
+PX.uid = (function() local ok, id = pcall(function() return plr.UserId end) return ok and id or 0 end)()
+PX.buyMsg, PX.wishMsg, PX.wishN = "", "", 0
+function PX.info()
+    if PX.I then return PX.I end
+    local ok, I = pcall(function() return require(RS:WaitForChild("Modules", 5):WaitForChild("PetInfo", 5)) end)
+    if ok and type(I) == "table" and type(I.Pets) == "table" then PX.I = I end
+    return PX.I
+end
+function PX.order() -- every pet, worst first: by rarity, then price
+    if PX.list then return PX.list end
+    local I = PX.info()
+    if not I then return {} end
+    local t = {}
+    if type(I.Order) == "table" and #I.Order > 0 then
+        for _, n in ipairs(I.Order) do if I.Pets[n] then t[#t + 1] = n end end
+    else
+        for n in pairs(I.Pets) do t[#t + 1] = n end
+        table.sort(t, function(a, b) return (I.Pets[a].price or 0) < (I.Pets[b].price or 0) end)
+    end
+    PX.list = t
+    return t
+end
+function PX.nice(name, var)
+    local I = PX.info()
+    local p = I and I.Pets[name]
+    return ((var and var ~= "") and (var .. " ") or "") .. (p and p.displayName or tostring(name))
+end
+function PX.data()
+    local raw = plr:GetAttribute("PetsData")
+    if type(raw) ~= "string" then return nil end
+    local ok, d = pcall(function() return PX.HS:JSONDecode(raw) end)
+    return (ok and type(d) == "table") and d or nil
+end
+function PX.pen() return RS:FindFirstChild("PetMeadowSpawns") end
+function PX.srv() return WS:GetServerTimeNow() end
+function PX.money()
+    local mv = plr:FindFirstChild("MoneyValue")
+    if mv and type(mv.Value) == "number" then return mv.Value end
+    return cash() or 0
+end
+function PX.wishes() -- running wishes in this server: name -> seconds left
+    local pen = PX.pen()
+    local raw = pen and pen:GetAttribute("Wishes")
+    local out, t = {}, PX.srv()
+    if type(raw) ~= "string" then return out end
+    local ok, w = pcall(function() return PX.HS:JSONDecode(raw) end)
+    if ok and type(w) == "table" then
+        for k, v in pairs(w) do if type(v) == "number" and v > t then out[k] = v - t end end
+    end
+    return out
+end
+function PX.call(...) -- PetRequest:InvokeServer, never waiting more than 6 s for the answer
+    local rem = RS:FindFirstChild("Remotes")
+    local r = rem and rem:FindFirstChild("PetRequest")
+    if not r then return nil end
+    local a = table.pack(...)
+    local box = {}
+    task.spawn(function()
+        box.ok, box.v = pcall(function() return r:InvokeServer(table.unpack(a, 1, a.n)) end)
+        box.done = true
+    end)
+    local t0 = now()
+    while not box.done and now() - t0 < 6 do task.wait(0.05) end
+    if box.done and box.ok then return box.v end
+    return nil
+end
+function PX.want(name) return CFG.Pets[name] end
+function PX.buyTick()
+    if not CFG.PetBuy then PX.buyMsg = "auto adopt is off" return end
+    local I, pen, d = PX.info(), PX.pen(), PX.data()
+    if not (I and pen and d) then PX.buyMsg = "pet data not loaded yet" return end
+    PX.tryAt = PX.tryAt or {}
+    local owned, maxOwned = #(d.pets or {}), tonumber(d.maxOwned) or 60
+    local t, seen, msg = PX.srv(), {}, nil
+    for _, s in ipairs(pen:GetChildren()) do
+        seen[s.Name] = true
+        local name, var = s:GetAttribute("Pet"), s:GetAttribute("Variant") or ""
+        local w = name and PX.want(name)
+        if w and w.b and I.Pets[name] and (not w.g or var == "Big") and not s:GetAttribute("A_" .. PX.uid)
+            and (tonumber(s:GetAttribute("ExpiresAt")) or 0) > t + 1 and now() >= (PX.tryAt[s.Name] or 0) then
+            local nice, price = PX.nice(name, var), I.Pets[name].price or 0
+            if owned >= maxOwned then
+                msg = ("%s is in the pen, but you have %d/%d pets"):format(nice, owned, maxOwned)
+                PX.tryAt[s.Name] = now() + 15
+            elseif PX.money() < price then
+                msg = ("%s is in the pen - need $%s"):format(nice, fmt(price))
+                PX.tryAt[s.Name] = now() + 5
+            else
+                PX.tryAt[s.Name] = now() + 8
+                local r = PX.call("adopt", s.Name)
+                if type(r) == "table" and r.ok then
+                    owned = owned + 1
+                    PX.buys = (PX.buys or 0) + 1
+                    note("ADOPTED " .. nice)
+                    msg = "adopted " .. nice
+                else
+                    local why = type(r) == "table" and tostring(r.reason or "no reason given") or "no answer"
+                    note(("adopt %s failed: %s"):format(nice, why))
+                    msg = "adopt failed: " .. why
+                    if type(r) == "table" and r.bagFull then PX.tryAt[s.Name] = now() + 60 end
+                end
+            end
+        end
+    end
+    for k in pairs(PX.tryAt) do if not seen[k] then PX.tryAt[k] = nil end end
+    PX.buyMsg = msg or ("watching the pen (%d/%d pets)"):format(owned, maxOwned)
+end
+function PX.wishTick()
+    if not CFG.PetWish then PX.wishMsg = "auto wish is off" return end
+    local I = PX.info()
+    if not (I and PX.pen()) then PX.wishMsg = "pet data not loaded yet" return end
+    PX.wishTry, PX.wishWhy = PX.wishTry or {}, PX.wishWhy or {}
+    local w, mine, msg = PX.wishes(), 0, nil
+    local share = (type(I.Wish) == "table" and I.Wish.cashShare) or 2
+    for _, name in ipairs(PX.order()) do
+        local want = PX.want(name)
+        if want and want.w then
+            mine = mine + 1
+            if not w[name] and now() >= (PX.wishTry[name] or 0) then
+                local credits = tonumber(plr:GetAttribute("PetWishCredits")) or 0
+                local price = math.floor((I.Pets[name].price or 0) * share)
+                if credits <= 0 and PX.money() < price then
+                    PX.wishTry[name] = now() + 10
+                    msg = ("need $%s to wish for %s"):format(fmt(price), PX.nice(name))
+                    PX.wishWhy[name] = msg
+                else
+                    PX.wishTry[name] = now() + 3
+                    local how = credits > 0 and "wishCredit" or "wish"
+                    local r = PX.call(how, name)
+                    if type(r) == "table" and r.ok then
+                        PX.wishN, PX.wishWhy[name] = PX.wishN + 1, nil
+                        note(("WISHED for %s (%s)"):format(PX.nice(name), credits > 0 and "free wish" or ("$" .. fmt(price))))
+                    else
+                        local why = type(r) == "table" and tostring(r.reason or "no reason given") or "no answer"
+                        -- someone else's wish beat us to it: it shows up in Wishes, so just look again soon
+                        if why:lower():find("already", 1, true) then PX.wishTry[name] = now() + 2
+                        else note(("wish %s failed: %s"):format(PX.nice(name), why)) msg = "wish failed: " .. why end
+                    end
+                end
+            end
+        end
+    end
+    if not msg then
+        for _, name in ipairs(PX.order()) do
+            local want = PX.want(name)
+            if want and want.w and not w[name] and PX.wishWhy[name] then msg = PX.wishWhy[name] break end
+        end
+    end
+    if not msg then
+        local run = {}
+        for _, name in ipairs(PX.order()) do
+            local want = PX.want(name)
+            if want and want.w and w[name] then run[#run + 1] = ("%s %dm"):format(PX.nice(name), math.ceil(w[name] / 60)) end
+        end
+        msg = mine == 0 and "no pet has WISH ticked" or ("running: " .. (#run > 0 and table.concat(run, ", ") or "none yet"))
+    end
+    PX.wishMsg = msg
+end
+
+-- ---- pet teams: the saved loadouts from the game's Teams page, switched with PetRequest("teamEquip", n)
+-- Wax time is fixed the moment a butter is placed, and the glaze is rolled the moment a wax finishes,
+-- so: WAX team while placing, GLAZE team from GlazeLead s before a wax finishes until it has, NORMAL
+-- team the rest of the time. A help can never leave a wax with under 60 s, so a 45 s lead is safe.
+TM.switches, TM.glazed, TM.finished = 0, 0, 0
+function TM.teams()
+    local d = PX.data()
+    return (d and d.teams) or {}, d
+end
+function TM.current(d)
+    d = d or PX.data()
+    if not d then return "" end
+    local eq = {}
+    for _, id in ipairs(d.equipped or {}) do eq[tostring(id)] = true end
+    for _, t in ipairs(d.teams or {}) do
+        local pets = t.pets or {}
+        local same = #pets == #(d.equipped or {})
+        if same then for _, id in ipairs(pets) do if not eq[tostring(id)] then same = false break end end end
+        if same then return t.name end
+    end
+    return ""
+end
+function TM.equip(name)
+    local list, d = TM.teams()
+    local idx
+    for i, t in ipairs(list) do if t.name == name then idx = i break end end
+    if not idx then TM.msg = "no saved team called " .. tostring(name) return false end
+    if TM.current(d) == name then return true end
+    for _ = 1, 4 do
+        local r = PX.call("teamEquip", idx)
+        if type(r) == "table" and r.ok then
+            TM.switches = TM.switches + 1
+            return true
+        end
+        task.wait(0.4) -- the server allows about one switch a second
+    end
+    return false
+end
+function TM.waxes() -- your running waxes, soonest first
+    local out = {}
+    local ws = S.plot and S.plot:FindFirstChild("WaxStations")
+    if not ws then return out end
+    for _, st in ipairs(ws:GetChildren()) do
+        local e = tonumber(st:GetAttribute("PourEnd"))
+        local own = st:GetAttribute("PourOwner")
+        if st:GetAttribute("HasSquishy") and e and (own == nil or own == PX.uid) then
+            local ph, nm = st:FindFirstChild("SquishyPlaceHolder"), "?"
+            if ph then for _, c in ipairs(ph:GetChildren()) do if c:IsA("Model") then nm = c.Name break end end end
+            local helpers = tostring(st:GetAttribute("Helpers") or "")
+            local nh = 0
+            for _ in helpers:gmatch("%d+") do nh = nh + 1 end
+            out[#out + 1] = { st = st, ends = e, id = st:GetAttribute("PourId"), name = nm, helps = nh }
+        end
+    end
+    table.sort(out, function(a, b) return a.ends < b.ends end)
+    return out
+end
+function TM.glazeCount()
+    local rem = RS:FindFirstChild("Remotes")
+    local r = rem and rem:FindFirstChild("EditStack")
+    if not r then return nil end
+    local ok, v = pcall(function() return r:InvokeServer("State", nil) end)
+    if not (ok and type(v) == "table" and type(v.state) == "table") then return nil end
+    local n, g = 0, {}
+    for _, e in ipairs(v.state.entries or {}) do
+        if e.glaze and e.glaze ~= "" then n = n + 1 g[e.glaze] = (g[e.glaze] or 0) + 1 end
+    end
+    return n, g, #(v.state.entries or {}), v.state.capacity
+end
+function TM.finishedOne(w, before)
+    TM.finished = TM.finished + 1
+    task.wait(2)
+    local n, g, cnt, cap = TM.glazeCount()
+    if n and before and n > before then
+        TM.glazed = TM.glazed + 1
+        local kinds = {}
+        for k, v in pairs(g) do kinds[#kinds + 1] = k .. " " .. v end
+        note(("GLAZED! %s on station %s finished glazed (%s glazed now: %s)"):format(prettyOf(key(w.name)), w.st.Name, n, table.concat(kinds, ", ")))
+    else
+        note(("wax done on station %s: %s, no glaze%s"):format(w.st.Name, prettyOf(key(w.name)),
+            cnt and (" (stack " .. cnt .. "/" .. tostring(cap) .. ")") or ""))
+    end
+end
+function TM.tick()
+    TM.list = TM.waxes()
+    if not CFG.Teams then TM.want, TM.msg = "", "auto teams is off" return end
+    local t = PX.srv()
+    -- the wax we are covering with the glaze team: hold it until its station has been cleared
+    local g = TM.glazeFor
+    if g then
+        local st = g.st
+        local still = st.Parent and st:GetAttribute("HasSquishy") and st:GetAttribute("PourId") == g.id
+        if not still or t > g.ends + 40 then
+            TM.glazeFor, TM.afterUntil = nil, now() + 1.5
+            local before = g.before
+            task.spawn(function() pcall(TM.finishedOne, g, before) end)
+        else
+            g.ends = tonumber(st:GetAttribute("PourEnd")) or g.ends -- a help moved it
+        end
+    end
+    if CFG.TeamGlaze ~= "" and not TM.glazeFor then
+        for _, w in ipairs(TM.list) do
+            if w.ends - t <= CFG.GlazeLead then
+                TM.glazeFor = w
+                task.spawn(function() w.before = TM.glazeCount() end)
+                break
+            end
+        end
+    end
+    local want = ""
+    if CFG.TeamGlaze ~= "" and (TM.glazeFor or now() < (TM.afterUntil or 0)) then want = CFG.TeamGlaze
+    elseif TM.placing and CFG.TeamWax ~= "" then want = CFG.TeamWax
+    else want = CFG.TeamNormal end
+    TM.want = want
+    local cur = TM.current()
+    TM.cur = cur
+    if want ~= "" and cur ~= want and now() >= (TM.nextTry or 0) then
+        TM.nextTry = now() + 1.1
+        if TM.equip(want) then
+            local why = (want == CFG.TeamGlaze and TM.glazeFor) and (" - station " .. TM.glazeFor.st.Name .. " finishes soon")
+                or ((want == CFG.TeamWax and TM.placing) and " - placing a butter" or "")
+            note("team: " .. want .. why)
+        else
+            TM.nextTry = now() + 3
+        end
+    end
+    local nx = TM.list[1]
+    TM.msg = ("on: %s%s | next wax done %s"):format(cur ~= "" and cur or "(not a saved team)",
+        (want ~= "" and want ~= cur) and (" -> " .. want) or "",
+        nx and ("in " .. TM.clock(nx.ends - t) .. " (st " .. nx.st.Name .. ")") or "- none running")
+end
+function TM.clock(s)
+    s = math.max(0, math.floor(s))
+    if s >= 3600 then return ("%d:%02d:%02d"):format(math.floor(s / 3600), math.floor((s % 3600) / 60), s % 60) end
+    return ("%d:%02d"):format(math.floor(s / 60), s % 60)
+end
+function TM.glazeSoon() -- placing waits while the glaze team is covering a finish
+    return CFG.Teams and CFG.TeamGlaze ~= "" and (TM.glazeFor ~= nil or now() < (TM.afterUntil or 0))
+end
+S.sellWords = { "sell", "trash", "discard", "dispose", "bin" }
 local function sellish(t)
     if type(t) ~= "string" then return false end
     t = t:lower()
-    for _, w in ipairs(SELLW) do if t:find(w, 1, true) then return true end end
+    for _, w in ipairs(S.sellWords) do if t:find(w, 1, true) then return true end end
     return false
 end
 local function sellRemoteCall()
@@ -1852,12 +2259,13 @@ local function decide()
             return "sell", ("selling %s (%s)"):format(nice, why), "warn"
         end
         if free < 1 then return nil, ("holding %s - 0 free stations"):format(nice), "wait" end
+        if TM.glazeSoon() then return nil, ("holding %s - glaze team is on for a wax that is finishing, placing right after"):format(nice), "wait" end
         return "place", ("waxing %s (%d free)"):format(nice, free), "ok"
     end
     S.holding = false
     -- A crate already waiting on your stand (e.g. it landed before the script started): the game
     -- switches on CrateStand.Spot's CratePrompt while one is there, titled with the crate's name.
-    if CFG.Crates and not CRATE.waiting and now() - (CRATE.scanAt or 0) > 1 then
+    if CFG.Crates and not CRATE.waiting and now() - (CRATE.scanAt or 0) > 1 and now() > (CRATE.quietUntil or 0) then
         CRATE.scanAt = now()
         local stand = S.plot:FindFirstChild("CrateStand")
         if stand then
@@ -1963,7 +2371,7 @@ end
 local function step()
     local act, txt, lvl = decide()
     S.reason, S.level = txt, lvl
-    if act == "place" then runAction("waxing...", doPlace)
+    if act == "place" then runAction("waxing...", TM.place)
     elseif act == "crate" then runAction("opening crate...", doCrate, true)
     elseif act == "cratesmart" then runAction("opening crate...", CRATE.smart)
     elseif act == "cratewin" then runAction("opening the crate window...", summonCrate)
@@ -2002,6 +2410,10 @@ local function dump()
     p("targets: " .. table.concat(targetNames(), ", "))
     p(("bought=%d waxed=%d sold=%d collected=%d rolls=%d gifts=%d"):format(S.bought, S.placed, S.sold, S.collected, S.rolls, S.gifts))
     p("cash=" .. fmt(cash()))
+    p(("pets: adopt=%s wish=%s | %s | %s"):format(tostring(CFG.PetBuy), tostring(CFG.PetWish), tostring(PX.buyMsg), tostring(PX.wishMsg)))
+    p(("teams: auto=%s normal=%s glaze=%s wax=%s lead=%s | %s"):format(tostring(CFG.Teams), CFG.TeamNormal, CFG.TeamGlaze,
+        CFG.TeamWax, tostring(CFG.GlazeLead), tostring(TM.msg)))
+    p(("crate near-open fails=%s"):format(tostring(CRATE.nearFails or 0)))
     local held, inst = carriedName()
     p("in hands: " .. tostring(held) .. (inst and (" (" .. inst.ClassName .. ")") or "") ..
         "  via " .. tostring(S.carrySrc) .. "  blind=" .. string.format("%.1f", math.max(0, (S.carryBlind or 0) - now())))
@@ -2313,10 +2725,12 @@ round(U.bar, 2)
 U.reason = lbl(U.strip, "starting", 12, C.text, false, UDim2.new(0, 20, 0, 2), UDim2.new(1, -28, 1, -4))
 -- tabs
 U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip), Size = UDim2.new(1, 0, 0, Z.tabs), BackgroundTransparency = 1 }, U.root)
-U.tabFarm = button(U.tabs, "FARM", C.accent, 10, UDim2.new(0, 8, 0, 0), UDim2.new(0.25, -9, 1, -4))
-U.tabBut = button(U.tabs, "BUTTERS", C.panel2, 10, UDim2.new(0.25, 2, 0, 0), UDim2.new(0.25, -4, 1, -4))
-U.tabCrt = button(U.tabs, "CRATES", C.panel2, 10, UDim2.new(0.5, 2, 0, 0), UDim2.new(0.25, -4, 1, -4))
-U.tabSet = button(U.tabs, "SETUP", C.panel2, 10, UDim2.new(0.75, 2, 0, 0), UDim2.new(0.25, -10, 1, -4))
+U.tabFarm = button(U.tabs, "FARM", C.accent, 9, UDim2.new(0, 6, 0, 0), UDim2.new(1 / 6, -7, 1, -4))
+U.tabBut = button(U.tabs, "BUTTERS", C.panel2, 9, UDim2.new(1 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
+U.tabCrt = button(U.tabs, "CRATES", C.panel2, 9, UDim2.new(2 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
+U.tabPet = button(U.tabs, "PETS", C.panel2, 9, UDim2.new(3 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
+U.tabTeam = button(U.tabs, "TEAMS", C.panel2, 9, UDim2.new(4 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
+U.tabSet = button(U.tabs, "SETUP", C.panel2, 9, UDim2.new(5 / 6, 1, 0, 0), UDim2.new(1 / 6, -7, 1, -4))
 local function pane()
     local f = mk("ScrollingFrame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip + Z.tabs), Size = UDim2.new(1, 0, 1, -(Z.head + Z.strip + Z.tabs)),
         BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.line,
@@ -2326,7 +2740,8 @@ local function pane()
     return f
 end
 U.farm, U.but, U.set, U.crt = pane(), pane(), pane(), pane()
-U.but.Visible, U.set.Visible, U.crt.Visible = false, false, false
+U.pet, U.team = pane(), pane()
+U.but.Visible, U.set.Visible, U.crt.Visible, U.pet.Visible, U.team.Visible = false, false, false, false, false
 
 -- ---- FARM tab
 local order, total, rw = 0, 12, nil
@@ -2594,7 +3009,12 @@ local function showTab(which)
     tab = which
     U.farm.Visible, U.but.Visible, U.set.Visible = (which == "farm"), (which == "but"), (which == "set")
     U.crt.Visible = (which == "crt")
+    U.pet.Visible, U.team.Visible = (which == "pet"), (which == "team")
     U.tabCrt.BackgroundColor3 = (which == "crt") and C.accent or C.panel2
+    U.tabPet.BackgroundColor3 = (which == "pet") and C.accent or C.panel2
+    U.tabTeam.BackgroundColor3 = (which == "team") and C.accent or C.panel2
+    if which == "pet" and not PX.built then pcall(PX.build) end
+    if which == "team" and not TM.built then pcall(TM.build) end
     if which == "crt" and (CR.built ~= CR.at or not next(CR.boxes)) then CR.build() end
     U.tabFarm.BackgroundColor3 = (which == "farm") and C.accent or C.panel2
     U.tabBut.BackgroundColor3 = (which == "but") and C.accent or C.panel2
@@ -2607,6 +3027,190 @@ local function setToggle(b, on, onText, offText)
     b.Text = on and onText or offText
     b.BackgroundColor3 = on and C.accent or C.panel2
 end
+-- ---- PETS tab: worst pet at the top, best at the bottom. BUY = adopt it when it is in the pen,
+-- BIG = only its Big version, WISH = keep a wish running for it in this server.
+PX.RC = { Common = Color3.fromRGB(120, 220, 120), Rare = Color3.fromRGB(90, 170, 255), Epic = Color3.fromRGB(190, 110, 255),
+    Legendary = Color3.fromRGB(255, 215, 60), Mythic = Color3.fromRGB(255, 90, 150), Exotic = Color3.fromRGB(90, 235, 215) }
+function PX.paintRow(name)
+    local r = PX.rows and PX.rows[name]
+    if not r then return end
+    local w = CFG.Pets[name] or {}
+    r.b.BackgroundColor3 = w.b and C.good or C.panel2
+    r.g.BackgroundColor3 = w.g and C.accent or C.panel2
+    r.g.Text = w.g and "BIG" or "ANY"
+    r.w.BackgroundColor3 = w.w and C.warn or C.panel2
+end
+function PX.flag(name, f)
+    local w = CFG.Pets[name] or {}
+    if w[f] then w[f] = nil else w[f] = true end
+    CFG.Pets[name] = (w.b or w.g or w.w) and w or nil
+    PX.paintRow(name)
+end
+function PX.paintAll()
+    for n in pairs(PX.rows or {}) do PX.paintRow(n) end
+    if U.pbT then
+        setToggle(U.pbT, CFG.PetBuy, "AUTO ADOPT: ON", "AUTO ADOPT: OFF")
+        setToggle(U.pwT, CFG.PetWish, "AUTO WISH: ON", "AUTO WISH: OFF")
+    end
+end
+function PX.live() -- once a second while the tab is open: wish timers and status lines
+    if not PX.built then PX.build() return end
+    if now() - (PX.liveAt or 0) < 1 then return end
+    PX.liveAt = now()
+    local w = PX.wishes()
+    for n, r in pairs(PX.rows) do
+        r.name.Text = PX.nice(n) .. (w[n] and ("   * wish %dm"):format(math.ceil(w[n] / 60)) or "")
+    end
+    local d = PX.data()
+    local cr = tonumber(plr:GetAttribute("PetWishCredits")) or 0
+    U.pInfo.Text = ("pets %d/%d | cash $%s%s\nadopt: %s\nwish: %s"):format(d and #(d.pets or {}) or 0, d and tonumber(d.maxOwned) or 60,
+        fmt(PX.money()), cr > 0 and (" | free wishes " .. cr) or "", PX.buyMsg ~= "" and PX.buyMsg or "-", PX.wishMsg ~= "" and PX.wishMsg or "-")
+end
+function PX.build()
+    local I = PX.info()
+    for _, ch in ipairs(U.pet:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextLabel") then ch:Destroy() end
+    end
+    PX.rows = {}
+    local ord, y = 0, 12
+    local function add(h)
+        ord, y = ord + 1, y + h + 6
+        return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.pet)
+    end
+    local f = add(28)
+    U.pbT = button(f, "AUTO ADOPT: OFF", C.panel2, 10, at(0, 0.5))
+    U.pwT = button(f, "AUTO WISH: OFF", C.panel2, 10, at(0.5, 0.5))
+    U.pbT.MouseButton1Click:Connect(function() CFG.PetBuy = not CFG.PetBuy PX.paintAll() end)
+    U.pwT.MouseButton1Click:Connect(function() CFG.PetWish = not CFG.PetWish PX.paintAll() end)
+    U.pInfo = lbl(add(44), "", 10, C.dim, false)
+    lbl(add(40), "BUY: adopt it whenever it is in the pen.  ANY/BIG: BIG = only its Big version.  WISH: keep a wish on it here (costs 2x its price, 20 min, one per pet per server).", 9, C.dim, false)
+    if not I then
+        lbl(add(30), "pet list not loaded yet - open this tab again in a moment", 11, C.warn, false)
+        U.pet.CanvasSize = UDim2.new(0, 0, 0, y)
+        PX.built = false
+        return
+    end
+    local byR = {}
+    for _, n in ipairs(PX.order()) do
+        local r = I.Pets[n].rarity or "?"
+        byR[r] = byR[r] or {}
+        table.insert(byR[r], n)
+    end
+    local rars = {}
+    for _, r in ipairs(I.Rarities or {}) do if byR[r] then rars[#rars + 1] = r end end
+    for r in pairs(byR) do if not table.find(rars, r) then rars[#rars + 1] = r end end
+    for _, r in ipairs(rars) do
+        local hb = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, add(22))
+        round(hb, 6)
+        lbl(hb, "  " .. r:upper(), 11, PX.RC[r] or C.text, true)
+        for _, n in ipairs(byR[r]) do
+            local rowF = mk("Frame", { Size = FILL, BackgroundColor3 = C.bg, BorderSizePixel = 0 }, add(38))
+            round(rowF, 5)
+            local nm = lbl(rowF, PX.nice(n), 11, PX.RC[r] or C.text, true, UDim2.new(0, 6, 0, 2), UDim2.new(1, -122, 0, 17))
+            local ok, ds = pcall(function() return I.describe(n) end)
+            lbl(rowF, ok and tostring(ds) or "", 9, C.dim, false, UDim2.new(0, 6, 0, 19), UDim2.new(1, -122, 0, 17))
+            local b = button(rowF, "BUY", C.panel2, 9, UDim2.new(1, -114, 0.5, -11), UDim2.new(0, 34, 0, 22))
+            local g = button(rowF, "ANY", C.panel2, 9, UDim2.new(1, -77, 0.5, -11), UDim2.new(0, 34, 0, 22))
+            local wb = button(rowF, "WISH", C.panel2, 9, UDim2.new(1, -40, 0.5, -11), UDim2.new(0, 36, 0, 22))
+            local name = n
+            b.MouseButton1Click:Connect(function() PX.flag(name, "b") end)
+            g.MouseButton1Click:Connect(function() PX.flag(name, "g") end)
+            wb.MouseButton1Click:Connect(function() PX.flag(name, "w") end)
+            PX.rows[n] = { b = b, g = g, w = wb, name = nm }
+        end
+    end
+    U.pet.CanvasSize = UDim2.new(0, 0, 0, y + 10)
+    PX.built = true
+    PX.paintAll()
+end
+
+-- ---- TEAMS tab
+function TM.names()
+    local t = { "(none)" }
+    for _, tm in ipairs((TM.teams())) do t[#t + 1] = tm.name end
+    return t
+end
+function TM.cycle(k, dir)
+    local opts = TM.names()
+    local cur = CFG[k] ~= "" and CFG[k] or "(none)"
+    local i = table.find(opts, cur) or 1
+    i = ((i - 1 + dir) % #opts) + 1
+    CFG[k] = opts[i] == "(none)" and "" or opts[i]
+    TM.paint()
+end
+function TM.paint()
+    if not TM.built then return end
+    setToggle(U.tmT, CFG.Teams, "AUTO TEAMS: ON", "AUTO TEAMS: OFF")
+    local have = {}
+    for _, tm in ipairs((TM.teams())) do have[tm.name] = true end
+    for k, b in pairs(TM.pick) do
+        local v = CFG[k]
+        b.Text = v == "" and "(none)" or (have[v] and v or (v .. " (missing)"))
+        b.TextColor3 = (v ~= "" and not have[v]) and C.bad or C.text
+    end
+    if not U.tmLead:IsFocused() then U.tmLead.Text = tostring(CFG.GlazeLead) end
+    U.tmInfo.Text = (TM.msg or "") .. ("\nswitches %d | waxes finished %d | glazed %d"):format(TM.switches, TM.finished, TM.glazed)
+    local t, L = PX.srv(), {}
+    for _, w in ipairs(TM.list or {}) do
+        L[#L + 1] = ("st %-2s %-22s %9s  helps %d"):format(w.st.Name, prettyOf(key(w.name)):sub(1, 22), TM.clock(w.ends - t), w.helps)
+    end
+    U.tmList.Text = #L > 0 and table.concat(L, "\n") or "no waxes running"
+end
+function TM.build()
+    for _, ch in ipairs(U.team:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextLabel") then ch:Destroy() end
+    end
+    TM.pick = {}
+    local ord, y = 0, 12
+    local function add(h)
+        ord, y = ord + 1, y + h + 6
+        return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.team)
+    end
+    local function cap(t) lbl(add(14), t, 10, C.dim, true) end
+    local function picker(k)
+        local f = add(26)
+        local l = button(f, "<", C.panel2, 11, at(0, 0.14))
+        local m = button(f, "(none)", C.panel, 10, at(0.14, 0.72))
+        local r = button(f, ">", C.panel2, 11, at(0.86, 0.14))
+        l.MouseButton1Click:Connect(function() TM.cycle(k, -1) end)
+        r.MouseButton1Click:Connect(function() TM.cycle(k, 1) end)
+        m.MouseButton1Click:Connect(function() TM.cycle(k, 1) end)
+        TM.pick[k] = m
+    end
+    U.tmT = button(add(28), "AUTO TEAMS: OFF", C.panel2, 11, at(0, 1))
+    U.tmT.MouseButton1Click:Connect(function()
+        CFG.Teams = not CFG.Teams
+        if CFG.Teams and CFG.TeamNormal == "" then CFG.TeamNormal = TM.current() end -- start from what you wear now
+        TM.paint()
+    end)
+    U.tmInfo = lbl(add(30), "", 10, C.dim, false)
+    cap("NORMAL TEAM  (worn the rest of the time)")
+    picker("TeamNormal")
+    cap("GLAZE TEAM  (worn just before a wax finishes)")
+    picker("TeamGlaze")
+    local f = add(26)
+    U.tmLead = textbox(f, tostring(CFG.GlazeLead), "45", at(0, 0.2))
+    lbl(f, "sec before it finishes", 10, C.dim, false, at(0.22, 0.5))
+    local setB = button(f, "SET", C.accent, 11, at(0.75, 0.25))
+    setB.MouseButton1Click:Connect(function()
+        local n = tonumber(U.tmLead.Text)
+        if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) else U.tmLead.Text = tostring(CFG.GlazeLead) end
+        TM.paint()
+    end)
+    cap("WAX TEAM  (worn while a butter is placed)")
+    picker("TeamWax")
+    cap("YOUR WAXES  (time left, helps)")
+    U.tmList = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
+        TextSize = 9, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = false, Text = "" }, add(150))
+    round(U.tmList, 6)
+    mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 4) }, U.tmList)
+    lbl(add(78), "Teams are the loadouts you saved in the game's Teams page. A wax's time is fixed when it is placed and its glaze is rolled when it finishes, so the WAX team only needs to be on while placing and the GLAZE team only at the finish. A help never leaves a wax under 60 s, so 45 s is enough. While AUTO TEAMS is on it keeps putting your NORMAL team back.", 9, C.dim, false)
+    U.team.CanvasSize = UDim2.new(0, 0, 0, y + 10)
+    TM.built = true
+    TM.paint()
+end
+
 -- put a config that was just loaded onto the controls
 local function applyLoaded()
     U.secB.Text = tostring(CFG.Every)
@@ -2624,6 +3228,8 @@ local function applyLoaded()
     S.lastCollect = now()
     refreshTicks()
     CR.paint()
+    pcall(PX.paintAll)
+    pcall(TM.paint)
 end
 local function flash(box)
     task.spawn(function()
@@ -2736,6 +3342,8 @@ click(U.tabFarm, function() showTab("farm") end)
 click(U.tabBut, function() showTab("but") end)
 click(U.tabSet, function() showTab("set") end)
 click(U.tabCrt, function() showTab("crt") end)
+click(U.tabPet, function() showTab("pet") end)
+click(U.tabTeam, function() showTab("team") end)
 
 -- the floating button: tap to hide or show, drag to move
 local function setHidden(v)
@@ -2853,6 +3461,7 @@ click(U.minB, function()
     U.tabs.Visible = not minimized
     if minimized then
         U.farm.Visible, U.but.Visible, U.set.Visible, U.crt.Visible = false, false, false, false
+        U.pet.Visible, U.team.Visible = false, false
     else
         showTab(tab)
     end
@@ -2919,6 +3528,8 @@ local function refresh()
     if U.crt.Visible then
         if CR.built ~= CR.at then CR.build() else CR.paint() end
     end
+    if U.pet.Visible then PX.live() end
+    if U.team.Visible then TM.paint() end
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
@@ -2926,7 +3537,8 @@ local function refresh()
         learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or "")
     U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim
 end
-genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, dump = dump, CAT = CAT, LEARN = LEARN, buildList = buildList }
+genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, dump = dump, CAT = CAT, LEARN = LEARN, buildList = buildList,
+    PX = PX, TM = TM, CRATE = CRATE }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
@@ -2982,6 +3594,22 @@ task.spawn(function()
     if catReady() then note(("catalog: %d butters in %d rarities"):format(CAT.n, #CAT.rarOrder)) end
     local ok, cf = pcall(loadPad)
     if ok and cf and S.alive and not S.manualPad then S.manualPad = cf end
+end)
+task.spawn(function() -- pets: adopt from the pen and keep wishes going
+    while S.alive do
+        local ok, e = pcall(PX.buyTick)
+        if not ok then note("PET ERR " .. tostring(e)) task.wait(5) end
+        ok, e = pcall(PX.wishTick)
+        if not ok then note("WISH ERR " .. tostring(e)) task.wait(5) end
+        task.wait(0.75)
+    end
+end)
+task.spawn(function() -- pet teams
+    while S.alive do
+        local ok, e = pcall(TM.tick)
+        if not ok then note("TEAM ERR " .. tostring(e)) task.wait(3) end
+        task.wait(0.25)
+    end
 end)
 task.spawn(function() -- keep what the crates taught us
     while S.alive do

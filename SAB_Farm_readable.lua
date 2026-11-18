@@ -33,7 +33,9 @@ local CFG = {
     Confirm = 0.35,                -- match must hold this long before buying
     BuyGap = 1.2, PlaceTries = 3, PadDwell = 0.7,
     PetBuy = false, PetWish = false, -- PETS tab master switches
-    Pets = {},                     -- Pets[PetName] = { b = adopt it, g = Big only, w = keep a wish on it }
+    Pets = {},                     -- Pets[PetName] = { b = adopt it, g = Big only, w = keep a wish on it, f = Big goal }
+    AutoFuse = false,              -- fuse copies into Bigs as soon as a pet's goal can use them
+    AutoBuild = false,             -- work the role teams out again from your pets after fuses / new pets
     Teams = false,                 -- TEAMS tab: switch saved pet teams by itself
     TeamNormal = "", TeamFull = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
     Lite = false, HideHud = false, NoRender = false, FpsCap = 0, -- SETUP tab: smoother running
@@ -59,7 +61,7 @@ local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", la
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
-local PX, TM, PF = {}, {}, {} -- pets (adopt + wish), pet teams, smoother running; all they need lives inside them
+local PX, TM, PF, FU = {}, {}, {}, {} -- pets (adopt + wish), pet teams, smoother running, fusing; all they need lives inside them
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 ---------------------------------------------------------------- utils
@@ -513,14 +515,14 @@ local function configText()
     do
         local t = {}
         for n, w in pairs(CFG.Pets) do
-            local f = (w.b and "b" or "") .. (w.g and "g" or "") .. (w.w and "w" or "")
+            local f = (w.b and "b" or "") .. (w.g and "g" or "") .. (w.w and "w" or "") .. ((tonumber(w.f) or 0) > 0 and tostring(w.f) or "")
             if f ~= "" then t[#t + 1] = n .. "|" .. f end
         end
         table.sort(t)
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -562,7 +564,7 @@ local function applyConfig(raw)
             if not pets then pets = {} end
             if b ~= "-" and c ~= "" then
                 pets[b] = { b = c:find("b", 1, true) and true or nil, g = c:find("g", 1, true) and true or nil,
-                    w = c:find("w", 1, true) and true or nil }
+                    w = c:find("w", 1, true) and true or nil, f = tonumber(c:match("%d")) }
             end
         elseif a == "B" then
             if CFG[b] ~= nil then CFG[b] = (c == "1") end
@@ -1075,6 +1077,8 @@ end
 
 -- placing with the WAX team on: wax time is worked out by the server the moment the butter is placed
 function TM.place()
+    local tw = now()
+    while S.alive and TM.editing and now() - tw < 25 do nap(0.2) end -- a team rebuild in progress
     if CFG.Teams and CFG.TeamWax ~= "" then
         TM.placing = true
         local t0 = now()
@@ -1868,7 +1872,7 @@ function PX.buyTick()
         seen[s.Name] = true
         local name, var = s:GetAttribute("Pet"), s:GetAttribute("Variant") or ""
         local w = name and PX.want(name)
-        if w and w.b and I.Pets[name] and (not w.g or var == "Big") and not s:GetAttribute("A_" .. PX.uid)
+        if w and w.b and I.Pets[name] and (not w.g or var == "Big") and FU.wantMore(name, var, d) and not s:GetAttribute("A_" .. PX.uid)
             and (tonumber(s:GetAttribute("ExpiresAt")) or 0) > t + 1 and now() >= (PX.tryAt[s.Name] or 0) then
             local nice, price = PX.nice(name, var), I.Pets[name].price or 0
             if owned >= maxOwned then
@@ -1883,6 +1887,10 @@ function PX.buyTick()
                 if type(r) == "table" and r.ok then
                     owned = owned + 1
                     PX.buys = (PX.buys or 0) + 1
+                    PX.recent = PX.recent or {}
+                    local got = type(r.pet) == "table" and r.pet or {}
+                    table.insert(PX.recent, { id = tostring(got.id or ("?" .. now())), name = name, variant = var, at = now() })
+                    if #PX.recent > 30 then table.remove(PX.recent, 1) end
                     note("ADOPTED " .. nice)
                     msg = "adopted " .. nice
                 else
@@ -1904,9 +1912,10 @@ function PX.wishTick()
     PX.wishTry, PX.wishWhy = PX.wishTry or {}, PX.wishWhy or {}
     local w, mine, msg = PX.wishes(), 0, nil
     local share = (type(I.Wish) == "table" and I.Wish.cashShare) or 2
+    local dd = PX.data()
     for _, name in ipairs(PX.order()) do
         local want = PX.want(name)
-        if want and want.w then
+        if want and want.w and FU.wantMore(name, "", dd) then -- a Big goal that is covered needs no more wishes
             mine = mine + 1
             if not w[name] and now() >= (PX.wishTry[name] or 0) then
                 local credits = tonumber(plr:GetAttribute("PetWishCredits")) or 0
@@ -2034,6 +2043,8 @@ function TM.finishedOne(w, before)
 end
 function TM.tick()
     TM.list = TM.waxes()
+    if TM.editing and now() - (TM.editingSince or now()) > 120 then TM.editing = false end -- never stuck paused
+    if TM.editing then TM.msg = "rebuilding teams..." return end
     if not CFG.Teams then TM.want, TM.msg = "", "auto teams is off" return end
     local t = PX.srv()
     -- the wax we are covering with the glaze team: hold it until its station has been cleared
@@ -2125,24 +2136,366 @@ end
 function TM.glazeSoon() -- placing waits while the glaze team is covering a finish
     return CFG.Teams and CFG.TeamGlaze ~= "" and (TM.glazeFor ~= nil or now() < (TM.afterUntil or 0))
 end
+-- ---- fusing and team building
+-- Fuse: 7 non-Big copies of one pet (3 with the Fuse pass) -> one Big, by PetRequest("fuse", { ids = {...} }).
+-- Each ticked pet can have a goal of Big copies; buying and wishing stop once there is enough for it,
+-- and the fuse happens as soon as the copies are there. A fuse can use up pets your teams wear, so the
+-- teams are then worked out again from everything you own, one role at a time:
+--   farm  (stations free)      money and Apple Pie supply (luck, social luck, Eagle)
+--   full  (every station busy) money and wax stir (the only thing that speeds a running wax)
+--   glaze (at a finish)        the glaze gain per finish, money to break ties
+--   wax   (while placing)      the shortest wax, money to break ties
+FU.CAPS = { income = 0.5, price = 0.25, waxSpeed = 0.25, offline = 1, luck = 3, waxStirPerMinute = 30, cratePulls = 4,
+    glaze = 0.25, glazeUp = 0.5, headStart = 0.4, cashGiftPerMinute = 9, newFind = 2, longWax = 0.3 }
+FU.ROUND = { luck = true, luckyPull = true, crate = true, waxStir = true, socialLuck = true, cashGift = true }
+FU.buildMsg, FU.fuseMsg, FU.fused, FU.builds = "", "", 0, 0
+function FU.need() return plr:GetAttribute("FusePass") == true and 3 or 7 end
+function FU.caps()
+    local I = PX.info()
+    return (I and type(I.Caps) == "table") and I.Caps or FU.CAPS
+end
+function FU.value(name, variant) -- this pet's boost kind, value (Big included) and period
+    local I = PX.info()
+    local p = I and I.Pets[name]
+    if not (p and type(p.boost) == "table") then return nil end
+    local v
+    if type(I.boostValue) == "function" then
+        local ok, x = pcall(I.boostValue, name, (variant ~= "" and variant) or nil)
+        v = ok and tonumber(x) or nil
+    end
+    if not v then
+        v = p.boost.value or 0
+        if variant == "Big" then
+            local b = v * 1.5
+            v = FU.ROUND[p.boost.kind] and math.max(v + 1, math.floor(b + 0.5)) or b
+        end
+    end
+    return p.boost.kind, v, p.boost.every
+end
+function FU.stats(list)
+    local s, soc = {}, {}
+    for _, p in ipairs(list) do
+        local kind, v, every = FU.value(p.name, p.variant or "")
+        if kind then
+            if kind:sub(1, 6) == "social" then soc[kind] = math.max(soc[kind] or 0, v) -- only the best one counts
+            elseif kind == "waxStir" or kind == "cashGift" then s[kind] = (s[kind] or 0) + v * 60 / (every or 60)
+            elseif kind == "luckyPull" then s.luckyPull = (s.luckyPull or 0) + v / (every or 10)
+            else s[kind] = (s[kind] or 0) + v end
+        end
+    end
+    return s, soc
+end
+function FU.glazeGain(bonus, up) -- the game's GlazeOdds: worth of one finish, in plain-butter incomes
+    local base, mult, order = { 0.003, 0.0005, 0.0002 }, { 1.5, 2, 2.5 }, nil
+    local total = base[1] + base[2] + base[3]
+    local guild = tonumber(plr:GetAttribute("GuildUpGlaze")) or 0
+    local b = {}
+    for i = 1, 3 do b[i] = base[i] + bonus * base[i] / total + (i == 1 and guild or 0) end
+    local f = { b[1] * (1 - up), b[2] * (1 - up) + b[1] * up, b[3] + b[2] * up }
+    return f[1] * (mult[1] - 1) + f[2] * (mult[2] - 1) + f[3] * (mult[3] - 1)
+end
+function FU.score(role, list)
+    local c = FU.caps()
+    local s, soc = FU.stats(list)
+    local function cap(k) return math.min(s[k] or 0, c[k] or math.huge) end
+    local money = (1 + cap("income")) * (1 + (soc.socialIncome or 0)) * (1 + math.min(s.cashGift or 0, c.cashGiftPerMinute or 9) / 60)
+    local rolls = 1 + cap("luck") + (s.luckyPull or 0) + (soc.socialLuck or 0)
+    local pie = rolls * (1 + cap("newFind"))
+    local lm = math.log(money)
+    -- weights: money a little ahead of Apple Pie supply while stations are free; while every station is
+    -- busy, a stir pet only speeds one wax at a time (+30 s a minute is ~3% more finishes over 18 stations)
+    if role == "farm" then return lm + 0.7 * math.log(pie) end
+    if role == "full" then
+        local st = math.max(tonumber(plr:GetAttribute("WaxStations")) or 18, 1)
+        local stir = math.min(s.waxStir or 0, c.waxStirPerMinute or 30)
+        return lm + math.log(1 + stir / 60 / st) + 0.1 * math.log(pie)
+    end
+    if role == "glaze" then return FU.glazeGain(cap("glaze"), cap("glazeUp")) + 0.001 * lm end
+    if role == "wax" then
+        local speed = (1 + cap("waxSpeed") + cap("longWax")) * (1 + (soc.socialWax or 0))
+        local hs = 1 - (1 - cap("headStart")) * (1 - (soc.socialHeadStart or 0))
+        return math.log(speed) - math.log(1 - 0.5 * hs) + 0.001 * lm
+    end
+    return lm
+end
+function FU.best(role, pets, slots, keep) -- greedy fill, then swaps until nothing improves
+    keep = keep or {}
+    local chosen, used = {}, {}
+    local function listOf(idx) local l = {} for i, k in ipairs(idx) do l[i] = pets[k] end return l end
+    local function sc(idx)
+        local v = FU.score(role, listOf(idx))
+        for _, k in ipairs(idx) do if keep[pets[k].id] then v = v + 1e-7 end end -- ties: stay as you are
+        return v
+    end
+    for _ = 1, math.min(slots, #pets) do
+        local bi, bs
+        for k = 1, #pets do
+            if not used[k] then
+                chosen[#chosen + 1] = k
+                local v = sc(chosen)
+                chosen[#chosen] = nil
+                if not bs or v > bs + 1e-12 then bi, bs = k, v end
+            end
+        end
+        if not bi then break end
+        used[bi] = true
+        chosen[#chosen + 1] = bi
+    end
+    for _ = 1, 6 do
+        task.wait() -- spread the search over frames
+        local improved, cur = false, sc(chosen)
+        for a = 1, #chosen do
+            for k = 1, #pets do
+                if not used[k] then
+                    local old = chosen[a]
+                    chosen[a] = k
+                    local v = sc(chosen)
+                    if v > cur + 1e-9 then used[old], used[k], cur, improved = nil, true, v, true
+                    else chosen[a] = old end
+                end
+            end
+        end
+        if not improved then break end
+    end
+    local ids = {}
+    for i, k in ipairs(chosen) do ids[i] = tostring(pets[k].id) end
+    return ids, FU.score(role, listOf(chosen))
+end
+function FU.count(name, d, forFuse)
+    local regs, bigs = {}, 0
+    local arriving, seen = {}, {}
+    for _, id in ipairs(d.arriving or {}) do arriving[tostring(id)] = true end
+    for _, p in ipairs(d.pets or {}) do
+        seen[tostring(p.id)] = true
+        if p.name == name and not arriving[tostring(p.id)] then
+            if p.variant == "Big" then bigs = bigs + 1 elseif (p.variant or "") == "" then regs[#regs + 1] = p end
+        end
+    end
+    if not forFuse then -- pets adopted a moment ago that your pet list does not show yet still count
+        for _, a in ipairs(PX.recent or {}) do
+            if a.name == name and not seen[a.id] and now() - a.at < 20 then
+                if a.variant == "Big" then bigs = bigs + 1 else regs[#regs + 1] = a end
+            end
+        end
+    end
+    return regs, bigs
+end
+function FU.goal(name) local w = CFG.Pets[name] return w and tonumber(w.f) or 0 end
+function FU.wantMore(name, variant, d) -- smart buying: only what the Big goal still needs
+    local goal = FU.goal(name)
+    if goal <= 0 or not d then return true end
+    local regs, bigs = FU.count(name, d)
+    if bigs >= goal then return false end
+    if variant == "Big" then return true end
+    return #regs < FU.need() * (goal - bigs)
+end
+function FU.status(name, d)
+    local goal = FU.goal(name)
+    if goal <= 0 or not d then return nil end
+    local regs, bigs = FU.count(name, d)
+    if bigs >= goal then return ("Big %d/%d done"):format(bigs, goal) end
+    return ("%d/%d to fuse, Big %d/%d"):format(math.min(#regs, FU.need()), FU.need(), bigs, goal)
+end
+function FU.wear(ids) -- put on exactly these pets
+    local want = {}
+    for _, id in ipairs(ids) do want[tostring(id)] = true end
+    for _ = 1, 3 do
+        local d = PX.data()
+        if not d then return false end
+        for _, id in ipairs(d.equipped or {}) do
+            if not want[tostring(id)] then PX.call("unequip", id) task.wait(0.3) end
+        end
+        d = PX.data()
+        local have = {}
+        for _, id in ipairs(d.equipped or {}) do have[tostring(id)] = true end
+        for _, id in ipairs(ids) do
+            if not have[tostring(id)] then PX.call("equip", id) task.wait(0.3) end
+        end
+        task.wait(0.4)
+        d = PX.data()
+        local n, ok = 0, true
+        for _, id in ipairs(d.equipped or {}) do n = n + 1 if not want[tostring(id)] then ok = false end end
+        if ok and n == #ids then return true end
+    end
+    return false
+end
+function FU.saveTeam(name, ids)
+    if not FU.wear(ids) then return false, "could not put the pets on" end
+    local list = TM.teams()
+    local idx
+    for i, t in ipairs(list) do if t.name == name then idx = i break end end
+    local r
+    if idx then
+        r = PX.call("teamSave", idx)
+    else
+        r = PX.call("teamNew")
+        if type(r) == "table" and r.ok and r.index then
+            idx = r.index
+            task.wait(0.3)
+            PX.call("teamRename", { index = idx, name = name })
+        end
+    end
+    task.wait(0.4)
+    local d = PX.data()
+    local t = d and d.teams and idx and d.teams[idx]
+    if not t then return false, "the game did not save it" end
+    local got = {}
+    for _, id in ipairs(t.pets or {}) do got[tostring(id)] = true end
+    for _, id in ipairs(ids) do if not got[tostring(id)] then return false, "saved, but not with these pets" end end
+    return true
+end
+FU.ROLES = { { "TeamNormal", "farm" }, { "TeamFull", "full" }, { "TeamGlaze", "glaze" }, { "TeamWax", "wax" } }
+function FU.quiet() -- nothing about to finish, nothing being placed: a rebuild takes ~15 s
+    if TM.placing or TM.glazeSoon() then return false end
+    local t = PX.srv()
+    for _, w in ipairs(TM.list or {}) do if w.ends - t < (CFG.GlazeLead or 45) + 90 then return false end end
+    return true
+end
+function FU.plan() -- which of your role teams would change, and to what
+    local d = PX.data()
+    if not d then return {} end
+    local arriving = {}
+    for _, id in ipairs(d.arriving or {}) do arriving[tostring(id)] = true end
+    local pets = {}
+    for _, p in ipairs(d.pets or {}) do
+        if not arriving[tostring(p.id)] then pets[#pets + 1] = { id = tostring(p.id), name = p.name, variant = p.variant or "" } end
+    end
+    local byId = {}
+    for _, p in ipairs(pets) do byId[p.id] = p end
+    local slots = tonumber(d.slots) or 3
+    local out, seen = {}, {}
+    for _, r in ipairs(FU.ROLES) do
+        local name = CFG[r[1]]
+        if name ~= "" and not seen[name] then
+            seen[name] = true
+            local cur, curList, broken = {}, {}, false
+            for _, t in ipairs(d.teams or {}) do
+                if t.name == name then
+                    for _, id in ipairs(t.pets or {}) do
+                        local p = byId[tostring(id)]
+                        if p then cur[p.id] = true curList[#curList + 1] = p else broken = true end
+                    end
+                end
+            end
+            local ids, best = FU.best(r[2], pets, slots, cur)
+            local now0 = FU.score(r[2], curList)
+            local same = #ids == #curList
+            for _, id in ipairs(ids) do if not cur[id] then same = false end end
+            if not same and (broken or #curList < math.min(slots, #pets) or best > now0 + 1e-4) then
+                out[#out + 1] = { team = name, role = r[2], ids = ids, gain = best - now0 }
+            end
+        end
+    end
+    return out
+end
+function FU.rebuild(why)
+    local changes = FU.plan()
+    if #changes == 0 then FU.buildMsg = "teams are already the best your pets allow" return true end
+    if not FU.quiet() then FU.buildMsg = "a wax finishes soon - rebuilding the teams after it" return false end
+    TM.editing, TM.editingSince = true, now()
+    local okAll = true
+    local okRun, errRun = pcall(function()
+    for _, ch in ipairs(changes) do
+        local ok, err = FU.saveTeam(ch.team, ch.ids)
+        local d = PX.data()
+        local names = {}
+        for _, id in ipairs(ch.ids) do
+            for _, p in ipairs(d and d.pets or {}) do
+                if tostring(p.id) == id then names[#names + 1] = PX.nice(p.name, p.variant) end
+            end
+        end
+        if ok then note(("TEAM %s rebuilt (%s): %s"):format(ch.team, why or "pets changed", table.concat(names, ", ")))
+        else okAll = false note(("TEAM %s: %s"):format(ch.team, tostring(err))) end
+    end
+    end)
+    TM.editing, TM.nextTry = false, 0 -- always handed back, even after an error
+    if not okRun then okAll = false note("TEAM BUILD ERR " .. tostring(errRun)) end
+    FU.builds = FU.builds + 1
+    FU.buildMsg = okAll and ("teams rebuilt " .. os.date("%H:%M")) or "a team could not be saved - see the log"
+    return okAll
+end
+function FU.fuseTick()
+    if not CFG.AutoFuse or TM.editing then return end
+    local d = PX.data()
+    if not d then return end
+    local need = FU.need()
+    local inTeam, eq = {}, {}
+    for _, t in ipairs(d.teams or {}) do for _, id in ipairs(t.pets or {}) do inTeam[tostring(id)] = true end end
+    for _, id in ipairs(d.equipped or {}) do eq[tostring(id)] = true end
+    FU.failUntil = FU.failUntil or {}
+    for name, w in pairs(CFG.Pets) do
+        local goal = tonumber(w.f) or 0
+        local regs, bigs = FU.count(name, d, true)
+        if goal > 0 and bigs < goal and #regs >= need and now() >= (FU.failUntil[name] or 0) then
+            -- spare copies first: not worn, not in a team, not one you named
+            table.sort(regs, function(a, b)
+                local ra = (eq[tostring(a.id)] and 4 or 0) + (inTeam[tostring(a.id)] and 2 or 0) + (a.named and 1 or 0)
+                local rb = (eq[tostring(b.id)] and 4 or 0) + (inTeam[tostring(b.id)] and 2 or 0) + (b.named and 1 or 0)
+                if ra ~= rb then return ra < rb end
+                return tostring(a.id) < tostring(b.id)
+            end)
+            local ids, worn = {}, {}
+            for i = 1, need do
+                ids[i] = tostring(regs[i].id)
+                if eq[ids[i]] then worn[#worn + 1] = ids[i] end
+            end
+            TM.editing, TM.editingSince = true, now()
+            for _, id in ipairs(worn) do PX.call("unequip", id) task.wait(0.3) end
+            local r = PX.call("fuse", { ids = ids })
+            TM.editing, TM.nextTry = false, 0
+            if type(r) == "table" and r.ok then
+                FU.fused = FU.fused + 1
+                FU.dirtyAt = now()
+                note(("FUSED %d %s -> Big %s"):format(need, PX.nice(name), PX.nice(name)))
+                FU.fuseMsg = ("fused a Big %s %s"):format(PX.nice(name), os.date("%H:%M"))
+            else
+                FU.failUntil[name] = now() + 120
+                note(("fuse %s failed: %s"):format(PX.nice(name), type(r) == "table" and tostring(r.reason or "no reason given") or "no answer"))
+            end
+            return -- one fuse at a time; the pet list changes under us
+        end
+    end
+end
+function FU.tick()
+    pcall(FU.fuseTick)
+    if not CFG.AutoBuild or not CFG.Teams then return end
+    local d = PX.data()
+    if not d then return end
+    local sig = {}
+    for _, p in ipairs(d.pets or {}) do sig[#sig + 1] = tostring(p.id) end
+    table.sort(sig)
+    sig = table.concat(sig, ",")
+    if sig ~= FU.sig then FU.sig, FU.dirtyAt = sig, now() end
+    local due = (FU.dirtyAt and now() - FU.dirtyAt > 8) or now() - (FU.lastBuild or 0) > 900
+    if due and not TM.editing then
+        local ok = FU.rebuild(FU.dirtyAt and "pets changed" or "check")
+        if ok then FU.dirtyAt, FU.lastBuild = nil, now() end
+    end
+end
 -- ---- smoother overnight running
 -- Measured on your phone (Nov 17): about 22 fps with the game's own Performance Mode already on.
 -- Switching the 3D view off did not raise fps (the phone is busy with the game's per-frame scripts),
 -- but turning the floating labels off did (+5 fps), and hiding the game's screens did (+3 fps).
 -- Everything here is client-side and undone when switched off or when the script is killed.
-PF.bb, PF.fx, PF.post, PF.hud = {}, {}, {}, {}
+PF.bb, PF.fx, PF.post, PF.hud = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" }), {}, {}
+PF.watch = setmetatable({}, { __mode = "k" })
 PF.mem, PF.memPeak, PF.fps = 0, 0, 0
 function PF.isFx(d)
     return d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") or d:IsA("Fire") or d:IsA("Smoke")
         or d:IsA("Sparkles") or d:IsA("Light")
 end
+-- Every label and effect is watched, not only the ones showing right now: the game switches a wax
+-- station's timer on when a wax starts, so a timer that was off when LITE began must stay off too.
+-- PF.bb / PF.fx remember what the game wants each one to be, so switching LITE off puts that back.
 function PF.muteOne(d)
     if not CFG.Lite or not d.Parent then return end
-    if d:IsA("BillboardGui") then
-        if PF.bb[d] == nil and d.Enabled then PF.bb[d] = true d.Enabled = false end
-    elseif PF.isFx(d) then
-        if PF.fx[d] == nil and d.Enabled then PF.fx[d] = true d.Enabled = false end
-    end
+    local store = (d:IsA("BillboardGui") and PF.bb) or (PF.isFx(d) and PF.fx) or nil
+    if not store or store[d] ~= nil then return end
+    store[d] = d.Enabled
+    if d.Enabled then d.Enabled = false end
+    PF.watch[d] = d:GetPropertyChangedSignal("Enabled"):Connect(function()
+        if CFG.Lite and d.Enabled then store[d] = true d.Enabled = false end
+    end)
 end
 function PF.lite(on)
     CFG.Lite = on
@@ -2167,10 +2520,12 @@ function PF.lite(on)
         pcall(function() PF.oldShadows = PF.oldShadows == nil and L.GlobalShadows or PF.oldShadows L.GlobalShadows = false end)
         pcall(function() PF.oldDeco = PF.oldDeco == nil and WS.Terrain.Decoration or PF.oldDeco WS.Terrain.Decoration = false end)
     else
-        for d in pairs(PF.bb) do pcall(function() if d.Parent then d.Enabled = true end end) end
-        for d in pairs(PF.fx) do pcall(function() if d.Parent then d.Enabled = true end end) end
+        for _, c in pairs(PF.watch) do pcall(function() c:Disconnect() end) end
+        for d, want in pairs(PF.bb) do pcall(function() if d.Parent then d.Enabled = want end end) end
+        for d, want in pairs(PF.fx) do pcall(function() if d.Parent then d.Enabled = want end end) end
         for d in pairs(PF.post) do pcall(function() if d.Parent then d.Enabled = true end end) end
-        PF.bb, PF.fx, PF.post, PF.queue = {}, {}, {}, {}
+        PF.bb, PF.fx = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+        PF.watch, PF.post, PF.queue = setmetatable({}, { __mode = "k" }), {}, {}
         local L = game:GetService("Lighting")
         if PF.oldShadows ~= nil then pcall(function() L.GlobalShadows = PF.oldShadows end) PF.oldShadows = nil end
         if PF.oldDeco ~= nil then pcall(function() WS.Terrain.Decoration = PF.oldDeco end) PF.oldDeco = nil end
@@ -3054,11 +3409,17 @@ function PX.paintRow(name)
     r.g.BackgroundColor3 = w.g and C.accent or C.panel2
     r.g.Text = w.g and "BIG" or "ANY"
     r.w.BackgroundColor3 = w.w and C.warn or C.panel2
+    local f = tonumber(w.f) or 0
+    r.f.Text = f > 0 and (f .. " BIG") or "FUSE"
+    r.f.BackgroundColor3 = f > 0 and C.good or C.panel2
 end
 function PX.flag(name, f)
     local w = CFG.Pets[name] or {}
-    if w[f] then w[f] = nil else w[f] = true end
-    CFG.Pets[name] = (w.b or w.g or w.w) and w or nil
+    if f == "f" then
+        local n = ((tonumber(w.f) or 0) + 1) % 4 -- FUSE -> 1 BIG -> 2 BIG -> 3 BIG -> FUSE
+        w.f = n > 0 and n or nil
+    elseif w[f] then w[f] = nil else w[f] = true end
+    CFG.Pets[name] = (w.b or w.g or w.w or w.f) and w or nil
     PX.paintRow(name)
 end
 function PX.paintAll()
@@ -3066,6 +3427,7 @@ function PX.paintAll()
     if U.pbT then
         setToggle(U.pbT, CFG.PetBuy, "AUTO ADOPT: ON", "AUTO ADOPT: OFF")
         setToggle(U.pwT, CFG.PetWish, "AUTO WISH: ON", "AUTO WISH: OFF")
+        setToggle(U.pfT, CFG.AutoFuse, "AUTO FUSE: ON", "AUTO FUSE: OFF")
     end
 end
 function PX.live() -- once a second while the tab is open: wish timers and status lines
@@ -3073,10 +3435,12 @@ function PX.live() -- once a second while the tab is open: wish timers and statu
     if now() - (PX.liveAt or 0) < 1 then return end
     PX.liveAt = now()
     local w = PX.wishes()
+    local d = PX.data()
     for n, r in pairs(PX.rows) do
         r.name.Text = PX.nice(n) .. (w[n] and ("   * wish %dm"):format(math.ceil(w[n] / 60)) or "")
+        local st = FU.status(n, d)
+        r.desc.Text = st and (st .. " | " .. r.boostText) or r.boostText
     end
-    local d = PX.data()
     local cr = tonumber(plr:GetAttribute("PetWishCredits")) or 0
     U.pInfo.Text = ("pets %d/%d | cash $%s%s\nadopt: %s\nwish: %s"):format(d and #(d.pets or {}) or 0, d and tonumber(d.maxOwned) or 60,
         fmt(PX.money()), cr > 0 and (" | free wishes " .. cr) or "", PX.buyMsg ~= "" and PX.buyMsg or "-", PX.wishMsg ~= "" and PX.wishMsg or "-")
@@ -3093,12 +3457,14 @@ function PX.build()
         return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.pet)
     end
     local f = add(28)
-    U.pbT = button(f, "AUTO ADOPT: OFF", C.panel2, 10, at(0, 0.5))
-    U.pwT = button(f, "AUTO WISH: OFF", C.panel2, 10, at(0.5, 0.5))
+    U.pbT = button(f, "AUTO ADOPT: OFF", C.panel2, 9, at(0, 0.34))
+    U.pwT = button(f, "AUTO WISH: OFF", C.panel2, 9, at(0.34, 0.33))
+    U.pfT = button(f, "AUTO FUSE: OFF", C.panel2, 9, at(0.67, 0.33))
     U.pbT.MouseButton1Click:Connect(function() CFG.PetBuy = not CFG.PetBuy PX.paintAll() end)
     U.pwT.MouseButton1Click:Connect(function() CFG.PetWish = not CFG.PetWish PX.paintAll() end)
+    U.pfT.MouseButton1Click:Connect(function() CFG.AutoFuse = not CFG.AutoFuse PX.paintAll() end)
     U.pInfo = lbl(add(44), "", 10, C.dim, false)
-    lbl(add(40), "BUY: adopt it whenever it is in the pen.  ANY/BIG: BIG = only its Big version.  WISH: keep a wish on it here (costs 2x its price, 20 min, one per pet per server).", 9, C.dim, false)
+    lbl(add(52), "BUY: adopt it whenever it is in the pen.  ANY/BIG: BIG = only its Big version.  WISH: keep a wish on it here (2x its price, 20 min, one per pet per server).  FUSE: how many Bigs you want - buying and wishing stop once there is enough, and AUTO FUSE makes them.", 9, C.dim, false)
     if not I then
         lbl(add(30), "pet list not loaded yet - open this tab again in a moment", 11, C.warn, false)
         U.pet.CanvasSize = UDim2.new(0, 0, 0, y)
@@ -3121,17 +3487,20 @@ function PX.build()
         for _, n in ipairs(byR[r]) do
             local rowF = mk("Frame", { Size = FILL, BackgroundColor3 = C.bg, BorderSizePixel = 0 }, add(38))
             round(rowF, 5)
-            local nm = lbl(rowF, PX.nice(n), 11, PX.RC[r] or C.text, true, UDim2.new(0, 6, 0, 2), UDim2.new(1, -122, 0, 17))
+            local nm = lbl(rowF, PX.nice(n), 11, PX.RC[r] or C.text, true, UDim2.new(0, 6, 0, 2), UDim2.new(1, -150, 0, 17))
             local ok, ds = pcall(function() return I.describe(n) end)
-            lbl(rowF, ok and tostring(ds) or "", 9, C.dim, false, UDim2.new(0, 6, 0, 19), UDim2.new(1, -122, 0, 17))
-            local b = button(rowF, "BUY", C.panel2, 9, UDim2.new(1, -114, 0.5, -11), UDim2.new(0, 34, 0, 22))
-            local g = button(rowF, "ANY", C.panel2, 9, UDim2.new(1, -77, 0.5, -11), UDim2.new(0, 34, 0, 22))
-            local wb = button(rowF, "WISH", C.panel2, 9, UDim2.new(1, -40, 0.5, -11), UDim2.new(0, 36, 0, 22))
+            local bt = ok and tostring(ds) or ""
+            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 6, 0, 19), UDim2.new(1, -150, 0, 17))
+            local b = button(rowF, "BUY", C.panel2, 8, UDim2.new(1, -144, 0.5, -11), UDim2.new(0, 32, 0, 22))
+            local g = button(rowF, "ANY", C.panel2, 8, UDim2.new(1, -110, 0.5, -11), UDim2.new(0, 32, 0, 22))
+            local wb = button(rowF, "WISH", C.panel2, 8, UDim2.new(1, -76, 0.5, -11), UDim2.new(0, 34, 0, 22))
+            local fb = button(rowF, "FUSE", C.panel2, 8, UDim2.new(1, -40, 0.5, -11), UDim2.new(0, 38, 0, 22))
             local name = n
             b.MouseButton1Click:Connect(function() PX.flag(name, "b") end)
             g.MouseButton1Click:Connect(function() PX.flag(name, "g") end)
             wb.MouseButton1Click:Connect(function() PX.flag(name, "w") end)
-            PX.rows[n] = { b = b, g = g, w = wb, name = nm }
+            fb.MouseButton1Click:Connect(function() PX.flag(name, "f") end)
+            PX.rows[n] = { b = b, g = g, w = wb, f = fb, name = nm, desc = dl, boostText = bt }
         end
     end
     U.pet.CanvasSize = UDim2.new(0, 0, 0, y + 10)
@@ -3186,6 +3555,7 @@ end
 function TM.paint()
     if not TM.built then return end
     setToggle(U.tmT, CFG.Teams, "AUTO TEAMS: ON", "AUTO TEAMS: OFF")
+    setToggle(U.tmBuild, CFG.AutoBuild, "AUTO BUILD TEAMS: ON", "AUTO BUILD TEAMS: OFF")
     local have = {}
     for _, tm in ipairs((TM.teams())) do have[tm.name] = true end
     for k, b in pairs(TM.pick) do
@@ -3194,7 +3564,8 @@ function TM.paint()
         b.TextColor3 = (v ~= "" and not have[v]) and C.bad or C.text
     end
     if not U.tmLead:IsFocused() then U.tmLead.Text = tostring(CFG.GlazeLead) end
-    U.tmInfo.Text = (TM.msg or "") .. ("\nswitches %d | waxes finished %d | glazed %d"):format(TM.switches, TM.finished, TM.glazed)
+    U.tmInfo.Text = (TM.msg or "") .. ("\nswitches %d | finished %d | glazed %d | fused %d"):format(TM.switches, TM.finished, TM.glazed, FU.fused)
+        .. (FU.buildMsg ~= "" and ("\n" .. FU.buildMsg) or "")
     local t, L = PX.srv(), {}
     for _, w in ipairs(TM.list or {}) do
         L[#L + 1] = ("st %-2s %-22s %9s  helps %d"):format(w.st.Name, prettyOf(key(w.name)):sub(1, 22), TM.clock(w.ends - t), w.helps)
@@ -3228,7 +3599,16 @@ function TM.build()
         if CFG.Teams and CFG.TeamNormal == "" then CFG.TeamNormal = TM.current() end -- start from what you wear now
         TM.paint()
     end)
-    U.tmInfo = lbl(add(30), "", 10, C.dim, false)
+    U.tmInfo = lbl(add(42), "", 10, C.dim, false)
+    local bf = add(26)
+    U.tmBuild = button(bf, "AUTO BUILD TEAMS: OFF", C.panel2, 9, at(0, 0.62))
+    U.tmBuildNow = button(bf, "BUILD NOW", C.warn, 9, at(0.62, 0.38))
+    U.tmBuild.MouseButton1Click:Connect(function() CFG.AutoBuild = not CFG.AutoBuild TM.paint() end)
+    U.tmBuildNow.MouseButton1Click:Connect(function()
+        if TM.editing then return end
+        FU.buildMsg = "building..."
+        task.spawn(function() local ok, e = pcall(FU.rebuild, "you asked") if not ok then note("BUILD ERR " .. tostring(e)) end end)
+    end)
     cap("NORMAL TEAM  (worn the rest of the time)")
     picker("TeamNormal")
     cap("FULL TEAM  (worn while every station is busy)")
@@ -3549,7 +3929,7 @@ local function refresh()
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
-    PX = PX, TM = TM, CRATE = CRATE }
+    PX = PX, TM = TM, CRATE = CRATE, FU = FU }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
@@ -3630,6 +4010,14 @@ task.spawn(function() -- smoother running: fps, memory watchdog, labels added si
         PF.fps, frames, t0 = frames / math.max(t - t0, 0.001), 0, t
         local ok, e = pcall(PF.tick)
         if not ok then note("PERF ERR " .. tostring(e)) task.wait(5) end
+    end
+end)
+task.spawn(function() -- fusing and team building
+    task.wait(10)
+    while S.alive do
+        local ok, e = pcall(FU.tick)
+        if not ok then note("FUSE ERR " .. tostring(e)) task.wait(10) end
+        task.wait(4)
     end
 end)
 task.spawn(function() -- pet teams

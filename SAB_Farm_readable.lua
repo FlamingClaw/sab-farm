@@ -631,24 +631,40 @@ local function findSelfPath()
     return best
 end
 F.stub = [[
--- SAB autoloader: finds the saved SAB farm script and runs it on join.
+-- SAB autoloader v2: loads the newest SAB farm from GitHub on every join (a saved copy if GitHub is down).
 task.spawn(function()
-    task.wait(8)
-    if type(listfiles) ~= "function" or type(readfile) ~= "function" then return end
-    for _, d in ipairs({ "", "scripts", "Scripts", "Delta", "Delta/Scripts", "SAB" }) do
-        local ok, fs = pcall(listfiles, d)
-        if ok and type(fs) == "table" then
-            for _, f in ipairs(fs) do
-                local s, low = tostring(f), tostring(f):lower()
-                if low:sub(-4) == ".lua" and low:find("sab_farm", 1, true) and not low:find("autoload", 1, true) then
-                    local okr, src = pcall(readfile, s)
-                    if okr and type(src) == "string" and #src > 1000 then
-                        local fn = loadstring(src)
-                        if fn then pcall(fn) return end
+    task.wait(6)
+    local G = (type(getgenv) == "function" and getgenv()) or _G
+    if type(G.SAB) == "table" and type(G.SAB.S) == "table" and G.SAB.S.alive then return end -- already running
+    local url, cache, src = "https://raw.githubusercontent.com/FlamingClaw/sab-farm/main/SAB_Farm.lua", "SAB/SAB_Farm_cache.lua", nil
+    for _ = 1, 3 do
+        local ok, s = pcall(function() return game:HttpGet(url .. "?t=" .. tostring(tick())) end)
+        if ok and type(s) == "string" and #s > 1000 and s:find("SAB_KILL", 1, true) then src = s break end
+        task.wait(3)
+    end
+    if src then
+        pcall(function() if type(makefolder) == "function" then pcall(makefolder, "SAB") end writefile(cache, src) end)
+    else
+        local ok, s = pcall(readfile, cache)
+        if ok and type(s) == "string" and #s > 1000 then src = s end
+    end
+    if not src and type(listfiles) == "function" then -- an older setup: a copy saved by hand
+        for _, d in ipairs({ "", "scripts", "Scripts", "Delta", "Delta/Scripts", "SAB" }) do
+            local ok, fs = pcall(listfiles, d)
+            if ok and type(fs) == "table" then
+                for _, f in ipairs(fs) do
+                    local low = tostring(f):lower()
+                    if not src and low:sub(-4) == ".lua" and low:find("sab_farm", 1, true) and not low:find("autoload", 1, true) then
+                        local okr, s = pcall(readfile, tostring(f))
+                        if okr and type(s) == "string" and #s > 1000 then src = s end
                     end
                 end
             end
         end
+    end
+    if src then
+        local fn = loadstring(src)
+        if fn then pcall(fn) end
     end
 end)
 ]]
@@ -656,17 +672,14 @@ local function installAutoexec()
     if not canWrite() then return false, "this executor cannot write files" end
     ensureDir("autoexec")
     if not writeTo(F.exec, F.stub) then return false, "could not write to the autoexec folder" end
-    local p = findSelfPath()
-    return true, p and ("it will load " .. p) or "now save this script in Delta so the loader can find it"
+    return true, "it loads the newest version from GitHub on every join"
 end
 -- rejoining after a disconnect or a server restart
 local TPS = (function() local ok, v = pcall(function() return game:GetService("TeleportService") end) return ok and v or nil end)()
 local function queueSelf()
     if type(queueonteleport) ~= "function" and type(queue_on_teleport) ~= "function" then return false end
     local q = queueonteleport or queue_on_teleport
-    local p = findSelfPath()
-    if not p then return false end
-    return (pcall(q, ("local ok,s=pcall(readfile,%q) if ok and s then local f=loadstring(s) if f then task.spawn(f) end end"):format(p)))
+    return (pcall(q, F.stub)) -- the same loader: newest from GitHub, the saved copy if GitHub is down
 end
 local function rejoin(why)
     if S.rejoining then return end
@@ -675,7 +688,7 @@ local function rejoin(why)
     pcall(saveLearn)
     if S.autoload then pcall(saveConfig, S.autoload) end
     local queued = queueSelf()
-    note(queued and "queued the script for the new server" or "no saved copy found - set up autoexec for a clean restart")
+    note(queued and "queued the script for the new server" or "this executor cannot queue scripts - set up autoexec for a clean restart")
     task.spawn(function()
         for _ = 1, 30 do
             if not TPS then break end
@@ -3549,9 +3562,13 @@ pcall(PF.applyAll) -- a config loaded at launch brings its smoother-running swit
 pcall(refresh)
 task.spawn(function()
     local p = findSelfPath()
-    U.rejMsg.Text = p and ("after a rejoin it restarts from\n" .. p) or
-        "no saved copy of this script found, so after a rejoin you would start it by hand"
-    U.autoMsg.Text = (readIf(F.exec) ~= nil) and "autoexec loader is installed" or "not installed yet"
+    U.rejMsg.Text = "after a rejoin it restarts with the newest version from GitHub" .. (p and ("\n(backup: " .. p .. ")") or "")
+    local cur = readIf(F.exec)
+    if cur and not cur:find("SAB autoloader v2", 1, true) then -- an older loader that looked for a saved file only
+        writeTo(F.exec, F.stub)
+        note("autoexec updated: it now loads the newest version from GitHub")
+    end
+    U.autoMsg.Text = (readIf(F.exec) ~= nil) and "autoexec loader is installed (loads from GitHub)" or "not installed yet"
     pcall(watchDisconnect)
 end)
 task.spawn(function()

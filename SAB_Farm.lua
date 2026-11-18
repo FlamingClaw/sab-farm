@@ -504,7 +504,7 @@ local uu=(1+bi("income"))*(1+(fi.socialIncome or 0))*(1+math.min(fh.cashGift or 
 local uv=1+bi("luck")+(fh.luckyPull or 0)+(fi.socialLuck or 0)local nQ=uv*(1+bi("newFind"))local di=math.log(uu)
 local uw=math.max(tonumber(C:GetAttribute("WaxStations"))or 18,1)local ik=(1+bi("waxSpeed")+bi("longWax"))*(1+(fi.socialWax or 0))
 +math.min(fh.waxStir or 0,ij.waxStirPerMinute or 30)/60/uw local ux=1-(1-bi("headStart"))*(1-(fi.socialHeadStart or 0))
-if fg=="farm"then return di+0.7*math.log(nQ)+0.1*math.log(ik)end if fg=="full"then return di+0.25*math.log(ik)+0.02*math.log(nQ)end
+if fg=="farm"then return di+0.7*math.log(nQ)+0.1*math.log(ik)end if fg=="full"then return di+0.4*math.log(ik)+0.02*math.log(nQ)end
 if fg=="glaze"then return x.glazeGain(bi("glaze"),bi("glazeUp"))+0.001*di end if fg=="wax"then return-math.log(1-0.5*ux)+0.001*di+0.001*math.log(ik)end
 return di end function x.best(nR,cb,uy,il)il=il or{}local ak,dj={},{}local function nS(uz)local nT={}for uA,uB in ipairs(uz)do nT[uA]=cb[uB]end return nT end
 local function im(nU)local io=x.score(nR,nS(nU))for yJ,uC in ipairs(nU)do if il[cb[uC].id]then io=io+1e-7 end end

@@ -2290,11 +2290,13 @@ function FU.score(role, list)
     local speed = (1 + cap("waxSpeed") + cap("longWax")) * (1 + (soc.socialWax or 0))
         + math.min(s.waxStir or 0, c.waxStirPerMinute or 30) / 60 / st
     local hs = 1 - (1 - cap("headStart")) * (1 - (soc.socialHeadStart or 0))
-    -- weights: with the stack full of Apple Pie a finish only pays through its glaze (~0.08% more income
-    -- for good per finish with the glaze team), so wax speed counts for about a quarter of money while
-    -- every station is busy, and a little while stations wait for Apple Pies (luck fills them)
+    -- weights: with the stack full of Apple Pie a finish only pays through its glaze: ~0.085% more income
+    -- for good per finish with the glaze team. With every station busy, x1.71 speed is ~3.6 more finishes
+    -- an hour, which over ~3 days of farming is worth about as much as +20% money: so speed counts 0.4
+    -- of money there. While stations wait for Apple Pies, luck fills them and speed only brings the
+    -- glaze sooner, so it counts a little.
     if role == "farm" then return lm + 0.7 * math.log(pie) + 0.1 * math.log(speed) end
-    if role == "full" then return lm + 0.25 * math.log(speed) + 0.02 * math.log(pie) end
+    if role == "full" then return lm + 0.4 * math.log(speed) + 0.02 * math.log(pie) end
     if role == "glaze" then return FU.glazeGain(cap("glaze"), cap("glazeUp")) + 0.001 * lm end
     if role == "wax" then return -math.log(1 - 0.5 * hs) + 0.001 * lm + 0.001 * math.log(speed) end
     return lm

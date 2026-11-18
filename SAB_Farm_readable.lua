@@ -3084,6 +3084,11 @@ function HX.step()
         HX.skipIt(w.id, "helped")
         note(("HELPED %s's wax (station %s)"):format(w.p.DisplayName, w.st.Name))
         HX.msg = ("helped %d waxes here%s"):format(HX.n, HX.calls > 0 and (", " .. HX.calls .. " for the guild") or "")
+    elseif ok and type(v) == "table" and tostring(v.reason or ""):lower():find("moment", 1, true) then
+        -- "One moment!": the server's pace limit (about one help a second and a half, seen live). Not
+        -- a no for this wax: wait a little and ask again
+        HX.waits = (HX.waits or 0) + 1
+        HX.nextAt = now() + 1.6
     else
         local why = (ok and type(v) == "table" and tostring(v.reason or "refused")) or ("error: " .. tostring(v))
         HX.skipIt(w.id, why)
@@ -3094,7 +3099,7 @@ function HX.step()
             HX.goHome()
         end
     end
-    HX.nextAt = math.max(HX.nextAt, now() + 0.4)
+    HX.nextAt = math.max(HX.nextAt, now() + 1.2)
 end
 function HX.onCall(c) -- ClanEvent("call", { p = preset, u = userId, n = name, ... })
     if not CFG.HelpGuild or type(c) ~= "table" or c.p ~= "help" or c.mine or c.u == PX.uid or not c.u then return end

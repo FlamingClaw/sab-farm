@@ -3007,10 +3007,12 @@ local function decide()
     if w < CFG.Confirm then return nil, ("confirming %s (%.2fs)"):format(id.shown, w), "ok" end
     return "buy", ("buying %s via %s"):format(id.shown, id.src), "ok"
 end
--- ---- ghost: out of sight under the floor
+-- ---- ghost: out of sight
 -- Only your position reaches the other players (your client owns your character's physics), so this
--- is what can be hidden: between jobs the character is pinned 11 studs under where it last stood
--- (inside the ground or the plot's floor), and helps are sent from under the other player's station.
+-- is what can be hidden. Between jobs the character waits inside the solid ground under your base
+-- (the map's 500-stud baseplate, whatever floor your plot is on: "under the floor" left you hanging
+-- in the air under raised floors). Helps are sent from INSIDE the waxing butter: its solid 24x6x6
+-- body hides a whole character and its middle is 0 studs from the station (measured Nov 19).
 -- Name tags (VipTag, ClanTag), the leaderboard and the name over your head are the server's and each
 -- viewer's own: hiding them here would only hide them on your screen. Your camera goes under too.
 PF.DEPTH = 11
@@ -3054,10 +3056,25 @@ function PF.home()
     local g = groundPos(p.X, h.Position.Y, p.Z, { h })
     return CFrame.new(p.X, (g and g.Y or h.Position.Y) + hipH(c), p.Z)
 end
+function PF.ground(x, y, z) -- top of the LAST solid straight down (the map's ground, not a floor or deck)
+    local list, last = { plr.Character }, nil
+    for _ = 1, 12 do
+        local rp = RaycastParams.new()
+        rp.FilterType = Enum.RaycastFilterType.Exclude
+        rp.FilterDescendantsInstances = list
+        local r = WS:Raycast(Vector3.new(x, y, z), Vector3.new(0, -2000, 0), rp)
+        if not r then break end
+        last, y = r, r.Position.Y - 0.05
+        list[#list + 1] = r.Instance
+    end
+    return last and last.Position.Y
+end
 function PF.parkHome()
     local hm = PF.home()
     if not hm then return false end
-    PF.pin(hm - Vector3.new(0, PF.DEPTH, 0), hm) -- under your own ground, next to your pad
+    local p = hm.Position
+    local g = PF.ground(p.X, p.Y + 300, p.Z) or (p.Y - 3)
+    PF.pin(CFrame.new(p.X, g - 8, p.Z), hm) -- inside the ground under your base
     return true
 end
 function PF.parkTick() -- called by the main loop when the farm is idle
@@ -3329,7 +3346,7 @@ function HX.step()
     local mid = (ph.Position + w.st:GetPivot().Position) / 2 -- between the butter and the station's own centre
     local tries = HX.tries[w.id] or 0
     if CFG.Ghost and tries == 0 and not CF.seat() then
-        PF.pin(CFrame.new(mid.X, ph.Position.Y - PF.DEPTH, mid.Z)) -- under their floor, ~12 studs from both
+        PF.pin(ph.CFrame) -- inside their butter: hidden, and right at the station
     else
         PF.unpin(true)
         local g = tries == 0 and groundPos(mid.X, ph.Position.Y, mid.Z, { ph })

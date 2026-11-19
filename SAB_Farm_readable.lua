@@ -3042,18 +3042,29 @@ function PF.unpin(stay) -- back to the surface spot it went under from (stay: le
         nap(0.1)
     end
 end
+-- Home for a ghost: always the same spot, beside your own pad on the ground (seen live: parking
+-- under wherever it last stood once left it hanging under a neighbour's raised deck, in plain view)
+function PF.home()
+    local h, c = S.plot and S.plot:FindFirstChild("RolledSquishyPlaceHolder"), char()
+    if not (h and h:IsA("BasePart") and c) then return nil end
+    local pc = plateCenter() or h.Position
+    local d = Vector3.new(pc.X - h.Position.X, 0, pc.Z - h.Position.Z)
+    d = d.Magnitude > 0.1 and d.Unit or Vector3.new(0, 0, 1)
+    local p = h.Position + d * 6
+    local g = groundPos(p.X, h.Position.Y, p.Z, { h })
+    return CFrame.new(p.X, (g and g.Y or h.Position.Y) + hipH(c), p.Z)
+end
+function PF.parkHome()
+    local hm = PF.home()
+    if not hm then return false end
+    PF.pin(hm - Vector3.new(0, PF.DEPTH, 0), hm) -- under your own ground, next to your pad
+    return true
+end
 function PF.parkTick() -- called by the main loop when the farm is idle
     if not (CFG.Ghost and S.running) or PF.hold or S.busy then return end
     local c = char()
     if not c or CF.seat() then return end -- seated at the campfire: stay on the log
-    local hrp = c.HumanoidRootPart
-    if hrp.Position.Y < (WS.FallenPartsDestroyHeight or -500) + 100 then return end
-    local sf = PF.surface
-    if sf and hrp.Position.Y < sf.Position.Y - 5 and (hrp.Position - sf.Position).Magnitude < 40 then
-        PF.pin(sf - Vector3.new(0, PF.DEPTH, 0)) -- still under from before: never go deeper than one step
-    else
-        PF.pin(hrp.CFrame - Vector3.new(0, PF.DEPTH, 0), hrp.CFrame)
-    end
+    PF.parkHome()
 end
 
 -- ---- the event campfire
@@ -3295,7 +3306,7 @@ function HX.goHome()
     if not (c and h) then return end -- no round was running: stay where you are (under or up)
     if CFG.Ghost and not CF.seat() then -- straight back under home, never up at their base
         PF.unpin(true)
-        PF.pin(h - Vector3.new(0, PF.DEPTH, 0), h)
+        if not PF.parkHome() then pcall(teleport, c, h.Position, h.Position + h.LookVector) end
     elseif PF.hold or (c.HumanoidRootPart.Position - h.Position).Magnitude > 20 then
         PF.unpin(true)
         pcall(teleport, c, h.Position, h.Position + h.LookVector)

@@ -43,7 +43,8 @@ local CFG = {
     Help = false,                  -- step over to other players' waxes in this server and help them
     HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
     Campfire = true,               -- sit at the event campfire (+50% cash per camper) whenever a seat is free
-    Ghost = false,                 -- wait out of sight under the floor between jobs, and help waxes from underneath
+    Ghost = false,                 -- FULL ghost: wait inside the ground between jobs, help from inside the butter
+    GhostHelps = false,            -- HELPS-only ghost: hidden helps, but you stay free to walk around between jobs
     Quests = true,                 -- claim finished event quests; pull the lever / collect faster for quests that ask
 }
 local S = {
@@ -79,6 +80,7 @@ local function note(s)
     s = os.date("%H:%M:%S") .. " " .. tostring(s)
     table.insert(logs, 1, s)
     if #logs > 6 then table.remove(logs) end
+    S.logN = (S.logN or 0) + 1
     logAll[#logAll + 1] = s
     if #logAll > 80 then table.remove(logAll, 1) end
 end
@@ -527,7 +529,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "Quests" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -3077,6 +3079,22 @@ function PF.parkHome()
     PF.pin(CFrame.new(p.X, g - 8, p.Z), hm) -- inside the ground under your base
     return true
 end
+-- three settings, one button: OFF (plain teleports, you can walk around), HELPS (helps are sent from
+-- inside the butter, then you are put back where you were), FULL (also waits inside the ground)
+PF.GHOST = { [0] = { "GHOST: OFF", "G: OFF" }, { "GHOST: HELPS ONLY", "G: HELP" }, { "GHOST: FULL", "G: FULL" } }
+function PF.ghostMode() return CFG.Ghost and 2 or (CFG.GhostHelps and 1 or 0) end
+function PF.setGhost(m)
+    CFG.Ghost, CFG.GhostHelps = m == 2, m == 1
+    if m < 2 then -- come up from the ground (after the job in hand, if any)
+        task.spawn(function()
+            while S.busy do nap(0.1) end
+            if PF.ghostMode() < 2 and PF.hold and not HX.home then pcall(PF.unpin) end
+        end)
+    end
+    PF.paintGhost()
+    note("ghost: " .. PF.GHOST[m][1]:sub(8):lower())
+end
+function PF.cycleGhost() PF.setGhost((PF.ghostMode() + 1) % 3) end
 function PF.parkTick() -- called by the main loop when the farm is idle
     if not (CFG.Ghost and S.running) or PF.hold or S.busy then return end
     local c = char()
@@ -3345,8 +3363,8 @@ function HX.step()
     local ph = w.part
     local mid = (ph.Position + w.st:GetPivot().Position) / 2 -- between the butter and the station's own centre
     local tries = HX.tries[w.id] or 0
-    if CFG.Ghost and tries == 0 and not CF.seat() then
-        PF.pin(ph.CFrame) -- inside their butter: hidden, and right at the station
+    if (CFG.Ghost or CFG.GhostHelps) and tries == 0 and not CF.seat() then
+        PF.pin(ph.CFrame, HX.home) -- inside their butter: hidden, and right at the station
     else
         PF.unpin(true)
         local g = tries == 0 and groundPos(mid.X, ph.Position.Y, mid.Z, { ph })
@@ -3489,12 +3507,25 @@ local function mk(class, props, parent)
     return o
 end
 local function round(o, r) mk("UICorner", { CornerRadius = UDim.new(0, r or 6) }, o) end
-local U = {}
+local U = { shown = setmetatable({}, { __mode = "k" }), lit = setmetatable({}, { __mode = "k" }) }
+-- set a label's text only when it really changed: re-setting text makes Roblox lay it out again
+function U.put(o, t)
+    if o and U.shown[o] ~= t then U.shown[o] = t o.Text = t end
+end
 local pg = plr:FindFirstChildOfClass("PlayerGui") or plr:WaitForChild("PlayerGui")
 local oldGui = pg:FindFirstChild("SABFarmGui")
 if oldGui then oldGui:Destroy() end
 local sg = mk("ScreenGui", { Name = "SABFarmGui", ResetOnSpawn = false, DisplayOrder = 999, IgnoreGuiInset = true }, pg)
-local Z = { w = 320, h = 330, head = 30, strip = 38, tabs = 26 }
+-- sized to the screen it opens on (measured: your phone is 742 x 360 in landscape): ~44% of the width,
+-- ~84% of the height, so the game stays visible beside it
+local Z = { w = 320, h = 300, head = 28, strip = 34, tabs = 24 }
+pcall(function()
+    local vp = WS.CurrentCamera.ViewportSize
+    if vp.X > 100 and vp.Y > 100 then
+        Z.w = math.clamp(math.floor(vp.X * 0.44), 300, 360)
+        Z.h = math.clamp(math.floor(vp.Y * 0.84), 240, 340)
+    end
+end)
 U.root = mk("Frame", { Name = "Root", Size = UDim2.new(0, Z.w, 0, Z.h),
     Position = UDim2.new(0, S.winPos and S.winPos[1] or 10, 0, S.winPos and S.winPos[2] or 44),
     BackgroundColor3 = C.bg, BorderSizePixel = 0, Active = true, ClipsDescendants = true }, sg)
@@ -3625,59 +3656,49 @@ local function row(h, parent)
     return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = order }, parent or U.farm)
 end
 local function caption(t) lbl(row(14), t, 10, C.dim, true) end
-rw = row(34)
+rw = row(32)
 U.startB = button(rw, "START", C.good, 14, at(0, 0.68))
 U.killB = button(rw, "KILL", C.bad, 14, at(0.68, 0.32))
-local r2 = row(42)
+local r2 = row(40)
 local function cell(i, cap, n)
     local f = mk("Frame", { Position = UDim2.new((i - 1) / n, 0, 0, 0), Size = UDim2.new(1 / n, i < n and -4 or 0, 1, 0),
         BackgroundColor3 = C.panel, BorderSizePixel = 0 }, r2)
     round(f, 6)
-    local v = lbl(f, "0", 15, C.text, true, UDim2.new(0, 0, 0, 3), UDim2.new(1, 0, 0, 21))
-    local c = lbl(f, cap, 9, C.dim, false, UDim2.new(0, 0, 0, 24), UDim2.new(1, 0, 0, 14))
+    local v = lbl(f, "0", 14, C.text, true, UDim2.new(0, 0, 0, 3), UDim2.new(1, 0, 0, 20))
+    local c = lbl(f, cap, 9, C.dim, false, UDim2.new(0, 0, 0, 23), UDim2.new(1, 0, 0, 13))
     v.TextXAlignment, c.TextXAlignment = Enum.TextXAlignment.Center, Enum.TextXAlignment.Center
     return v
 end
 U.sBought, U.sPlaced, U.sSold, U.sColl, U.sFree = cell(1, "BOUGHT", 5), cell(2, "WAXED", 5), cell(3, "SOLD", 5), cell(4, "MONEY", 5), cell(5, "FREE", 5)
 U.info = lbl(row(40), "", 10, C.dim, false)
-U.tgt = lbl(row(26), "", 10, C.good, false)
-caption("MONEY COLLECT")
-rw = row(28)
-U.secB = textbox(rw, tostring(CFG.Every), "60", at(0, 0.2))
-lbl(rw, "sec", 11, C.dim, false, at(0.21, 0.09))
-U.secSet = button(rw, "SET", C.accent, 12, at(0.3, 0.2))
-U.colT = button(rw, "COLLECT: ON", C.accent, 11, at(0.5, 0.5))
+U.tgt = lbl(row(16), "", 10, C.good, false)
+caption("SWITCHES")
+do
+local function pair(a1, a2) -- two switches side by side
+    local f = row(26)
+    return button(f, a1, C.panel2, 10, at(0, 0.5)), button(f, a2, C.panel2, 10, at(0.5, 0.5))
+end
+U.colT, U.sellT = pair("COLLECT: ON", "SELL THEM: ON")
+U.crateT, U.arT = pair("OPEN CRATES: ON", "AUTO ROLL: OFF")
+U.helpT, U.helpGT = pair("HELP WAXES: OFF", "GUILD CALLS: OFF")
+U.campT, U.ghostT = pair("CAMPFIRE: OFF", "GHOST: OFF")
 rw = row(26)
-U.padB = button(rw, "SET PAD (stand on it)", C.panel2, 10, at(0, 0.55))
-U.padL = lbl(rw, "", 10, C.dim, false, at(0.56, 0.44))
-caption("BUTTERS YOU DID NOT TICK, AND CRATES")
-rw = row(28)
-U.sellT = button(rw, "SELL THEM: ON", C.accent, 11, at(0, 0.55))
-U.sellB = button(rw, "SELL NOW", C.warn, 11, at(0.55, 0.45))
-rw = row(28)
-U.crateT = button(rw, "OPEN CRATES: ON", C.accent, 11, at(0, 0.55))
-U.crateB = button(rw, "OPEN NOW", C.warn, 11, at(0.55, 0.45))
-caption("HELP OTHER PLAYERS' WAXES  (10% off their wax each)")
-rw = row(28)
-U.helpT = button(rw, "HELP WAXES: OFF", C.panel2, 10, at(0, 0.5))
-U.helpGT = button(rw, "GUILD CALLS: OFF", C.panel2, 10, at(0.5, 0.5))
-U.helpL = lbl(row(14), "", 9, C.dim, false)
-caption("EVENT CAMPFIRE  /  STAYING OUT OF SIGHT")
-rw = row(28)
-U.campT = button(rw, "CAMPFIRE: OFF", C.panel2, 10, at(0, 0.5))
-U.ghostT = button(rw, "GHOST: OFF", C.panel2, 10, at(0.5, 0.5))
-U.campL = lbl(row(14), "", 9, C.dim, false)
-caption("QUESTS  (claims event quests; pulls the lever / collects for quests that ask)")
-U.questT = button(row(28), "QUESTS: OFF", C.panel2, 10, at(0, 1))
-U.questL = lbl(row(28), "", 9, C.dim, false)
-caption("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")
-rw = row(28)
-U.arT = button(rw, "AUTO ROLL: OFF", C.panel2, 11, at(0, 0.5))
-U.arL = lbl(rw, "", 9, C.dim, false, at(0.52, 0.48))
-caption("TOOLS")
-rw = row(30)
-U.buyB = button(rw, "BUY", C.warn, 10, at(0, 0.5))
-U.plB = button(rw, "WAX", C.good, 10, at(0.5, 0.5))
+U.questT = button(rw, "QUESTS: OFF", C.panel2, 10, at(0, 0.5))
+lbl(rw, "collect every", 9, C.dim, false, at(0.52, 0.2))
+U.secB = textbox(rw, tostring(CFG.Every), "60", at(0.72, 0.13))
+U.secB.TextSize = 11
+U.secSet = button(rw, "SET", C.accent, 10, at(0.85, 0.15))
+local st = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, row(62))
+round(st, 6)
+mk("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, st)
+mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 3) }, st)
+local function sline(i) -- one status line per feature, cut short rather than wrapped
+    local l = lbl(st, "", 9, C.dim, false, nil, UDim2.new(1, -6, 0, 14))
+    l.LayoutOrder, l.TextWrapped, l.TextTruncate = i, false, Enum.TextTruncate.AtEnd
+    return l
+end
+U.helpL, U.campL, U.questL, U.arL = sline(1), sline(2), sline(3), sline(4)
+end
 caption("LOG")
 U.log = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
     TextSize = 10, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
@@ -3690,6 +3711,16 @@ U.farm.CanvasSize = UDim2.new(0, 0, 0, total)
 order, total = 0, 12
 local function srow(h) return row(h, U.set) end
 local function scap(t) lbl(srow(14), t, 10, C.dim, true) end
+scap("ONE-OFF ACTIONS")
+rw = srow(26)
+U.buyB = button(rw, "BUY THE PAD", C.warn, 10, at(0, 0.5))
+U.plB = button(rw, "WAX WHAT I HOLD", C.good, 10, at(0.5, 0.5))
+rw = srow(26)
+U.sellB = button(rw, "SELL WHAT I HOLD", C.warn, 10, at(0, 0.5))
+U.crateB = button(rw, "OPEN CRATE NOW", C.warn, 10, at(0.5, 0.5))
+rw = srow(26)
+U.padB = button(rw, "SET PAD (stand on it)", C.panel2, 10, at(0, 0.55))
+U.padL = lbl(rw, "", 10, C.dim, false, at(0.56, 0.44))
 scap("SETTINGS FILE  (saved on your phone)")
 rw = srow(28)
 U.cfgName = textbox(rw, "default", "config name", at(0, 0.5))
@@ -3743,6 +3774,18 @@ U.tgBtn = mk("TextButton", { Text = "SAB", Size = FILL, BackgroundTransparency =
 U.tgDot = mk("Frame", { Size = UDim2.new(0, 7, 0, 7), Position = UDim2.new(1, -9, 0, 2), BackgroundColor3 = C.dim,
     BorderSizePixel = 0 }, U.tgRoot)
 round(U.tgDot, 4)
+-- ghost on/off without opening the window: OFF -> HELP -> FULL (it moves with the SAB button)
+U.tgGhost = mk("TextButton", { Text = "G: OFF", Size = UDim2.new(0, 46, 0, 18), Position = UDim2.new(0.5, -23, 1, 4),
+    BackgroundColor3 = C.panel2, Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = C.text, AutoButtonColor = false,
+    BorderSizePixel = 0 }, U.tgRoot)
+round(U.tgGhost, 6)
+U.tgGhost.MouseButton1Click:Connect(function() PF.cycleGhost() end)
+function PF.paintGhost() -- (here, after the colours exist)
+    local m = PF.ghostMode()
+    local col = m == 2 and C.accent or (m == 1 and C.warn or C.panel2)
+    if U.ghostT then U.ghostT.Text, U.ghostT.BackgroundColor3 = PF.GHOST[m][1], col end
+    if U.tgGhost then U.tgGhost.Text, U.tgGhost.BackgroundColor3 = PF.GHOST[m][2], col end
+end
 
 -- ---- BUTTERS tab: worst at the top, best at the bottom, built the first time you open it
 local LST = { built = false, boxes = {}, at = 0 }
@@ -3916,8 +3959,8 @@ end
 
 ---------------------------------------------------------------- button handlers
 local function setToggle(b, on, onText, offText)
-    b.Text = on and onText or offText
-    b.BackgroundColor3 = on and C.accent or C.panel2
+    U.put(b, on and onText or offText)
+    if U.lit[b] ~= on then U.lit[b] = on b.BackgroundColor3 = on and C.accent or C.panel2 end
 end
 -- ---- PETS tab: worst pet at the top, best at the bottom. BUY = adopt it when it is in the pen,
 -- BIG = only its Big version, WISH = keep a wish running for it in this server.
@@ -4169,9 +4212,9 @@ local function applyLoaded()
     setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
     setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
     setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
-    setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
+    PF.paintGhost()
     setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
-    if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end pcall(PF.unpin) end) end
+    if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end if not HX.home then pcall(PF.unpin) end end) end
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
     setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
@@ -4248,11 +4291,7 @@ click(U.campT, function()
     CF.nextAt, CF.fails, CF.lost = 0, 0, 0
     setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
 end)
-click(U.ghostT, function()
-    CFG.Ghost = not CFG.Ghost
-    if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end pcall(PF.unpin) end) end
-    setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
-end)
+click(U.ghostT, PF.cycleGhost)
 click(U.crateB, function()
     CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil, S.crateFails = 0, 0, 0, 0
     task.spawn(runAction, "opening crate...", doCrate, true)
@@ -4437,31 +4476,39 @@ local function refresh()
         if S.capHit then txt, lvl = t2, "bad" else txt, lvl = "[stopped] " .. t2, (l2 == "bad") and "bad" or "idle" end
         S.reason, S.level = txt, lvl
     end
-    U.reason.Text = txt
-    U.bar.BackgroundColor3 = LV[lvl] or C.dim
-    U.dot.BackgroundColor3 = S.running and C.good or (S.capHit and C.bad or C.dim)
-    U.tgDot.BackgroundColor3 = U.dot.BackgroundColor3
-    U.tgRoot.BackgroundColor3 = S.hidden and C.panel2 or C.accent
-    U.startB.Text = S.running and "STOP" or "START"
+    local dotC = S.running and C.good or (S.capHit and C.bad or C.dim)
+    if U.lit.dot ~= dotC then U.lit.dot = dotC U.dot.BackgroundColor3, U.tgDot.BackgroundColor3 = dotC, dotC end
+    if U.lit.tg ~= S.hidden then U.lit.tg = S.hidden U.tgRoot.BackgroundColor3 = S.hidden and C.panel2 or C.accent end
+    if S.hidden then return end -- window away: only the little button's colours matter
+    U.put(U.reason, txt)
+    if U.lit.bar ~= lvl then U.lit.bar = lvl U.bar.BackgroundColor3 = LV[lvl] or C.dim end
+    if minimized then return end -- only the header and the status line show
+    if U.lit.run ~= S.running then
+        U.lit.run = S.running
+        U.startB.Text, U.startB.BackgroundColor3 = S.running and "STOP" or "START", S.running and C.warn or C.good
+    end
     setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
-    U.startB.BackgroundColor3 = S.running and C.warn or C.good
-    local free, total2 = freeCount()
-    U.sBought.Text, U.sPlaced.Text, U.sSold.Text = tostring(S.bought), tostring(S.placed), tostring(S.sold)
-    U.sColl.Text, U.sFree.Text = tostring(S.collected), free .. "/" .. total2
-    local nxt = (S.running and CFG.Collect) and math.max(0, math.ceil(CFG.Every - (now() - S.lastCollect))) or nil
-    local held = carriedName()
-    U.info.Text = ("cash $%s | rolls %d | gifts %d | crates %d\nin hands: %s%s\nnext collect: %s"):format(
-        fmt(cash()), S.rolls, S.gifts, S.crates, held and prettyOf(key(held)) or "nothing",
-        CRATE.on and ("   [" .. CRATE.title .. " window open]") or "",
-        nxt and ("in " .. nxt .. "s") or "off")
     local tn = targetNames()
-    U.tgt.Text = (#tn == 0) and "NOTHING TICKED - open the BUTTERS tab"
-        or ("buying: " .. ((#tn <= 3) and table.concat(tn, ", ") or (#tn .. " butters ticked")))
-    U.tgt.TextColor3 = (#tn == 0) and C.bad or C.good
-    U.padL.Text = S.manualPad and "pad: saved" or (S.padPart and ("auto: " .. S.padPart.Name) or "pad: not found")
-    U.log.Text = table.concat(logs, "\n")
-    if U.butInfo then
-        U.butInfo.Text = ("%d butters, %d rarities\n%d ticked"):format(CAT.n, #CAT.rarOrder, #tn)
+    if U.farm.Visible then
+        local free, total2 = freeCount()
+        U.put(U.sBought, tostring(S.bought)) U.put(U.sPlaced, tostring(S.placed)) U.put(U.sSold, tostring(S.sold))
+        U.put(U.sColl, tostring(S.collected)) U.put(U.sFree, free .. "/" .. total2)
+        local nxt = (S.running and CFG.Collect) and math.max(0, math.ceil(CFG.Every - (now() - S.lastCollect))) or nil
+        local held = carriedName()
+        U.put(U.info, ("cash $%s | rolls %d | gifts %d | crates %d\nin hands: %s%s\nnext collect: %s"):format(
+            fmt(cash()), S.rolls, S.gifts, S.crates, held and prettyOf(key(held)) or "nothing",
+            CRATE.on and ("   [" .. CRATE.title .. " window open]") or "",
+            nxt and ("in " .. nxt .. "s") or "off"))
+        U.put(U.tgt, (#tn == 0) and "NOTHING TICKED - open the BUTTERS tab"
+            or ("buying: " .. ((#tn <= 3) and table.concat(tn, ", ") or (#tn .. " butters ticked"))))
+        if U.lit.tgt ~= (#tn == 0) then U.lit.tgt = (#tn == 0) U.tgt.TextColor3 = (#tn == 0) and C.bad or C.good end
+        if U.logN ~= S.logN then U.logN = S.logN U.log.Text = table.concat(logs, "\n") end
+    end
+    if U.set.Visible then
+        U.put(U.padL, S.manualPad and "pad: saved" or (S.padPart and ("auto: " .. S.padPart.Name) or "pad: not found"))
+    end
+    if U.butInfo and U.but.Visible then
+        U.put(U.butInfo, ("%d butters, %d rarities\n%d ticked"):format(CAT.n, #CAT.rarOrder, #tn))
     end
     if U.but.Visible and LST.at ~= CAT.at then buildList(false) end
     if U.crt.Visible then
@@ -4473,16 +4520,16 @@ local function refresh()
     end
     if U.team.Visible then TM.paint() end
     if U.farm.Visible then
-        U.helpL.Text = (CFG.Help or CFG.HelpGuild) and HX.msg or "off"
-        U.questL.Text = CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"
-        U.campL.Text = (CFG.Campfire and CF.msg or "campfire off") .. (CFG.Ghost and (PF.hold and " | ghost: under" or " | ghost: up") or "")
+        U.put(U.helpL, "help: " .. ((CFG.Help or CFG.HelpGuild) and HX.msg or "off"))
+        U.put(U.campL, "camp: " .. (CFG.Campfire and CF.msg or "off") .. (PF.ghostMode() > 0 and (PF.hold and " | ghost: hidden" or " | ghost: up") or ""))
+        U.put(U.questL, "quests: " .. (CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"))
+        setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+        setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
+        local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
+        U.put(U.arL, AR.msg ~= "" and AR.msg or ("auto roll: game %s | learned %s%s"):format(AR.isOn() and "ON" or "off",
+            learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or ""))
+        if U.lit.arL ~= (AR.msg ~= "") then U.lit.arL = (AR.msg ~= "") U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim end
     end
-    setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
-    setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
-    local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
-    U.arL.Text = AR.msg ~= "" and AR.msg or ("game: %s | learned: %s%s"):format(AR.isOn() and "ON" or "off",
-        learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or "")
-    U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
@@ -4510,7 +4557,7 @@ setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
 setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
 setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
 setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
-setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
+PF.paintGhost()
 setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
@@ -4532,7 +4579,7 @@ task.spawn(function()
     while S.alive do
         local ok, e = pcall(refresh)
         if not ok then note("UI ERR " .. tostring(e)) end
-        task.wait((S.hidden or minimized) and 1.5 or 0.25) -- a hidden window needs far fewer redraws
+        task.wait((S.hidden or minimized) and 1.5 or 0.4) -- a hidden window needs far fewer redraws
     end
 end)
 task.spawn(function()

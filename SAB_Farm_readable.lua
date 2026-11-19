@@ -42,6 +42,8 @@ local CFG = {
     MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
     Help = false,                  -- step over to other players' waxes in this server and help them
     HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
+    Campfire = true,               -- sit at the event campfire (+50% cash per camper) whenever a seat is free
+    Ghost = false,                 -- wait out of sight under the floor between jobs, and help waxes from underneath
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -63,7 +65,7 @@ local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", la
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
-local PX, TM, PF, FU, HX = {}, {}, {}, {}, {} -- pets (adopt + wish), pet teams, smoother running, fusing, helping others' waxes
+local PX, TM, PF, FU, HX, CF = {}, {}, {}, {}, {}, {} -- pets, pet teams, smoother running + ghost, fusing, helping waxes, campfire
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 ---------------------------------------------------------------- utils
@@ -524,7 +526,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -911,7 +913,7 @@ local function grounded(c, secs)
     local hum = c:FindFirstChildOfClass("Humanoid")
     local t0 = now()
     while now() - t0 < secs do
-        if hum and hum.FloorMaterial ~= Enum.Material.Air then return true end
+        if hum and (hum.FloorMaterial ~= Enum.Material.Air or hum.SeatPart) then return true end -- seated: no floor to wait for
         nap(0.05)
     end
     return false
@@ -2649,6 +2651,7 @@ function PF.render(off)
     pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(not off) end)
 end
 function PF.restoreAll() -- KILL puts the game back exactly as it was
+    pcall(PF.unpin)
     pcall(PF.lite, false)
     pcall(PF.hideHud, false)
     pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(true) end)
@@ -3002,6 +3005,117 @@ local function decide()
     if w < CFG.Confirm then return nil, ("confirming %s (%.2fs)"):format(id.shown, w), "ok" end
     return "buy", ("buying %s via %s"):format(id.shown, id.src), "ok"
 end
+-- ---- ghost: out of sight under the floor
+-- Only your position reaches the other players (your client owns your character's physics), so this
+-- is what can be hidden: between jobs the character is pinned 11 studs under where it last stood
+-- (inside the ground or the plot's floor), and helps are sent from under the other player's station.
+-- Name tags (VipTag, ClanTag), the leaderboard and the name over your head are the server's and each
+-- viewer's own: hiding them here would only hide them on your screen. Your camera goes under too.
+PF.DEPTH = 11
+function PF.pinTick() -- every frame: hold the pin, no collisions while under
+    local cf = PF.hold
+    if not cf then return end
+    local c = plr.Character
+    local hrp = c and c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    hrp.CFrame = cf
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    for _, d in ipairs(c:GetChildren()) do
+        if d:IsA("BasePart") and d.CanCollide then PF.noclip[d] = true d.CanCollide = false end
+    end
+end
+PF.noclip = setmetatable({}, { __mode = "k" })
+function PF.pin(cf, surface)
+    PF.hold = cf
+    if surface then PF.surface = surface end
+end
+function PF.unpin(stay) -- back to the surface spot it went under from (stay: leave it where it is)
+    if not PF.hold then return end
+    PF.hold = nil
+    for d in pairs(PF.noclip) do pcall(function() if d.Parent then d.CanCollide = true end end) end
+    PF.noclip = setmetatable({}, { __mode = "k" })
+    local c = char()
+    if c and PF.surface and not stay then
+        teleport(c, PF.surface.Position, PF.surface.Position + PF.surface.LookVector)
+        nap(0.1)
+    end
+end
+function PF.parkTick() -- called by the main loop when the farm is idle
+    if not (CFG.Ghost and S.running) or PF.hold or S.busy then return end
+    local c = char()
+    if not c or CF.seat() then return end -- seated at the campfire: stay on the log
+    local hrp = c.HumanoidRootPart
+    if hrp.Position.Y < (WS.FallenPartsDestroyHeight or -500) + 100 then return end
+    PF.pin(hrp.CFrame - Vector3.new(0, PF.DEPTH, 0), hrp.CFrame)
+end
+
+-- ---- the event campfire
+-- While a weather event runs the server puts a campfire with 6 log seats near spawn (NightSeats).
+-- Sitting on one (its prompt) gives +50% cash for every camper by the fire, you included
+-- (CampfireBoost; 4 campers = +200%, seen Nov 19). Moving around while seated keeps it, so the farm
+-- sits down once a seat is free and carries on with everything else from the seat.
+CF.n, CF.fails, CF.nextAt, CF.msg, CF.lost = 0, 0, 0, "no campfire right now", 0
+function CF.seat()
+    local c = plr.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    local sp = h and h.SeatPart
+    return (sp and sp.Name == "LogSeat") and sp or nil
+end
+function CF.due()
+    if not (CFG.Campfire and S.running) or now() < CF.nextAt then return false end
+    local ns = WS:FindFirstChild("NightSeats")
+    if not ns then
+        if CF.wasOn then CF.wasOn, CF.fails, CF.lost = false, 0, 0 end
+        CF.msg = "no campfire right now (it comes with every weather event)"
+        return false
+    end
+    CF.wasOn = true
+    if CF.seat() then
+        CF.sitAt = CF.sitAt or now()
+        CF.msg = ("sitting at the campfire: +%s%% cash"):format(tostring(plr:GetAttribute("CampfireBoost") or "?"))
+        return false
+    end
+    if CF.sitAt then -- we were sitting and are not any more
+        CF.lost, CF.sitAt = CF.lost + 1, nil
+        if CF.lost >= 4 then
+            CF.nextAt, CF.msg = now() + 600, "kept losing the seat - leaving the campfire for 10 min"
+            note(CF.msg)
+            return false
+        end
+    end
+    return true
+end
+function CF.sit()
+    local ns, c = WS:FindFirstChild("NightSeats"), char()
+    if not ns or not c then return end
+    local pos, free = c.HumanoidRootPart.Position, {}
+    for _, st in ipairs(ns:GetChildren()) do
+        local p = st:IsA("Seat") and st.Occupant == nil and st:FindFirstChildOfClass("ProximityPrompt")
+        if p then free[#free + 1] = { st = st, p = p } end
+    end
+    if #free == 0 then CF.nextAt, CF.msg = now() + 10, "the campfire is full - waiting for a seat" return end
+    table.sort(free, function(a, b) return (a.st.Position - pos).Magnitude < (b.st.Position - pos).Magnitude end)
+    local st, p = free[1].st, free[1].p
+    PF.unpin(true)
+    local cf = st.CFrame
+    teleport(c, cf.Position + cf.LookVector * 2 + Vector3.new(0, 2.5, 0), cf.Position)
+    nap(0.25)
+    local ok = activate(p, function() return CF.seat() ~= nil end)
+    if not ok then -- prompt did nothing: sit down on it directly
+        teleport(c, cf.Position + Vector3.new(0, 2, 0), cf.Position + cf.LookVector)
+        waitFor(function() return CF.seat() ~= nil end, 1.5)
+    end
+    if CF.seat() then
+        CF.n, CF.fails, CF.sitAt = CF.n + 1, 0, now()
+        note(("SAT at the campfire (+%s%% cash)"):format(tostring(plr:GetAttribute("CampfireBoost") or "?")))
+    else
+        CF.fails = CF.fails + 1
+        CF.nextAt = now() + (CF.fails >= 3 and 60 or 5)
+        CF.msg = "could not sit at the campfire" .. (CF.fails >= 3 and " - trying again in a minute" or "")
+        if CF.fails <= 3 then note(CF.msg) end
+    end
+end
+
 -- ---- helping other players' waxes
 -- The game's own Help button (ClanHandler.Prompts) sends ClanRequest("help", owner, station). The
 -- server only takes it from someone standing at the station ("Walk up to the wax station to help!",
@@ -3010,7 +3124,7 @@ end
 -- game's rules for its Help prompt are kept: long waxes only, not one you helped, under 6 helpers,
 -- over a minute left, not their 30% cap (PourFull), and not someone who turned helping off.
 -- Guildmates' "Need help with a wax" calls are answered with the game's own callHelp, from anywhere.
-HX.skip, HX.skipN, HX.n, HX.calls, HX.fails, HX.nextAt, HX.msg = {}, 0, 0, 0, 0, 0, "off"
+HX.skip, HX.skipN, HX.n, HX.calls, HX.fails, HX.nextAt, HX.msg, HX.tries = {}, 0, 0, 0, 0, 0, "off", {}
 function HX.can(st, t)
     local o = st:GetAttribute("PourOwner")
     if type(o) ~= "number" or o == PX.uid or not st:GetAttribute("HasSquishy") then return false end
@@ -3051,12 +3165,17 @@ end
 function HX.due() return CFG.Help and S.running and now() >= HX.nextAt end
 function HX.skipIt(id, why)
     HX.skip[id], HX.skipN = why, HX.skipN + 1
-    if HX.skipN > 600 then HX.skip, HX.skipN = { [id] = why }, 1 end
+    if HX.skipN > 600 then HX.skip, HX.skipN, HX.tries = { [id] = why }, 1, {} end
 end
 function HX.goHome()
     local c, h = char(), HX.home
     HX.home = nil
-    if c and h and (c.HumanoidRootPart.Position - h.Position).Magnitude > 20 then
+    if not (c and h) then PF.unpin(true) return end
+    if CFG.Ghost and not CF.seat() then -- straight back under home, never up at their base
+        PF.unpin(true)
+        PF.pin(h - Vector3.new(0, PF.DEPTH, 0), h)
+    elseif PF.hold or (c.HumanoidRootPart.Position - h.Position).Magnitude > 20 then
+        PF.unpin(true)
         pcall(teleport, c, h.Position, h.Position + h.LookVector)
     end
 end
@@ -3072,9 +3191,22 @@ function HX.step()
     local pos = hrp.Position
     table.sort(list, function(a, b) return (a.part.Position - pos).Magnitude < (b.part.Position - pos).Magnitude end)
     local w = list[1]
-    HX.home = HX.home or hrp.CFrame -- where to go back to when the round is done
-    if (w.part.Position - pos).Magnitude > 12 then standNear(w.part, nil) end
-    nap(0.2)
+    HX.home = HX.home or (PF.hold and PF.surface) or hrp.CFrame -- where to go back to when the round is done
+    local ph = w.part
+    local mid = (ph.Position + w.st:GetPivot().Position) / 2 -- between the butter and the station's own centre
+    local tries = HX.tries[w.id] or 0
+    if CFG.Ghost and tries == 0 and not CF.seat() then
+        PF.pin(CFrame.new(mid.X, ph.Position.Y - PF.DEPTH, mid.Z)) -- under their floor, ~12 studs from both
+    else
+        PF.unpin(true)
+        local g = tries == 0 and groundPos(mid.X, ph.Position.Y, mid.Z, { ph })
+        if g and math.abs(g.Y - ph.Position.Y) < 8 then
+            teleport(c, Vector3.new(mid.X, g.Y + hipH(c), mid.Z), ph.Position)
+        else
+            teleport(c, ph.Position + Vector3.new(0, ph.Size.Y / 2 + 3, 0), mid) -- on top of it: always in reach
+        end
+    end
+    nap(0.3)
     local r = RS:FindFirstChild("Remotes")
     r = r and r:FindFirstChild("ClanRequest")
     if not r then HX.nextAt, HX.msg = now() + 60, "the game's help remote is missing" return end
@@ -3084,6 +3216,9 @@ function HX.step()
         HX.skipIt(w.id, "helped")
         note(("HELPED %s's wax (station %s)"):format(w.p.DisplayName, w.st.Name))
         HX.msg = ("helped %d waxes here%s"):format(HX.n, HX.calls > 0 and (", " .. HX.calls .. " for the guild") or "")
+    elseif ok and type(v) == "table" and tostring(v.reason or ""):lower():find("walk up", 1, true) and tries < 2 then
+        HX.tries[w.id] = tries + 1 -- too far after all: next try from closer (on top of it)
+        HX.nextAt = now() + 0.3
     elseif ok and type(v) == "table" and tostring(v.reason or ""):lower():find("moment", 1, true) then
         -- "One moment!": the server's pace limit (about one help a second and a half, seen live). Not
         -- a no for this wax: wait a little and ask again
@@ -3121,6 +3256,7 @@ end
 local function runAction(label, fn, ...)
     if S.busy then return end
     S.busy, S.busyText = true, label
+    if PF.hold and fn ~= HX.step then pcall(PF.unpin) end -- up to the surface first: jobs need you there
     local ok, e = pcall(fn, ...)
     S.busy, S.busyText = false, ""
     if not ok and e ~= KILLED then note("ERR " .. tostring(e)) end
@@ -3135,12 +3271,16 @@ local function step()
     elseif act == "nocrate" then runAction("discarding crate...", doCrate, false)
     elseif act == "sell" then runAction("selling...", doSell)
     elseif act == "buy" then runAction("buying...", doBuy, false)
+    elseif not act and not S.matchSince and CF.due() then
+        runAction("sitting at the campfire...", CF.sit)
     elseif CFG.Collect and not S.matchSince and now() - S.lastCollect >= CFG.Every then
         runAction("collecting money...", doCollect)
     elseif not act and not S.matchSince and HX.due() then
         runAction("helping a wax...", HX.step) -- only when the farm has nothing of its own to do
     elseif HX.home and not CFG.Help then
         runAction("coming back...", HX.goHome) -- HELP was switched off mid-round
+    elseif not S.busy then
+        PF.parkTick()
     end
 end
 function setRunning(v, quiet)
@@ -3370,6 +3510,11 @@ rw = row(28)
 U.helpT = button(rw, "HELP WAXES: OFF", C.panel2, 10, at(0, 0.5))
 U.helpGT = button(rw, "GUILD CALLS: OFF", C.panel2, 10, at(0.5, 0.5))
 U.helpL = lbl(row(14), "", 9, C.dim, false)
+caption("EVENT CAMPFIRE  /  STAYING OUT OF SIGHT")
+rw = row(28)
+U.campT = button(rw, "CAMPFIRE: OFF", C.panel2, 10, at(0, 0.5))
+U.ghostT = button(rw, "GHOST: OFF", C.panel2, 10, at(0.5, 0.5))
+U.campL = lbl(row(14), "", 9, C.dim, false)
 caption("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")
 rw = row(28)
 U.arT = button(rw, "AUTO ROLL: OFF", C.panel2, 11, at(0, 0.5))
@@ -3868,6 +4013,9 @@ local function applyLoaded()
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
     setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
     setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
+    setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
+    setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
+    if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end pcall(PF.unpin) end) end
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
     setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
@@ -3933,6 +4081,16 @@ end)
 click(U.helpGT, function()
     CFG.HelpGuild = not CFG.HelpGuild
     setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
+end)
+click(U.campT, function()
+    CFG.Campfire = not CFG.Campfire
+    CF.nextAt, CF.fails, CF.lost = 0, 0, 0
+    setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
+end)
+click(U.ghostT, function()
+    CFG.Ghost = not CFG.Ghost
+    if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end pcall(PF.unpin) end) end
+    setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
 end)
 click(U.crateB, function()
     CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil, S.crateFails = 0, 0, 0, 0
@@ -4153,7 +4311,10 @@ local function refresh()
         U.pfInfo.Text = ("%d fps | memory %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak)
     end
     if U.team.Visible then TM.paint() end
-    if U.farm.Visible then U.helpL.Text = (CFG.Help or CFG.HelpGuild) and HX.msg or "off" end
+    if U.farm.Visible then
+        U.helpL.Text = (CFG.Help or CFG.HelpGuild) and HX.msg or "off"
+        U.campL.Text = (CFG.Campfire and CF.msg or "campfire off") .. (CFG.Ghost and (PF.hold and " | ghost: under" or " | ghost: up") or "")
+    end
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
@@ -4163,7 +4324,7 @@ local function refresh()
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
-    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX }
+    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
@@ -4186,6 +4347,8 @@ setToggle(U.sellT, CFG.SellJunk, "SELL THEM: ON", "SELL THEM: OFF")
 setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
 setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
 setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
+setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
+setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
 U.secB.Text = tostring(CFG.Every)
@@ -4239,6 +4402,7 @@ end)
 task.spawn(function() -- smoother running: fps, memory watchdog, labels added since
     local frames, t0 = 0, now()
     track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 end))
+    track(game:GetService("RunService").Heartbeat:Connect(function() if PF.hold then pcall(PF.pinTick) end end))
     PF.noteAt = now()
     while S.alive do
         task.wait(1)

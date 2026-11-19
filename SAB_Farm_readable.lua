@@ -44,6 +44,7 @@ local CFG = {
     HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
     Campfire = true,               -- sit at the event campfire (+50% cash per camper) whenever a seat is free
     Ghost = false,                 -- wait out of sight under the floor between jobs, and help waxes from underneath
+    Quests = true,                 -- claim finished event quests; pull the lever / collect faster for quests that ask
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -65,7 +66,7 @@ local AR = { rec = { rules = {} }, replaying = false, busy = false, msg = "", la
 local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate", lastFail = 0,
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
-local PX, TM, PF, FU, HX, CF = {}, {}, {}, {}, {}, {} -- pets, pet teams, smoother running + ghost, fusing, helping waxes, campfire
+local PX, TM, PF, FU, HX, CF, QX = {}, {}, {}, {}, {}, {}, {} -- pets, teams, smooth + ghost, fusing, helping, campfire, quests
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 ---------------------------------------------------------------- utils
@@ -526,7 +527,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "Quests" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -2652,6 +2653,7 @@ function PF.render(off)
 end
 function PF.restoreAll() -- KILL puts the game back exactly as it was
     pcall(PF.unpin)
+    if QX.arPaused then pcall(QX.resume, "script stopped") end
     pcall(PF.lite, false)
     pcall(PF.hideHud, false)
     pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(true) end)
@@ -3046,7 +3048,12 @@ function PF.parkTick() -- called by the main loop when the farm is idle
     if not c or CF.seat() then return end -- seated at the campfire: stay on the log
     local hrp = c.HumanoidRootPart
     if hrp.Position.Y < (WS.FallenPartsDestroyHeight or -500) + 100 then return end
-    PF.pin(hrp.CFrame - Vector3.new(0, PF.DEPTH, 0), hrp.CFrame)
+    local sf = PF.surface
+    if sf and hrp.Position.Y < sf.Position.Y - 5 and (hrp.Position - sf.Position).Magnitude < 40 then
+        PF.pin(sf - Vector3.new(0, PF.DEPTH, 0)) -- still under from before: never go deeper than one step
+    else
+        PF.pin(hrp.CFrame - Vector3.new(0, PF.DEPTH, 0), hrp.CFrame)
+    end
 end
 
 -- ---- the event campfire
@@ -3116,6 +3123,121 @@ function CF.sit()
     end
 end
 
+-- ---- quests: guild tasks and the event's season pass quests
+-- Read Nov 19. Guild tasks (ClanRequest "state" -> tasks.list) count by themselves and need no claim.
+-- Event quests (<Event>Action "state" -> quests, while live) are claimed one by one ("claimQuest", id)
+-- plus the day's bonus ("claimBonus"); the pass's own rank rewards are never touched. The farm's own
+-- work already covers buy / wax / stack / help / rare quests. What it does extra:
+--   pull  "Pull the lever N times": Auto Roll's pulls do not count, so Auto Roll is paused, the farm
+--         pulls the lever itself (the game's own lever prompt), one pull at a time between its own
+--         jobs, and switches Auto Roll back on when the quests are done. A butter the game would ask
+--         about ("Roll away your ...?") is never rolled away: the pulling stops for 10 min instead.
+--   collect  "Collect your cash N times": collects every 15 s while such a quest is open.
+QX.msg, QX.nextAt, QX.at, QX.pulls, QX.claims, QX.pullLeft, QX.collectLeft, QX.events = "", 0, 0, 0, 0, 0, 0, {}
+function QX.refresh()
+    QX.at = now()
+    local R = RS:FindFirstChild("Remotes")
+    if not R then return end
+    local pull, coll, open = 0, 0, {}
+    local ok, st = pcall(function() return R.ClanRequest:InvokeServer("state") end)
+    local tk = ok and type(st) == "table" and st.tasks
+    for _, q in ipairs(tk and tk.list or {}) do
+        if not q.done and q.kind == "pull" then pull = math.max(pull, (q.goal or 0) - (q.progress or 0)) end
+        if not q.done then open[#open + 1] = ("%s %d/%d"):format(tostring(q.text), q.progress or 0, q.goal or 0) end
+    end
+    QX.events = {}
+    for _, r in ipairs(R:GetChildren()) do
+        if r:IsA("RemoteFunction") and r.Name:match("^%u%a+Action$") and r.Name ~= "CrateAction" and r.Name ~= "AutoRollAction" then
+            local ok2, v = pcall(function() return r:InvokeServer("state") end)
+            if ok2 and type(v) == "table" and v.live == true and type(v.quests) == "table" then
+                QX.events[#QX.events + 1] = { r = r, st = v }
+                for _, q in ipairs(v.quests) do
+                    if not q.done and q.kind == "pull" then pull = math.max(pull, (q.goal or 0) - (q.progress or 0)) end
+                    if not q.done and q.kind == "collect" then coll = math.max(coll, (q.goal or 0) - (q.progress or 0)) end
+                    if not q.done then open[#open + 1] = ("%s %d/%d"):format(tostring(q.text), q.progress or 0, q.goal or 0) end
+                end
+            end
+        end
+    end
+    QX.pullLeft, QX.collectLeft = pull, coll
+    QX.msg = #open > 0 and ("open: " .. table.concat(open, ", ")) or "all quests done for today"
+end
+function QX.claim() -- finished event quests and the day's bonus: the same calls as the game's CLAIM buttons
+    for _, e in ipairs(QX.events) do
+        local name = e.r.Name:gsub("Action$", "")
+        for _, q in ipairs(e.st.quests) do
+            if q.done and not q.claimed then
+                local ok, v = pcall(function() return e.r:InvokeServer("claimQuest", q.id) end)
+                if ok and not (type(v) == "table" and v.ok == false) then
+                    QX.claims = QX.claims + 1
+                    note(("CLAIMED %s quest: %s (+%s)"):format(name, tostring(q.text), tostring(q.points or q.treats or "?")))
+                end
+                nap(0.4)
+            end
+        end
+        if e.st.bonusReady == true then
+            local ok = pcall(function() return e.r:InvokeServer("claimBonus") end)
+            if ok then note(("CLAIMED %s daily quest bonus"):format(name)) end
+            nap(0.4)
+        end
+    end
+end
+function QX.tick() -- every few seconds from the main loop
+    if not (CFG.Quests and S.running) then
+        if QX.arPaused then QX.resume("quests switched off") end
+        return
+    end
+    if now() - QX.at < (QX.pullLeft > 0 and 20 or 90) then return end
+    QX.refresh()
+    pcall(QX.claim)
+    if QX.pullLeft <= 0 and QX.arPaused then QX.resume("lever quests done") end
+end
+function QX.pullDue()
+    return CFG.Quests and S.running and QX.pullLeft > 0 and now() >= QX.nextAt and not AR.busy
+end
+function QX.lever()
+    local lv = S.plot and S.plot:FindFirstChild("Lever")
+    local w = lv and lv:FindFirstChild("Wheel")
+    return w and w:FindFirstChildWhichIsA("ProximityPrompt"), w
+end
+function QX.resume(why) -- Auto Roll back the way it was
+    QX.arPaused = false
+    if QX.arWas then
+        QX.arWas = false
+        CFG.AutoRoll = true
+        task.spawn(AR.apply, why)
+    end
+end
+function QX.pull()
+    local p, w = QX.lever()
+    if not p or not w or not w:IsA("BasePart") then QX.nextAt, QX.msg = now() + 300, "your lever was not found" return end
+    if not QX.arPaused then
+        QX.arPaused = true
+        QX.arWas = CFG.AutoRoll
+        if CFG.AutoRoll then
+            CFG.AutoRoll = false -- so nothing switches it back on meanwhile
+            AR.apply("pulling the lever for a quest", true)
+            if AR.isOn() then QX.nextAt = now() + 30 return end
+        end
+        note(("QUEST: pulling the lever %d times (Auto Roll's own pulls do not count)"):format(QX.pullLeft))
+    end
+    if not p.Enabled then QX.nextAt = now() + 1 return end
+    standNear(w, p)
+    QX.asked = nil
+    holdFire(p)
+    QX.pulls = QX.pulls + 1
+    QX.pullLeft = QX.pullLeft - 1 -- the next refresh corrects it
+    nap(0.6)
+    if QX.asked then
+        QX.nextAt = now() + 600
+        note(("QUEST: the game asks before rolling away your %s - not pulling for 10 min"):format(tostring(QX.asked)))
+        QX.resume("a butter the game wants kept is on the pad")
+        return
+    end
+    QX.nextAt = now() + 2.5 -- give the roll time to land and the farm a look at it
+    if QX.pullLeft <= 0 then QX.at = 0 end -- check the quests again straight away
+end
+
 -- ---- helping other players' waxes
 -- The game's own Help button (ClanHandler.Prompts) sends ClanRequest("help", owner, station). The
 -- server only takes it from someone standing at the station ("Walk up to the wax station to help!",
@@ -3170,7 +3292,7 @@ end
 function HX.goHome()
     local c, h = char(), HX.home
     HX.home = nil
-    if not (c and h) then PF.unpin(true) return end
+    if not (c and h) then return end -- no round was running: stay where you are (under or up)
     if CFG.Ghost and not CF.seat() then -- straight back under home, never up at their base
         PF.unpin(true)
         PF.pin(h - Vector3.new(0, PF.DEPTH, 0), h)
@@ -3273,7 +3395,9 @@ local function step()
     elseif act == "buy" then runAction("buying...", doBuy, false)
     elseif not act and not S.matchSince and CF.due() then
         runAction("sitting at the campfire...", CF.sit)
-    elseif CFG.Collect and not S.matchSince and now() - S.lastCollect >= CFG.Every then
+    elseif not act and not S.matchSince and QX.pullDue() and not carriedName() and not (padInfo() and isTarget(padInfo().name)) then
+        runAction("pulling the lever for a quest...", QX.pull)
+    elseif CFG.Collect and not S.matchSince and now() - S.lastCollect >= (QX.collectLeft > 0 and CFG.Quests and math.min(CFG.Every, 15) or CFG.Every) then
         runAction("collecting money...", doCollect)
     elseif not act and not S.matchSince and HX.due() then
         runAction("helping a wax...", HX.step) -- only when the farm has nothing of its own to do
@@ -3515,6 +3639,9 @@ rw = row(28)
 U.campT = button(rw, "CAMPFIRE: OFF", C.panel2, 10, at(0, 0.5))
 U.ghostT = button(rw, "GHOST: OFF", C.panel2, 10, at(0.5, 0.5))
 U.campL = lbl(row(14), "", 9, C.dim, false)
+caption("QUESTS  (claims event quests; pulls the lever / collects for quests that ask)")
+U.questT = button(row(28), "QUESTS: OFF", C.panel2, 10, at(0, 1))
+U.questL = lbl(row(28), "", 9, C.dim, false)
 caption("THE GAME'S AUTO ROLL PASS  (it resets to off when you join)")
 rw = row(28)
 U.arT = button(rw, "AUTO ROLL: OFF", C.panel2, 11, at(0, 0.5))
@@ -4015,6 +4142,7 @@ local function applyLoaded()
     setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
     setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
     setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
+    setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
     if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end pcall(PF.unpin) end) end
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
@@ -4081,6 +4209,11 @@ end)
 click(U.helpGT, function()
     CFG.HelpGuild = not CFG.HelpGuild
     setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
+end)
+click(U.questT, function()
+    CFG.Quests = not CFG.Quests
+    QX.at = 0
+    setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
 end)
 click(U.campT, function()
     CFG.Campfire = not CFG.Campfire
@@ -4313,6 +4446,7 @@ local function refresh()
     if U.team.Visible then TM.paint() end
     if U.farm.Visible then
         U.helpL.Text = (CFG.Help or CFG.HelpGuild) and HX.msg or "off"
+        U.questL.Text = CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"
         U.campL.Text = (CFG.Campfire and CF.msg or "campfire off") .. (CFG.Ghost and (PF.hold and " | ghost: under" or " | ghost: up") or "")
     end
     setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
@@ -4324,7 +4458,7 @@ local function refresh()
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
-    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF }
+    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF, QX = QX }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
@@ -4349,6 +4483,7 @@ setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
 setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
 setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
 setToggle(U.ghostT, CFG.Ghost, "GHOST: ON", "GHOST: OFF")
+setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
 U.secB.Text = tostring(CFG.Every)
@@ -4432,6 +4567,16 @@ task.spawn(function() -- guildmates' "Need help with a wax" calls
     local e = r and r:WaitForChild("ClanEvent", 30)
     if e and S.alive then
         track(e.OnClientEvent:Connect(function(k, a) if k == "call" then pcall(HX.onCall, a) end end))
+    end
+    local ask = r and r:FindFirstChild("RollConfirmAsk")
+    if ask and S.alive then track(ask.OnClientEvent:Connect(function(n) QX.asked = n or "butter" end)) end
+end)
+task.spawn(function() -- quests: claims and what they ask for
+    task.wait(8)
+    while S.alive do
+        local ok, e = pcall(QX.tick)
+        if not ok then note("QUEST ERR " .. tostring(e)) task.wait(30) end
+        task.wait(3)
     end
 end)
 task.spawn(function() -- keep what the crates taught us

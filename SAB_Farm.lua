@@ -691,7 +691,7 @@ end function o.cycleGhost()o.setGhost((o.ghostMode()+1)%3)end function o.parkTic
 local xA=ar()if not xA or F.seat()then return end o.parkHome()end F.n,F.fails,F.nextAt,F.msg,F.lost=0,0,0,"no campfire right now",0
 function F.seat()local qo=E.Character local qp=qo and qo:FindFirstChildOfClass("Humanoid")local j1=qp and qp.SeatPart
 return(j1 and j1 .Name=="LogSeat")and j1 or nil end function F.due()if not(d.Campfire and c.running)or x()<F.nextAt then return false end
-local xC=aq:FindFirstChild("NightSeats")if not xC then if F.wasOn then F.wasOn,F.fails,F.lost=false,0,0 end F.msg="no campfire right now (it comes with every weather event)"
+local xC=aq:FindFirstChild("NightSeats")if not xC then if F.wasOn then F.wasOn,F.fails,F.lost=false,0,0 end F.msg="no campfire (comes with weather events)"
 return false end F.wasOn=true if F.seat()then F.sitAt=F.sitAt or x()F.msg=("sitting at the campfire: +%s%% cash"):format(tostring(E:GetAttribute("CampfireBoost")or"?"))
 return false end if F.sitAt then F.lost,F.sitAt=F.lost+1,nil if F.lost>=4 then F.nextAt,F.msg=x()+600,"kept losing the seat - leaving the campfire for 10 min"
 y(F.msg)return false end end return true end function F.sit()local qq,ge=aq:FindFirstChild("NightSeats"),ar()

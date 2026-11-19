@@ -3119,7 +3119,7 @@ function CF.due()
     local ns = WS:FindFirstChild("NightSeats")
     if not ns then
         if CF.wasOn then CF.wasOn, CF.fails, CF.lost = false, 0, 0 end
-        CF.msg = "no campfire right now (it comes with every weather event)"
+        CF.msg = "no campfire (comes with weather events)"
         return false
     end
     CF.wasOn = true

@@ -40,6 +40,7 @@ local CFG = {
     TeamNormal = "", TeamFull = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
     Lite = false, HideHud = false, NoRender = false, FpsCap = 0, -- SETUP tab: smoother running
     HideBases = false,             -- don't draw other players' bases (they are still there: helping works)
+    HideMine = false,              -- ... and your own base and stack tower too (the farm still works there)
     MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
     Help = false,                  -- step over to other players' waxes in this server and help them
     HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
@@ -530,7 +531,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -2660,7 +2661,14 @@ function PF.hideOne(d)
         if d.Enabled then PF.unseen[d] = true d.Enabled = false end
     end
 end
-function PF.notMine(d) return S.plot and not d:IsDescendantOf(S.plot) end
+function PF.notMine(d) return CFG.HideMine or (S.plot and not d:IsDescendantOf(S.plot)) end
+PF.BASES = { [0] = "BASES: ALL DRAWN", "BASES: OTHERS HIDDEN", "BASES: ALL HIDDEN" }
+function PF.basesMode() return CFG.HideBases and (CFG.HideMine and 2 or 1) or 0 end
+function PF.setBases(m) -- 0 draw everything, 1 hide other players' bases, 2 hide yours too
+    if CFG.HideBases then PF.bases(false) end -- put everything back, then hide the new set
+    CFG.HideMine = m == 2
+    if m > 0 then PF.bases(true) end
+end
 function PF.bases(on)
     CFG.HideBases = on
     local plots = WS:FindFirstChild("Plots")
@@ -2669,7 +2677,7 @@ function PF.bases(on)
         task.spawn(function()
             local n = 0
             for _, pl in ipairs(plots:GetChildren()) do
-                if pl ~= S.plot then
+                if pl ~= S.plot or CFG.HideMine then
                     for _, d in ipairs(pl:GetDescendants()) do
                         if not CFG.HideBases then return end
                         pcall(PF.hideOne, d)
@@ -3799,13 +3807,13 @@ rw = srow(28)
 U.pfFps = button(rw, "FPS CAP: GAME", C.panel2, 10, at(0, 0.5))
 U.pfRender = button(rw, "STOP 3D: OFF", C.panel2, 10, at(0.5, 0.5))
 rw = srow(28)
-U.pfBases = button(srow(28), "HIDE OTHER BASES: OFF", C.panel2, 10, at(0, 1))
+U.pfBases = button(srow(28), "BASES: ALL DRAWN", C.panel2, 10, at(0, 1))
 rw = srow(28)
 U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", at(0, 0.24))
 lbl(rw, "MB: rejoin this server above it (0 = never)", 9, C.dim, false, at(0.26, 0.52))
 U.pfMemSet = button(rw, "SET", C.accent, 11, at(0.8, 0.2))
 U.pfInfo = lbl(srow(18), "", 10, C.text, false)
-lbl(srow(66), "LITE MODE turns off floating labels, sparkles and lighting extras; the screen stays normal. HIDE OTHER BASES stops drawing other players' bases and stacks (they are still there, so helping works). HIDE GAME HUD hides the game's own menus. A lower FPS CAP keeps the phone cooler overnight. STOP 3D blanks the world behind this window. All of it goes back to normal when switched off or on KILL.", 9, C.dim, false)
+lbl(srow(66), "LITE MODE turns off floating labels, sparkles and lighting extras; the screen stays normal. BASES: OTHERS HIDDEN stops drawing other players' bases and stacks, ALL HIDDEN yours too (nothing is removed, so helping and farming work). HIDE GAME HUD hides the game's own menus. A lower FPS CAP keeps the phone cooler overnight. STOP 3D blanks the world behind this window. All of it goes back to normal when switched off or on KILL.", 9, C.dim, false)
 scap("THE ROUND SAB BUTTON")
 lbl(srow(30), "Tap it to hide or show this window. Hold and drag it anywhere on screen. The farm keeps running either way.", 10, C.dim, false)
 U.set.CanvasSize = UDim2.new(0, 0, 0, total)
@@ -4126,7 +4134,7 @@ function PF.paint()
     setToggle(U.pfLite, CFG.Lite, "LITE MODE: ON", "LITE MODE: OFF")
     setToggle(U.pfHud, CFG.HideHud, "HIDE GAME HUD: ON", "HIDE GAME HUD: OFF")
     setToggle(U.pfRender, CFG.NoRender, "STOP 3D: ON", "STOP 3D: OFF")
-    setToggle(U.pfBases, CFG.HideBases, "HIDE OTHER BASES: ON", "HIDE OTHER BASES: OFF")
+    setToggle(U.pfBases, CFG.HideBases, PF.BASES[PF.basesMode()], PF.BASES[0])
     setToggle(U.pfFps, (CFG.FpsCap or 0) ~= 0, "FPS CAP: " .. tostring(CFG.FpsCap), "FPS CAP: GAME")
     if not U.pfMem:IsFocused() then U.pfMem.Text = tostring(CFG.MemLimit) end
 end
@@ -4141,7 +4149,7 @@ end
 track(U.pfLite.MouseButton1Click:Connect(function() PF.lite(not CFG.Lite) PF.paint() end))
 track(U.pfHud.MouseButton1Click:Connect(function() PF.hideHud(not CFG.HideHud) PF.paint() end))
 track(U.pfRender.MouseButton1Click:Connect(function() PF.render(not CFG.NoRender) PF.paint() end))
-track(U.pfBases.MouseButton1Click:Connect(function() PF.bases(not CFG.HideBases) PF.paint() end))
+track(U.pfBases.MouseButton1Click:Connect(function() PF.setBases((PF.basesMode() + 1) % 3) PF.paint() end))
 track(U.pfFps.MouseButton1Click:Connect(function()
     local i = table.find(PF.CAPS, CFG.FpsCap or 0) or 1
     local n = PF.CAPS[(i % #PF.CAPS) + 1]

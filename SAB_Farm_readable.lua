@@ -2318,7 +2318,7 @@ function FU.score(role, list)
     local function cap(k) return math.min(s[k] or 0, c[k] or math.huge) end
     local money = (1 + cap("income")) * (1 + (soc.socialIncome or 0)) * (1 + math.min(s.cashGift or 0, c.cashGiftPerMinute or 9) / 60)
     local rolls = 1 + cap("luck") + (s.luckyPull or 0) + (soc.socialLuck or 0)
-    local pie = rolls * (1 + cap("newFind"))
+    local pie = rolls * (1 + cap("newFind")) * (1 + cap("rollSpeed")) -- rollSpeed (Ostrich, Star Whale): more rolls a minute
     local lm = math.log(money)
     local st = math.max(tonumber(plr:GetAttribute("WaxStations")) or 18, 1)
     -- a stir pet works on one wax at a time: +30 s a minute is ~3% more speed spread over 18 stations
@@ -3052,8 +3052,9 @@ function IX.compute()
     end
     IX.need, IX.nNeed, IX.nWax = need, n, w
     local b, mode = {}, CFG.Best or 0
-    -- UPGRADES: with the stack full, anything that earns more than its weakest butter replaces it
-    local floor = (mode == 4 and IX.stackFull) and IX.stackMin or nil
+    -- UPGRADES: anything that earns more than the weakest butter in your stack (it fills a new slot or
+    -- replaces that one); stations are what is short, so nothing weaker takes one
+    local floor = (mode == 4) and IX.stackMin or nil
     for i, e in ipairs(IX.order) do
         -- (a full stack waits for a real upgrade: nothing equal is bought, so stations stay free)
         if (floor and e.inc > floor) or (not floor and i <= (mode == 4 and 1 or mode)) then b[e.k] = true end
@@ -3076,7 +3077,7 @@ function IX.readStack() -- the weakest butter in your stack (by its plain income
     IX.stackFull = #v.state.entries >= (tonumber(v.state.capacity) or 100)
 end
 function IX.want(k)
-    if (CFG.Best or 0) > 0 and (next(IX.best) or (CFG.Best == 4 and IX.stackFull)) then
+    if (CFG.Best or 0) > 0 and (next(IX.best) or (CFG.Best == 4 and IX.stackMin)) then
         if IX.best[k] then return true end
     elseif CFG.Targets[k] then
         return true

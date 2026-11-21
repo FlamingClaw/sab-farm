@@ -50,6 +50,7 @@ local CFG = {
     Quests = true,                 -- claim finished event quests; pull the lever / collect faster for quests that ask
     AutoIndex = false,             -- buy + wax once every butter not in your Index yet (a running wax of it counts)
     Best = 0,                      -- 1-3: buy the game's top 1-3 butters by income instead of the BUTTERS ticks (0 = off)
+                                   -- 4 UPGRADES: the top one + anything that beats the weakest butter in your full stack
     BestCrate = false,             -- open the game's dearest crate (a new one counts the moment the game has it)
     Shower = true,                 -- admin shower: grab the butters that fall on the map
 }
@@ -586,7 +587,7 @@ local function applyConfig(raw)
             if n and n >= 0 then CFG[b] = math.floor(n) end
         elseif a == "N" and b == "Best" then
             local n = tonumber(c)
-            if n and n >= 0 and n <= 3 then CFG.Best = math.floor(n) end
+            if n and n >= 0 and n <= 4 then CFG.Best = math.floor(n) end
         elseif a == "N" and b == "GlazeLead" then
             local n = tonumber(c)
             if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) end
@@ -3050,9 +3051,28 @@ function IX.compute()
         end
     end
     IX.need, IX.nNeed, IX.nWax = need, n, w
-    local b = {}
-    for i = 1, math.min(CFG.Best or 0, #IX.order) do b[IX.order[i].k] = true end
+    local b, mode = {}, CFG.Best or 0
+    -- UPGRADES: with the stack full, anything that earns more than its weakest butter replaces it
+    local floor = (mode == 4 and IX.stackFull) and IX.stackMin or nil
+    for i, e in ipairs(IX.order) do
+        if i <= (mode == 4 and 1 or mode) or (floor and e.inc > floor) then b[e.k] = true end
+    end
     IX.best = b
+end
+function IX.readStack() -- the weakest butter in your stack (by its plain income) and whether it is full
+    IX.stackAt = now()
+    local R = RS:FindFirstChild("Remotes")
+    local r = R and R:FindFirstChild("EditStack")
+    if not r then return end
+    local ok, v = pcall(function() return r:InvokeServer("State", nil) end)
+    if not (ok and type(v) == "table" and type(v.state) == "table" and type(v.state.entries) == "table") then return end
+    local lo
+    for _, e in ipairs(v.state.entries) do
+        local i = type(e) == "table" and IX.si and IX.si[tostring(e.name)]
+        if type(i) == "table" and type(i.income) == "number" and not i.incomeType and (not lo or i.income < lo) then lo = i.income end
+    end
+    IX.stackMin = lo
+    IX.stackFull = #v.state.entries >= (tonumber(v.state.capacity) or 100)
 end
 function IX.want(k)
     if (CFG.Best or 0) > 0 and next(IX.best) then
@@ -3132,6 +3152,7 @@ function IX.tick()
     if not IX.mods() then IX.msg = "index: the game's butter list cannot be read" return end
     if now() - IX.discAt > 30 then IX.fetch() end
     IX.scanWax()
+    if CFG.Best == 4 and now() - (IX.stackAt or -100) > 60 then IX.readStack() end
     IX.compute()
     if IX.on() then IX.sync(false) end
     local parts = {}
@@ -3139,7 +3160,10 @@ function IX.tick()
         parts[#parts + 1] = not IX.disc and "index: reading..." or (IX.nNeed + IX.nWax == 0 and "index: complete"
             or ("index: %d to get, %d waxing"):format(IX.nNeed, IX.nWax))
     end
-    if (CFG.Best or 0) > 0 and IX.order[1] then parts[#parts + 1] = "best: " .. prettyOf(IX.order[1].k) end
+    if CFG.Best == 4 then
+        local n = 0 for _ in pairs(IX.best) do n = n + 1 end
+        parts[#parts + 1] = ("upgrades: %d butter%s"):format(n, n == 1 and "" or "s")
+    elseif (CFG.Best or 0) > 0 and IX.order[1] then parts[#parts + 1] = "best: " .. prettyOf(IX.order[1].k) end
     if CFG.BestCrate and IX.bestCrateName then parts[#parts + 1] = "crate: " .. IX.bestCrateName end
     if SH.got > 0 then parts[#parts + 1] = "shower: " .. SH.got end
     IX.msg = #parts > 0 and table.concat(parts, " | ") or "index / best: off"
@@ -4647,7 +4671,7 @@ end)
 click(U.ghostT, PF.cycleGhost)
 function IX.paint()
     setToggle(U.ixT, CFG.AutoIndex, "AUTO INDEX: ON", "AUTO INDEX: OFF")
-    setToggle(U.bestT, (CFG.Best or 0) > 0, "BEST: TOP " .. tostring(CFG.Best), "BEST BUTTER: OFF")
+    setToggle(U.bestT, (CFG.Best or 0) > 0, CFG.Best == 4 and "BEST: UPGRADES" or ("BEST: TOP " .. tostring(CFG.Best)), "BEST BUTTER: OFF")
     setToggle(U.bcT, CFG.BestCrate, "BEST CRATE: ON", "BEST CRATE: OFF")
     setToggle(U.shT, CFG.Shower, "GRAB SHOWER: ON", "GRAB SHOWER: OFF")
 end
@@ -4666,7 +4690,8 @@ click(U.ixT, function()
 end)
 click(U.bestT, function()
     local was = IX.on()
-    CFG.Best = ((CFG.Best or 0) + 1) % 4 -- off -> top 1 -> top 2 -> top 3 -> off
+    CFG.Best = ((CFG.Best or 0) + 1) % 5 -- off -> top 1 -> top 2 -> top 3 -> upgrades -> off
+    IX.stackAt = -100
     IX.changed(was)
 end)
 click(U.bcT, function()

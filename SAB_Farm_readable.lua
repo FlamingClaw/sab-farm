@@ -3055,7 +3055,8 @@ function IX.compute()
     -- UPGRADES: with the stack full, anything that earns more than its weakest butter replaces it
     local floor = (mode == 4 and IX.stackFull) and IX.stackMin or nil
     for i, e in ipairs(IX.order) do
-        if i <= (mode == 4 and 1 or mode) or (floor and e.inc > floor) then b[e.k] = true end
+        -- (a full stack waits for a real upgrade: nothing equal is bought, so stations stay free)
+        if (floor and e.inc > floor) or (not floor and i <= (mode == 4 and 1 or mode)) then b[e.k] = true end
     end
     IX.best = b
 end
@@ -3075,7 +3076,7 @@ function IX.readStack() -- the weakest butter in your stack (by its plain income
     IX.stackFull = #v.state.entries >= (tonumber(v.state.capacity) or 100)
 end
 function IX.want(k)
-    if (CFG.Best or 0) > 0 and next(IX.best) then
+    if (CFG.Best or 0) > 0 and (next(IX.best) or (CFG.Best == 4 and IX.stackFull)) then
         if IX.best[k] then return true end
     elseif CFG.Targets[k] then
         return true
@@ -3084,6 +3085,7 @@ function IX.want(k)
 end
 function IX.any()
     return next(CFG.Targets) ~= nil or ((CFG.Best or 0) > 0 and next(IX.best) ~= nil) or (CFG.AutoIndex and next(IX.need) ~= nil)
+        or CFG.Best == 4 -- UPGRADES waiting for something better than the stack: a fine state
 end
 function IX.placed(held)
     local k = key(held)
@@ -3162,7 +3164,8 @@ function IX.tick()
     end
     if CFG.Best == 4 then
         local n = 0 for _ in pairs(IX.best) do n = n + 1 end
-        parts[#parts + 1] = ("upgrades: %d butter%s"):format(n, n == 1 and "" or "s")
+        parts[#parts + 1] = n == 0 and "upgrades: none better than your stack - stations kept free"
+            or ("upgrades: %d butter%s"):format(n, n == 1 and "" or "s")
     elseif (CFG.Best or 0) > 0 and IX.order[1] then parts[#parts + 1] = "best: " .. prettyOf(IX.order[1].k) end
     if CFG.BestCrate and IX.bestCrateName then parts[#parts + 1] = "crate: " .. IX.bestCrateName end
     if SH.got > 0 then parts[#parts + 1] = "shower: " .. SH.got end

@@ -2980,7 +2980,11 @@ function IX.mods()
     if not IX.si then return false end
     local roll = {} -- what Auto Roll can stop on: every rarity of the roll table but the first
     if IX.arm and type(IX.arm.tierOf) == "table" then
-        for n in pairs(IX.arm.tierOf) do if IX.si[n] then roll[key(n)] = n end end
+        for n in pairs(IX.arm.tierOf) do
+            local e = IX.si[n]
+            -- never a Limited (Robux / event-only), even if an update puts one in the roll table
+            if type(e) == "table" and e.rarity ~= "Limited" and not e.incomeType and not e.hiddenAfter then roll[key(n)] = n end
+        end
     end
     IX.roll = roll
     local list = {} -- plain $ income only (the "x% of your best" Limiteds are never rolled)

@@ -2,7 +2,7 @@
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v25"
+local VERSION = "v26"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -48,6 +48,10 @@ local CFG = {
     Ghost = false,                 -- FULL ghost: wait inside the ground between jobs, help from inside the butter
     GhostHelps = false,            -- HELPS-only ghost: hidden helps, but you stay free to walk around between jobs
     Quests = true,                 -- claim finished event quests; pull the lever / collect faster for quests that ask
+    AutoIndex = false,             -- buy + wax once every butter not in your Index yet (a running wax of it counts)
+    Best = 0,                      -- 1-3: buy the game's top 1-3 butters by income instead of the BUTTERS ticks (0 = off)
+    BestCrate = false,             -- open the game's dearest crate (a new one counts the moment the game has it)
+    Shower = true,                 -- admin shower: grab the butters that fall on the map
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -70,6 +74,7 @@ local CRATE = { on = false, waiting = false, data = nil, at = 0, title = "crate"
     rolled = nil, rolledAt = 0, prompt = nil, summonFails = 0, ignoreUntil = 0, scanAt = 0,
     ours = false, byYou = false, openedAt = 0, win = nil }
 local PX, TM, PF, FU, HX, CF, QX = {}, {}, {}, {}, {}, {}, {} -- pets, teams, smooth + ghost, fusing, helping, campfire, quests
+local IX, SH = {}, {} -- index / best butter / best crate, admin shower
 local KILLED = {}
 local conns, logs, logAll, evAll = {}, {}, {}, {}
 ---------------------------------------------------------------- utils
@@ -97,7 +102,14 @@ local function key(s) -- "Tiramisu Butter" / "TiramisuButter" / "tiramisu" -> "t
     return b
 end
 -- a butter counts as a target only if its own tick box is on
-local function isTarget(s) return type(s) == "string" and key(s) ~= "" and CFG.Targets[key(s)] == true end
+-- (or, with AUTO INDEX / BEST BUTTER on, if those want it: IX.want)
+local function isTarget(s)
+    if type(s) ~= "string" then return false end
+    local k = key(s)
+    if k == "" then return false end
+    if IX.want then return IX.want(k) end
+    return CFG.Targets[k] == true
+end
 local function butterish(n)
     n = n:lower()
     return n:find("squishy", 1, true) ~= nil or n:match("butter$") ~= nil or n:match("butter[^%a]") ~= nil
@@ -377,7 +389,11 @@ function CR.learn(d)
     CR.seen[k] = e
     if changed then CR.at, LEARN.dirty = now(), true end
 end
-function CR.wanted(n) return n ~= nil and CFG.CrateTicks[CR.key(n)] == true end
+function CR.wanted(n)
+    if n == nil then return false end
+    local k = CR.key(n)
+    return CFG.CrateTicks[k] == true or (CFG.BestCrate and IX.bestCrate ~= nil and (k == IX.bestCrate or k == IX.bestCrateTitle))
+end
 function CR.list() -- every known crate, cheapest (worst) first
     local all = {}
     for i, b in ipairs(CR.base) do all[CR.key(b[1])] = { name = b[1], title = b[2], rar = b[3], i = i } end
@@ -448,9 +464,11 @@ local function buildCat()
     -- rarities: by crate price when we have seen the crates, else the built-in order, else A-Z
     local base = {}
     for i, r in ipairs(BASE_RAR) do base[r] = i end
-    local rl = {}
+    local rl, rk = {}, {}
     for r in pairs(mem) do rl[#rl + 1] = r end
+    pcall(function() for i, r in ipairs(require(RS.Modules.SquishyRNG).Keys) do rk[r] = i end end) -- the game's own order
     table.sort(rl, function(x, y)
+        if rk[x] and rk[y] and rk[x] ~= rk[y] then return rk[x] < rk[y] end
         local px, py = LEARN.price[x], LEARN.price[y]
         if px and py and px ~= py then return px < py end
         local bx, by = base[x], base[y]
@@ -472,7 +490,8 @@ local function rarityOf(name)
 end
 local function targetNames()
     local out = {}
-    for k, on in pairs(CFG.Targets) do if on then out[#out + 1] = prettyOf(k) end end
+    local list = ((CFG.Best or 0) > 0 and next(IX.best or {})) and IX.best or CFG.Targets
+    for k, on in pairs(list) do if on then out[#out + 1] = prettyOf(k) end end
     table.sort(out)
     return out
 end
@@ -520,6 +539,7 @@ local function configText()
     L[#L + 1] = "N|GlazeLead|" .. tostring(CFG.GlazeLead)
     L[#L + 1] = "N|FpsCap|" .. tostring(CFG.FpsCap)
     L[#L + 1] = "N|MemLimit|" .. tostring(CFG.MemLimit)
+    L[#L + 1] = "N|Best|" .. tostring(CFG.Best or 0)
     for _, k in ipairs({ "TeamNormal", "TeamFull", "TeamGlaze", "TeamWax" }) do L[#L + 1] = "S|" .. k .. "|" .. CFG[k] end
     do
         local t = {}
@@ -531,7 +551,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine", "AutoIndex", "BestCrate", "Shower" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -564,6 +584,9 @@ local function applyConfig(raw)
         elseif a == "N" and (b == "FpsCap" or b == "MemLimit") then
             local n = tonumber(c)
             if n and n >= 0 then CFG[b] = math.floor(n) end
+        elseif a == "N" and b == "Best" then
+            local n = tonumber(c)
+            if n and n >= 0 and n <= 3 then CFG.Best = math.floor(n) end
         elseif a == "N" and b == "GlazeLead" then
             local n = tonumber(c)
             if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) end
@@ -1063,6 +1086,7 @@ local function doPlace()
                     S.carryBlind, S.attrStale = now() + 2.5, 0
                     EV.name, EV.rar, EV.at = nil, nil, now()
                     note(("WAXED %s #%d at %s via %s"):format(prettyOf(key(held)), S.placed, pp.Parent.Parent.Name, how))
+                    if IX.placed then pcall(IX.placed, held) end
                     return true
                 end
             end
@@ -2155,7 +2179,11 @@ function TM.tick()
     -- 1 glaze at a finish, 2 wax while placing (or holding a ticked butter with a station free),
     -- 3 FULL while every station is busy (money + the wax speed every running wax goes at), 4 NORMAL
     local want, why = "", ""
-    if CFG.TeamGlaze ~= "" and (TM.glazeFor or now() < (TM.afterUntil or 0)) then
+    local snap = IX.snapAt and (IX.snapAt - t) -- the admin's snap finishes every wax at once: glaze rolls then
+    if snap and snap < -8 then IX.snapAt, snap = nil, nil end
+    if CFG.TeamGlaze ~= "" and snap and snap <= 20 then
+        want, why = CFG.TeamGlaze, (" - the admin snap finishes every wax in %ds"):format(math.max(0, math.floor(snap)))
+    elseif CFG.TeamGlaze ~= "" and (TM.glazeFor or now() < (TM.afterUntil or 0)) then
         want, why = CFG.TeamGlaze, TM.glazeFor and (" - station " .. TM.glazeFor.st.Name .. " finishes soon") or ""
     elseif CFG.TeamWax ~= "" and (TM.placing or TM.aboutToPlace()) then
         want, why = CFG.TeamWax, " - placing a butter"
@@ -2926,6 +2954,261 @@ local function doCollect()
     stepOff(c, target, radius) -- leave the pad so the next visit is a fresh touch
 end
 
+---------------------------------------------------------------- index, best butter, best crate, admin show
+-- AUTO INDEX: a butter only counts in your Index once a wax of it has FINISHED. So every butter you
+-- have never finished is bought once and waxed, and not bought again while that wax runs.
+-- BEST BUTTER: the game's top 1-3 butters by income are bought instead of the BUTTERS tab's ticks
+-- (an update's new best takes over by itself). BEST CRATE: the dearest crate is opened.
+-- All three read the game's own tables (SquishyInfo, AutoRollRules, CrateInfo), so new butters,
+-- rarities and crates count as soon as the game has them, and the game's Auto Roll is set to stop on
+-- exactly what is wanted.
+IX.disc, IX.need, IX.best, IX.waxing, IX.order, IX.placedAt = nil, {}, {}, {}, {}, {}
+IX.discAt, IX.modAt, IX.sentAt, IX.msg, IX.nNeed, IX.nWax, IX.fails = -100, -100, -100, "", 0, 0, 0
+function IX.on() return CFG.AutoIndex or (CFG.Best or 0) > 0 or CFG.BestCrate end
+function IX.mods()
+    if IX.si and now() - IX.modAt < 120 then return true end
+    local M = RS:FindFirstChild("Modules")
+    if not M then return false end
+    local function req(n)
+        local m = M:FindFirstChild(n)
+        if not m then return nil end
+        local ok, v = pcall(require, m)
+        return (ok and type(v) == "table") and v or nil
+    end
+    IX.si, IX.arm, IX.ci = req("SquishyInfo"), req("AutoRollRules"), req("CrateInfo")
+    IX.modAt = now()
+    if not IX.si then return false end
+    local roll = {} -- what Auto Roll can stop on: every rarity of the roll table but the first
+    if IX.arm and type(IX.arm.tierOf) == "table" then
+        for n in pairs(IX.arm.tierOf) do if IX.si[n] then roll[key(n)] = n end end
+    end
+    IX.roll = roll
+    local list = {} -- plain $ income only (the "x% of your best" Limiteds are never rolled)
+    for k, n in pairs(roll) do
+        local e = IX.si[n]
+        if type(e) == "table" and type(e.income) == "number" and not e.incomeType then
+            list[#list + 1] = { k = k, inc = e.income, pr = tonumber(e.price) or 0 }
+        end
+    end
+    table.sort(list, function(a, b) if a.inc ~= b.inc then return a.inc > b.inc end return a.pr > b.pr end)
+    IX.order = list
+    local bc, bp, bt
+    local crates = (IX.ci and type(IX.ci.crates) == "table") and IX.ci.crates or {}
+    for n, e in pairs(crates) do
+        local pr = type(e) == "table" and tonumber(e.price)
+        if pr and (not bp or pr > bp) then bc, bp, bt = n, pr, e.title end
+    end
+    IX.bestCrate, IX.bestCrateName = bc and CR.key(bc), bc
+    IX.bestCrateTitle = bt and CR.key(bt) or nil
+    return true
+end
+function IX.rank(r) -- rarity position in the game's roll table (higher = rarer)
+    local ok, v = pcall(function() return IX.arm.rankOf(r) end)
+    return (ok and tonumber(v)) or 0
+end
+function IX.loadDisc(t)
+    if type(t) ~= "table" then return end
+    local d = {}
+    for n, v in pairs(t) do if v then d[key(tostring(n))] = true end end
+    IX.disc, IX.discAt = d, now()
+end
+function IX.fetch()
+    IX.discAt = now()
+    local R = RS:FindFirstChild("Remotes")
+    local f = R and R:FindFirstChild("GetSquishiesDiscovered")
+    if not f then return end
+    local ok, t = pcall(function() return f:InvokeServer() end)
+    if ok then IX.loadDisc(t) end
+end
+function IX.scanWax() -- what your own stations are waxing right now
+    local w = {}
+    local ws = S.plot and S.plot:FindFirstChild("WaxStations")
+    if ws then
+        for _, st in ipairs(ws:GetChildren()) do
+            local ph = st:FindFirstChild("SquishyPlaceHolder")
+            if ph and st:GetAttribute("HasSquishy") then
+                for _, c in ipairs(ph:GetChildren()) do if c:IsA("Model") then w[key(c.Name)] = true end end
+            end
+        end
+    end
+    for k, t in pairs(IX.placedAt) do -- just placed: the station may not show it yet
+        if now() - t < 20 then w[k] = true else IX.placedAt[k] = nil end
+    end
+    IX.waxing = w
+end
+function IX.compute()
+    local need, n, w = {}, 0, 0
+    if IX.disc then
+        for k in pairs(IX.roll or {}) do
+            if not IX.disc[k] then
+                if IX.waxing[k] then w = w + 1 else need[k], n = true, n + 1 end
+            end
+        end
+    end
+    IX.need, IX.nNeed, IX.nWax = need, n, w
+    local b = {}
+    for i = 1, math.min(CFG.Best or 0, #IX.order) do b[IX.order[i].k] = true end
+    IX.best = b
+end
+function IX.want(k)
+    if (CFG.Best or 0) > 0 and next(IX.best) then
+        if IX.best[k] then return true end
+    elseif CFG.Targets[k] then
+        return true
+    end
+    return CFG.AutoIndex == true and IX.need[k] == true
+end
+function IX.any()
+    return next(CFG.Targets) ~= nil or ((CFG.Best or 0) > 0 and next(IX.best) ~= nil) or (CFG.AutoIndex and next(IX.need) ~= nil)
+end
+function IX.placed(held)
+    local k = key(held)
+    IX.placedAt[k], IX.waxing[k] = now(), true
+    if IX.need[k] then
+        IX.need[k], IX.nNeed, IX.nWax = nil, math.max(0, IX.nNeed - 1), IX.nWax + 1
+        note(("INDEX: %s is waxing - it counts once it finishes, not buying it again"):format(prettyOf(k)))
+        if IX.on() then task.spawn(pcall, IX.sync, true) end
+    end
+end
+function IX.rulesNow() -- the game's Auto Roll choices for what is wanted right now
+    local bt, cr = {}, {}
+    for k, n in pairs(IX.roll or {}) do if IX.want(k) then bt[n] = true end end
+    for n, e in pairs((IX.ci and type(IX.ci.crates) == "table") and IX.ci.crates or {}) do
+        if CR.wanted(n) or (type(e) == "table" and type(e.title) == "string" and CR.wanted(e.title)) then cr[n] = true end
+    end
+    if not next(bt) and not next(cr) then return nil end
+    if IX.arm and type(IX.arm.encode) == "function" then
+        local ok, s = pcall(IX.arm.encode, { rarities = {}, butters = bt, crates = cr, index = false })
+        if ok and type(s) == "string" then return s end
+    end
+    local function list(t) local o = {} for n in pairs(t) do o[#o + 1] = n end table.sort(o) return table.concat(o, ",") end
+    local s = "adv:"
+    if next(bt) then s = s .. ";butters:" .. list(bt) end
+    if next(cr) then s = s .. ";crates:" .. list(cr) end
+    return s
+end
+function IX.canon(s) -- same choices in any order compare equal
+    local t = {}
+    for part in tostring(s or ""):gmatch("[^;]+") do
+        local head, rest = part:match("^(%a+):(.*)$")
+        if not head then head, rest = "r", part:gsub("^adv:", "") end
+        for x in rest:gmatch("[^,]+") do t[#t + 1] = head .. "=" .. x end
+    end
+    table.sort(t)
+    return table.concat(t, "|")
+end
+function IX.sync(force)
+    if plr:GetAttribute("AutoRoll") ~= true then return end -- no Auto Roll pass: nothing to set
+    if now() < (IX.pauseUntil or 0) then return end
+    local s = IX.rulesNow()
+    if not s or #s > 1900 then return end
+    if IX.canon(plr:GetAttribute("AutoRollRules")) == IX.canon(s) then IX.fails = 0 return end
+    if not force and now() - IX.sentAt < 4 then return end
+    local R = RS:FindFirstChild("Remotes")
+    local r = R and R:FindFirstChild("AutoRollAction")
+    if not r then return end
+    IX.fails = IX.fails + 1
+    if IX.fails > 4 then
+        IX.fails, IX.pauseUntil = 0, now() + 300
+        note("the game did not take the Auto Roll choices - trying again in 5 min")
+        return
+    end
+    IX.sentAt = now()
+    AR.replaying = true
+    pcall(function() r:FireServer("Rules", s) end)
+    AR.replaying = false
+    CFG.ARrules = s
+    local nb, nc = 0, 0
+    for x in (s:match("butters:([^;]*)") or ""):gmatch("[^,]+") do nb = nb + 1 end
+    for x in (s:match("crates:([^;]*)") or ""):gmatch("[^,]+") do nc = nc + 1 end
+    local tag = nb .. "/" .. nc
+    if IX.told ~= tag then IX.told = tag note(("auto roll now stops on %d butters and %d crates"):format(nb, nc)) end
+end
+function IX.tick()
+    if not IX.mods() then IX.msg = "index: the game's butter list cannot be read" return end
+    if now() - IX.discAt > 30 then IX.fetch() end
+    IX.scanWax()
+    IX.compute()
+    if IX.on() then IX.sync(false) end
+    local parts = {}
+    if CFG.AutoIndex then
+        parts[#parts + 1] = not IX.disc and "index: reading..." or (IX.nNeed + IX.nWax == 0 and "index: complete"
+            or ("index: %d to get, %d waxing"):format(IX.nNeed, IX.nWax))
+    end
+    if (CFG.Best or 0) > 0 and IX.order[1] then parts[#parts + 1] = "best: " .. prettyOf(IX.order[1].k) end
+    if CFG.BestCrate and IX.bestCrateName then parts[#parts + 1] = "crate: " .. IX.bestCrateName end
+    if SH.got > 0 then parts[#parts + 1] = "shower: " .. SH.got end
+    IX.msg = #parts > 0 and table.concat(parts, " | ") or "index / best: off"
+end
+IX.heard = {}
+function IX.admin(kind, name, d) -- the AdminShow remote: ("Effect", name, data), ("Say", text), ...
+    if kind ~= "Effect" then return end
+    if name == "Shower" then SH.add(d) return end
+    if name == "ShowerTaken" then SH.gone(d) return end
+    if name == "ShowerClear" then SH.drops = {} return end
+    if name == "WaxGlow" then
+        local t = type(d) == "table" and tonumber(d.SnapAt)
+        if t then
+            IX.snapAt = t
+            note(("ADMIN: every wax finishes in %ds%s"):format(math.floor(t - PX.srv()),
+                (CFG.Teams and CFG.TeamGlaze ~= "") and " - glaze team on for it" or ""))
+        end
+        return
+    end
+    name = tostring(name)
+    evlog("Admin " .. name)
+    if name ~= "GoalPoint" and now() - (IX.heard[name] or -100) > 30 then
+        IX.heard[name] = now()
+        note("ADMIN: " .. name)
+    end
+end
+-- ---- admin shower: butters fall, land, pop into pieces; standing on a piece takes it (server-side)
+SH.drops, SH.tried, SH.got, SH.miss = {}, {}, 0, 0
+function SH.add(d)
+    if type(d) ~= "table" or type(d.Pieces) ~= "table" then return end
+    for _, p in pairs(d.Pieces) do
+        if type(p) == "table" and p.Id ~= nil and p.Position ~= nil then
+            SH.drops[p.Id] = { id = p.Id, butter = tostring(p.Butter or "?"), rar = tostring(p.Rarity or "?"), star = p.Star == true,
+                pos = p.Position, opens = tonumber(p.OpensAt) or 0, ends = tonumber(p.ExpiresAt) or 0 }
+        end
+    end
+end
+function SH.gone(d)
+    if type(d) ~= "table" or d.Id == nil then return end
+    SH.drops[d.Id] = nil
+    if tonumber(d.UserId) == PX.uid then SH.mine = d.Id end
+end
+function SH.pick()
+    local t = PX.srv()
+    local best, bs
+    for id, p in pairs(SH.drops) do
+        if t >= p.ends - 0.3 then
+            SH.drops[id] = nil
+        elseif t >= p.opens - 0.2 and (SH.tried[id] or 0) < 3 then
+            local sc = (isTarget(p.butter) and 1e6 or 0) + (p.star and 1e5 or 0) + IX.rank(p.rar) * 100 - (p.ends - t)
+            if not best or sc > bs then best, bs = p, sc end
+        end
+    end
+    return best
+end
+function SH.due()
+    return CFG.Shower and S.running and next(SH.drops) ~= nil and not carriedName() and SH.pick() ~= nil
+end
+function SH.grab()
+    local p, c = SH.pick(), char()
+    if not (p and c) then return end
+    SH.tried[p.id] = (SH.tried[p.id] or 0) + 1
+    if PF.hold then pcall(PF.unpin, true) end
+    teleport(c, p.pos + Vector3.new(0, hipH(c) + 0.5, 0))
+    waitFor(function() return SH.mine == p.id or carriedName() ~= nil or not SH.drops[p.id] end, 1.5)
+    if SH.mine == p.id or carriedName() then
+        SH.got, SH.drops[p.id] = SH.got + 1, nil
+        note(("GRABBED %s [%s]%s from the admin shower"):format(prettyOf(key(p.butter)), p.rar, p.star and " (star)" or ""))
+    elseif not SH.drops[p.id] then
+        SH.miss = SH.miss + 1 -- someone else got there first
+    end
+end
+
 ---------------------------------------------------------------- decision
 local setRunning -- defined below; decide() needs it for the unattended retry
 local function decide()
@@ -2945,7 +3228,7 @@ local function decide()
         S.plot, S.padPart, S.sellSpot = findPlot(), nil, nil
         if not S.plot then return nil, "own plot not found yet", "wait" end
     end
-    if not next(CFG.Targets) then
+    if not IX.any() then
         return nil, "nothing ticked - pick a butter in the BUTTERS tab", "bad"
     end
     local free, total = freeCount()
@@ -3493,6 +3776,8 @@ local function step()
     elseif act == "nocrate" then runAction("discarding crate...", doCrate, false)
     elseif act == "sell" then runAction("selling...", doSell)
     elseif act == "buy" then runAction("buying...", doBuy, false)
+    elseif not act and not S.matchSince and SH.due() then
+        runAction("grabbing a butter from the admin shower...", SH.grab)
     elseif not act and not S.matchSince and CF.due() then
         runAction("sitting at the campfire...", CF.sit)
     elseif not act and not S.matchSince and QX.pullDue() and not carriedName() and not (padInfo() and isTarget(padInfo().name)) then
@@ -3713,6 +3998,7 @@ local function caption(t) lbl(row(14), t, 10, C.dim, true) end
 rw = row(32)
 U.startB = button(rw, "START", C.good, 14, at(0, 0.68))
 U.killB = button(rw, "KILL", C.bad, 14, at(0.68, 0.32))
+do -- the five counters
 local r2 = row(40)
 local function cell(i, cap, n)
     local f = mk("Frame", { Position = UDim2.new((i - 1) / n, 0, 0, 0), Size = UDim2.new(1 / n, i < n and -4 or 0, 1, 0),
@@ -3724,6 +4010,7 @@ local function cell(i, cap, n)
     return v
 end
 U.sBought, U.sPlaced, U.sSold, U.sColl, U.sFree = cell(1, "BOUGHT", 5), cell(2, "WAXED", 5), cell(3, "SOLD", 5), cell(4, "MONEY", 5), cell(5, "FREE", 5)
+end
 U.info = lbl(row(40), "", 10, C.dim, false)
 U.tgt = lbl(row(16), "", 10, C.good, false)
 caption("SWITCHES")
@@ -3736,13 +4023,15 @@ U.colT, U.sellT = pair("COLLECT: ON", "SELL THEM: ON")
 U.crateT, U.arT = pair("OPEN CRATES: ON", "AUTO ROLL: OFF")
 U.helpT, U.helpGT = pair("HELP WAXES: OFF", "GUILD CALLS: OFF")
 U.campT, U.ghostT = pair("CAMPFIRE: OFF", "GHOST: OFF")
+U.ixT, U.bestT = pair("AUTO INDEX: OFF", "BEST BUTTER: OFF")
+U.bcT, U.shT = pair("BEST CRATE: OFF", "GRAB SHOWER: ON")
 rw = row(26)
 U.questT = button(rw, "QUESTS: OFF", C.panel2, 10, at(0, 0.5))
 lbl(rw, "collect every", 9, C.dim, false, at(0.52, 0.2))
 U.secB = textbox(rw, tostring(CFG.Every), "60", at(0.72, 0.13))
 U.secB.TextSize = 11
 U.secSet = button(rw, "SET", C.accent, 10, at(0.85, 0.15))
-local st = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, row(62))
+local st = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, row(76))
 round(st, 6)
 mk("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, st)
 mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 3) }, st)
@@ -3751,7 +4040,7 @@ local function sline(i) -- one status line per feature, cut short rather than wr
     l.LayoutOrder, l.TextWrapped, l.TextTruncate = i, false, Enum.TextTruncate.AtEnd
     return l
 end
-U.helpL, U.campL, U.questL, U.arL = sline(1), sline(2), sline(3), sline(4)
+U.helpL, U.campL, U.questL, U.arL, U.ixL = sline(1), sline(2), sline(3), sline(4), sline(5)
 end
 caption("LOG")
 U.log = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
@@ -4272,6 +4561,7 @@ local function applyLoaded()
     setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
     setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
     PF.paintGhost()
+    IX.paint()
     setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
     if not CFG.Ghost then task.spawn(function() while S.busy do nap(0.1) end if not HX.home then pcall(PF.unpin) end end) end
     setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
@@ -4351,6 +4641,39 @@ click(U.campT, function()
     setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
 end)
 click(U.ghostT, PF.cycleGhost)
+function IX.paint()
+    setToggle(U.ixT, CFG.AutoIndex, "AUTO INDEX: ON", "AUTO INDEX: OFF")
+    setToggle(U.bestT, (CFG.Best or 0) > 0, "BEST: TOP " .. tostring(CFG.Best), "BEST BUTTER: OFF")
+    setToggle(U.bcT, CFG.BestCrate, "BEST CRATE: ON", "BEST CRATE: OFF")
+    setToggle(U.shT, CFG.Shower, "GRAB SHOWER: ON", "GRAB SHOWER: OFF")
+end
+function IX.changed(wasOn) -- after a switch: work it out again now, and put your own choices back when all are off
+    task.spawn(function()
+        pcall(IX.tick)
+        if wasOn and not IX.on() then IX.fails, IX.pauseUntil = 0, 0 pcall(IX.sync, true) end
+    end)
+    IX.paint()
+end
+click(U.ixT, function()
+    local was = IX.on()
+    CFG.AutoIndex = not CFG.AutoIndex
+    IX.discAt = -100 -- read the Index again
+    IX.changed(was)
+end)
+click(U.bestT, function()
+    local was = IX.on()
+    CFG.Best = ((CFG.Best or 0) + 1) % 4 -- off -> top 1 -> top 2 -> top 3 -> off
+    IX.changed(was)
+end)
+click(U.bcT, function()
+    local was = IX.on()
+    CFG.BestCrate = not CFG.BestCrate
+    IX.changed(was)
+end)
+click(U.shT, function()
+    CFG.Shower = not CFG.Shower
+    IX.paint()
+end)
 click(U.crateB, function()
     CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil, S.crateFails = 0, 0, 0, 0
     task.spawn(runAction, "opening crate...", doCrate, true)
@@ -4582,6 +4905,7 @@ local function refresh()
         U.put(U.helpL, "help: " .. ((CFG.Help or CFG.HelpGuild) and HX.msg or "off"))
         U.put(U.campL, "camp: " .. (CFG.Campfire and CF.msg or "off") .. (PF.ghostMode() > 0 and (PF.hold and " | ghost: hidden" or " | ghost: up") or ""))
         U.put(U.questL, "quests: " .. (CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"))
+        U.put(U.ixL, IX.msg)
         setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
         setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
         local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
@@ -4592,7 +4916,7 @@ local function refresh()
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
-    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF, QX = QX }
+    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF, QX = QX, IX = IX, SH = SH }
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")
@@ -4617,6 +4941,7 @@ setToggle(U.helpT, CFG.Help, "HELP WAXES: ON", "HELP WAXES: OFF")
 setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
 setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
 PF.paintGhost()
+IX.paint()
 setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
@@ -4705,6 +5030,33 @@ task.spawn(function() -- guildmates' "Need help with a wax" calls
     local ask = r and r:FindFirstChild("RollConfirmAsk")
     if ask and S.alive then track(ask.OnClientEvent:Connect(function(n) QX.asked = n or "butter" end)) end
 end)
+task.spawn(function() -- index / best butter / best crate, and the admin show
+    local r = RS:WaitForChild("Remotes", 30)
+    if not (r and S.alive) then return end
+    local function on(n, fn)
+        local e = r:FindFirstChild(n)
+        if e and e:IsA("RemoteEvent") then track(e.OnClientEvent:Connect(function(...) pcall(fn, ...) end)) end
+    end
+    on("NewSquishyDiscovered", function(n, glaze)
+        if type(n) ~= "string" then return end
+        IX.disc = IX.disc or {}
+        IX.disc[key(n)] = true
+        note(("INDEX: %s%s is in your Index now"):format(prettyOf(key(n)), glaze and (" (" .. tostring(glaze) .. ")") or ""))
+    end)
+    on("IndexRefresh", IX.loadDisc)
+    on("IndexRowComplete", function(row) note("INDEX: the whole " .. tostring(row) .. " row is complete") end)
+    on("AdminShow", IX.admin)
+    local sync = r:FindFirstChild("AdminShowSync") -- shower butters already out when we joined
+    if sync then
+        local ok, list = pcall(function() return sync:InvokeServer() end)
+        if ok and type(list) == "table" then for _, d in pairs(list) do pcall(SH.add, d) end end
+    end
+    while S.alive do
+        local ok, e = pcall(IX.tick)
+        if not ok then IX.msg = "index error: " .. tostring(e) task.wait(10) end
+        task.wait(2)
+    end
+end)
 task.spawn(function() -- quests: claims and what they ask for
     task.wait(8)
     while S.alive do
@@ -4756,7 +5108,11 @@ task.spawn(function() -- the game's Auto Roll: back on after a join, and kept on
         task.wait(30)
         -- the game switched it off on its own: switch it back, but never while something is on the
         -- pad, in your hands or in a crate, so nothing you want is rolled away
-        if S.alive and CFG.AutoRoll and S.running and not AR.isOn() and not padInfo() and not carriedName()
+        local pad = padInfo()
+        -- with AUTO INDEX / BEST on, what is on the pad can stop being wanted (its index wax just
+        -- started): that one may be rolled away
+        if pad and IX.on() and not isTarget(pad.name) then pad = nil end
+        if S.alive and CFG.AutoRoll and S.running and not AR.isOn() and not pad and not carriedName()
             and not CRATE.waiting and not CRATE.on and not S.busy then
             AR.apply("it was off")
         end
@@ -4769,7 +5125,7 @@ task.spawn(function() -- start by myself, once the character and the plot exist
         if not S.alive then return end
         if S.running then return end -- you got there first
         S.plot = S.plot or findPlot()
-        if char() and S.plot and next(CFG.Targets) then
+        if char() and S.plot and IX.any() then
             setRunning(true, true)
             note("started by itself")
             return

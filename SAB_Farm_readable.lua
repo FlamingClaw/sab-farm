@@ -39,6 +39,7 @@ local CFG = {
     Teams = false,                 -- TEAMS tab: switch saved pet teams by itself
     TeamNormal = "", TeamFull = "", TeamGlaze = "", TeamWax = "", GlazeLead = 45,
     Lite = false, HideHud = false, NoRender = false, FpsCap = 0, -- SETUP tab: smoother running
+    Calm = false,                  -- NO ANIMATIONS: switch off the game's own per-frame eye candy (stack squish, glaze rainbow...)
     HideBases = false,             -- don't draw other players' bases (they are still there: helping works)
     HideMine = false,              -- ... and your own base and stack tower too (the farm still works there)
     MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
@@ -129,6 +130,8 @@ local function parseMoney(s)
     local n = tonumber(num)
     if not n then return nil end
     if suf == "" then return n end
+    local alias = { qd = "qa", qn = "qi" } -- the game's own spelling of 1e15 / 1e18
+    suf = alias[suf:lower()] or suf
     for i, x in ipairs(SUF) do if x:lower() == suf:lower() then return n * 1000 ^ (i - 1) end end
     return nil
 end
@@ -552,7 +555,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine", "AutoIndex", "BestCrate", "Shower" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine", "AutoIndex", "BestCrate", "Shower", "Calm" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -1023,7 +1026,12 @@ local function doBuy(forced)
     if not part then note("buy: pad part missing") return false end
     S.lastBuyAt = now()
     local seq0, cash0 = EV.seq, cash()
+    local c0 = char()
+    local far = c0 and (c0.HumanoidRootPart.Position - part.Position).Magnitude > 12
     standNear(part, bp)
+    -- just arrived from the campfire / a help: the server still has us where we were for a moment and
+    -- ignores the press (that was the "first buy fails" on Sushi), so let it catch up first
+    if far then nap(0.4) end
     if not bp.Enabled then note("buy aborted: pad emptied") return false end
     local id = identity()
     if not forced and id.state ~= "match" then
@@ -1042,7 +1050,7 @@ local function doBuy(forced)
         waitFor(function() return carriedName() ~= nil end, 0.8)
         local got = carriedName()
         local c1 = cash()
-        S.holding, S.bought, S.cashFails = true, S.bought + 1, 0
+        S.holding, S.bought, S.cashFails, S.buyMiss = true, S.bought + 1, 0, 0
         S.matchSince = nil
         EV.name, EV.rar, EV.at = nil, nil, now()
         note(("BOUGHT %s%s via %s"):format(got and prettyOf(key(got)) or (id.shown or "?"),
@@ -1052,10 +1060,16 @@ local function doBuy(forced)
         end
         return true
     end
-    S.cashFails = S.cashFails + 1
-    S.noCashUntil = now() + math.min(8 * 2 ^ (S.cashFails - 1), 60)
     local pi = padInfo()
-    note(("BUY REFUSED: cash short? have $%s, price %s"):format(fmt(cash()), (pi and pi.price) or "?"))
+    if cashShort() then -- really short: back off longer each time
+        S.cashFails = S.cashFails + 1
+        S.noCashUntil = now() + math.min(8 * 2 ^ (S.cashFails - 1), 60)
+        note(("BUY REFUSED: cash short - have $%s, price %s"):format(fmt(cash()), (pi and pi.price) or "?"))
+    else -- enough cash: the server just did not take that press; go again in a moment, standing still
+        S.buyMiss = (S.buyMiss or 0) + 1
+        S.noCashUntil = now() + (S.buyMiss <= 3 and 1 or 6)
+        note(("buy did not go through (%s, try %d) - again in %ds"):format(pi and pi.price or "?", S.buyMiss, S.buyMiss <= 3 and 1 or 6))
+    end
     return false
 end
 
@@ -2755,8 +2769,60 @@ function PF.render(off)
     CFG.NoRender = off
     pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(not off) end)
 end
+-- ---- NO ANIMATIONS: the game's own per-frame work that only changes what you see. Measured on your
+-- phone Nov 22 (uncapped): ~36 fps with all of it, 48-55 fps with any one of the big ones off.
+-- Read from the game's code before switching anything off; all of these only animate:
+--   SquishyHandler   the stack's squish/rise animation (every butter, every frame)
+--   GlazeHandler     the rainbow colour cycle on glazed butters
+--   ConveyorHandler  the conveyor texture scroll and push
+--   DeckHandler      bounce pads, deck fading
+--   PetHandler       pets walking after you, the pen pets wandering (adopting is server-side)
+--   SignDodge, Cannon, TeleportPads   sign and base-skin animations
+-- The stairs gate (it changes collisions) and anything that runs the farm's prompts stays on.
+PF.CALM = { "LocalScript.SquishyHandler", "LocalScript.GlazeHandler", "LocalScript.ConveyorHandler", "LocalScript.DeckHandler",
+    "PetHandler.Walker", "PetHandler.Meadow", "FloorTeleportHandler.SignDodge", "BaseSkinHandler.Cannon", "BaseSkinHandler.TeleportPads" }
+PF.calmed = {}
+function PF.calmScan() -- (again every 20 s: the game makes new ones after a respawn)
+    if not CFG.Calm or type(getconnections) ~= "function" then return 0 end
+    local RunS = game:GetService("RunService")
+    local n = 0
+    for _, nm in ipairs({ "RenderStepped", "Heartbeat", "Stepped" }) do
+        local okS, sig = pcall(function() return RunS[nm] end)
+        local ok, cs = false, nil
+        if okS and sig then ok, cs = pcall(getconnections, sig) end
+        if ok and type(cs) == "table" then
+            for _, c in ipairs(cs) do
+                local src = ""
+                pcall(function() local sc = getfenv(c.Function).script src = sc and sc:GetFullName() or "" end)
+                if src ~= "" then
+                    for _, pat in ipairs(PF.CALM) do
+                        if src:find(pat, 1, true) then
+                            if pcall(function() c:Disable() end) then PF.calmed[#PF.calmed + 1] = c n = n + 1 end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if #PF.calmed > 200 then -- the same ones again and again: keep the list short
+        local keep = {} for i = #PF.calmed - 49, #PF.calmed do keep[#keep + 1] = PF.calmed[i] end PF.calmed = keep
+    end
+    return n
+end
+function PF.calm(on)
+    CFG.Calm = on
+    if on then
+        local n = PF.calmScan()
+        note(("NO ANIMATIONS: %d of the game's animation loops switched off"):format(n))
+    else
+        for _, c in ipairs(PF.calmed) do pcall(function() c:Enable() end) end
+        PF.calmed = {}
+    end
+end
 function PF.restoreAll() -- KILL puts the game back exactly as it was
     pcall(PF.unpin)
+    pcall(PF.calm, false)
     if CFG.HideBases then pcall(PF.bases, false) end
     if QX.arPaused then pcall(QX.resume, "script stopped") end
     pcall(PF.lite, false)
@@ -3402,7 +3468,8 @@ local function decide()
     if t < S.noCashUntil then
         local have, price = cashShort()
         if have then return nil, ("cash short: have $%s, price ~$%s"):format(fmt(have), fmt(price)), "bad" end
-        return nil, ("cash short? have $%s - retry in %ds"):format(fmt(cash()), math.ceil(S.noCashUntil - t)), "bad"
+        return nil, (cashShort() and "cash short - have $%s, retry in %ds" or "buy did not go through - have $%s, again in %ds"):format(
+            fmt(cash()), math.ceil(S.noCashUntil - t)), cashShort() and "bad" or "wait"
     end
     if t - S.lastBuyAt < CFG.BuyGap then return nil, "cooldown after last buy", "wait" end
     S.matchSince = S.matchSince or t
@@ -4161,6 +4228,7 @@ rw = srow(28)
 U.pfFps = button(rw, "FPS CAP: GAME", C.panel2, 10, at(0, 0.5))
 U.pfRender = button(rw, "STOP 3D: OFF", C.panel2, 10, at(0.5, 0.5))
 rw = srow(28)
+U.pfCalm = button(rw, "NO ANIMATIONS: OFF", C.panel2, 10, at(0, 1))
 U.pfBases = button(srow(28), "BASES: ALL DRAWN", C.panel2, 10, at(0, 1))
 rw = srow(28)
 U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", at(0, 0.24))
@@ -4486,6 +4554,7 @@ end
 -- ---- SETUP: smoother running
 function PF.paint()
     setToggle(U.pfLite, CFG.Lite, "LITE MODE: ON", "LITE MODE: OFF")
+    setToggle(U.pfCalm, CFG.Calm, "NO ANIMATIONS: ON", "NO ANIMATIONS: OFF")
     setToggle(U.pfHud, CFG.HideHud, "HIDE GAME HUD: ON", "HIDE GAME HUD: OFF")
     setToggle(U.pfRender, CFG.NoRender, "STOP 3D: ON", "STOP 3D: OFF")
     setToggle(U.pfBases, CFG.HideBases, PF.BASES[PF.basesMode()], PF.BASES[0])
@@ -4494,6 +4563,7 @@ function PF.paint()
 end
 function PF.applyAll() -- after a config load: put every switch into effect
     if CFG.Lite then PF.lite(true) end
+    if CFG.Calm then PF.calm(true) end
     if CFG.HideHud then PF.hideHud(true) end
     if CFG.NoRender then PF.render(true) end
     if CFG.HideBases then PF.bases(true) end
@@ -4501,6 +4571,7 @@ function PF.applyAll() -- after a config load: put every switch into effect
     PF.paint()
 end
 track(U.pfLite.MouseButton1Click:Connect(function() PF.lite(not CFG.Lite) PF.paint() end))
+track(U.pfCalm.MouseButton1Click:Connect(function() PF.calm(not CFG.Calm) PF.paint() end))
 track(U.pfHud.MouseButton1Click:Connect(function() PF.hideHud(not CFG.HideHud) PF.paint() end))
 track(U.pfRender.MouseButton1Click:Connect(function() PF.render(not CFG.NoRender) PF.paint() end))
 track(U.pfBases.MouseButton1Click:Connect(function() PF.setBases((PF.basesMode() + 1) % 3) PF.paint() end))
@@ -5095,6 +5166,12 @@ task.spawn(function() -- guildmates' "Need help with a wax" calls
     end
     local ask = r and r:FindFirstChild("RollConfirmAsk")
     if ask and S.alive then track(ask.OnClientEvent:Connect(function(n) QX.asked = n or "butter" end)) end
+end)
+task.spawn(function() -- NO ANIMATIONS: catch the loops the game starts again after a respawn
+    while S.alive do
+        task.wait(20)
+        if CFG.Calm then pcall(PF.calmScan) end
+    end
 end)
 task.spawn(function() -- index / best butter / best crate, and the admin show
     local r = RS:WaitForChild("Remotes", 30)

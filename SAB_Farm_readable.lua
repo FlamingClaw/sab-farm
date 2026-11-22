@@ -2668,7 +2668,7 @@ function PF.lite(on)
             end
         end)
         if not PF.addConn then
-            PF.queue = {}
+            PF.queue, PF.muteI = {}, 1
             PF.addConn = track(WS.DescendantAdded:Connect(function(d)
                 if CFG.Lite and (d:IsA("BillboardGui") or PF.isFx(d)) then PF.queue[#PF.queue + 1] = d end
             end))
@@ -2687,7 +2687,7 @@ function PF.lite(on)
         for d, want in pairs(PF.fx) do pcall(function() if d.Parent then d.Enabled = want end end) end
         for d in pairs(PF.post) do pcall(function() if d.Parent then d.Enabled = true end end) end
         PF.bb, PF.fx = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
-        PF.watch, PF.post, PF.queue = setmetatable({}, { __mode = "k" }), {}, {}
+        PF.watch, PF.post, PF.queue, PF.muteI = setmetatable({}, { __mode = "k" }), {}, {}, 1
         local L = game:GetService("Lighting")
         if PF.oldShadows ~= nil then pcall(function() L.GlobalShadows = PF.oldShadows end) PF.oldShadows = nil end
         if PF.oldDeco ~= nil then pcall(function() WS.Terrain.Decoration = PF.oldDeco end) PF.oldDeco = nil end
@@ -2757,6 +2757,7 @@ end
 PF.lit, PF.boardsOff = {}, {}
 function PF.lights(on) -- fairy lights: every bulb and wire taken out while LITE is on
     local plots = WS:FindFirstChild("Plots")
+    local t0 = os.clock()
     if on then
         for _, pl in ipairs(plots and plots:GetChildren() or {}) do
             local sp = pl:FindFirstChild("SkinProps")
@@ -2765,17 +2766,16 @@ function PF.lights(on) -- fairy lights: every bulb and wire taken out while LITE
                 for _, d in ipairs(f:GetChildren()) do
                     if d:IsA("BasePart") and (d.Name == "Bulb" or d.Name == "Wire") then PF.lit[d] = f d.Parent = nil end
                 end
+                if os.clock() - t0 > 0.002 then task.wait() t0 = os.clock() end
             end
         end
-        for _, nm in ipairs({ "Leaderboards", "ClanBoard" }) do -- and the leaderboard screens
+        for _, nm in ipairs({ "Leaderboards", "ClanBoard" }) do -- and the leaderboards: out of the world
             local f = WS:FindFirstChild(nm)
-            for _, d in ipairs(f and f:GetDescendants() or {}) do
-                if d:IsA("SurfaceGui") and d.Enabled then PF.boardsOff[d] = true d.Enabled = false end
-            end
+            if f then PF.boardsOff[f] = true f.Parent = nil end
         end
     else
         for d, f in pairs(PF.lit) do pcall(function() if f.Parent then d.Parent = f end end) end
-        for d in pairs(PF.boardsOff) do pcall(function() if d.Parent then d.Enabled = true end end) end
+        for f in pairs(PF.boardsOff) do pcall(function() if not f.Parent then f.Parent = WS end end) end
         PF.lit, PF.boardsOff = {}, {}
     end
 end
@@ -2803,8 +2803,40 @@ function PF.rollFx(on)
         PF.reel = {}
     end
 end
+-- Other players' bases: when one streams in (you walk near it) the game builds toppings for every
+-- butter on its stack and stations (LocalToppingsHandler) and re-fits them (ToppingCullHandler). With
+-- other bases hidden that is all wasted: those listeners are paused for other bases only.
+-- Measured walking about Nov 22 (30 s): 62,600 parts added -> 9,800, frames over 100 ms 41 -> 7.
+PF.quiet = {}
+function PF.quietPlots(on)
+    if not on then
+        for c in pairs(PF.quiet) do pcall(function() c:Enable() end) end
+        PF.quiet = {}
+        return
+    end
+    if type(getconnections) ~= "function" then return end
+    local function off(sig, pat)
+        local ok, list = pcall(getconnections, sig)
+        for _, c in ipairs(ok and list or {}) do
+            local src = ""
+            pcall(function() src = debug.info(c.Function, "s") end)
+            if type(src) == "string" and src:find(pat, 1, true) and not PF.quiet[c] then
+                if pcall(function() c:Disable() end) then PF.quiet[c] = true end
+            end
+        end
+    end
+    local plots = WS:FindFirstChild("Plots")
+    for _, pl in ipairs(plots and plots:GetChildren() or {}) do
+        if pl ~= S.plot then
+            off(pl:GetAttributeChangedSignal("StackBandScale"), "ToppingCullHandler")
+            local ws, ss = pl:FindFirstChild("WaxStations"), pl:FindFirstChild("SquishyStack")
+            if ws then off(ws.DescendantAdded, "LocalToppingsHandler") end
+            if ss then off(ss.ChildAdded, "LocalToppingsHandler") end
+        end
+    end
+end
 function PF.extras(on)
-    pcall(PF.rollFx, on)
+    pcall(PF.quietPlots, on and S.plot ~= nil)
     pcall(PF.fxPatch, on)
     pcall(PF.tops, on)
     pcall(PF.lights, on)
@@ -2851,6 +2883,27 @@ function PF.hideOne(d)
     end
 end
 function PF.notMine(d) return CFG.HideMine or (S.plot and not d:IsDescendantOf(S.plot)) end
+PF.hideQ, PF.hideI = {}, 1
+function PF.hideStep() -- every frame: hide queued parts, mute queued effects, for up to 2 ms in all
+    local t0 = os.clock()
+    local m = PF.queue
+    if CFG.Lite and m and #m > 0 then
+        PF.muteI = PF.muteI or 1
+        while PF.muteI <= #m and os.clock() - t0 < 0.0015 do
+            pcall(PF.muteOne, m[PF.muteI])
+            PF.muteI = PF.muteI + 1
+        end
+        if PF.muteI > #m then PF.queue, PF.muteI = {}, 1 end
+    end
+    local q = PF.hideQ
+    if PF.hideI > #q then return end
+    while PF.hideI <= #q and os.clock() - t0 < 0.002 do
+        local d = q[PF.hideI]
+        PF.hideI = PF.hideI + 1
+        if CFG.HideBases and d.Parent and PF.notMine(d) then pcall(PF.hideOne, d) end
+    end
+    if PF.hideI > #q then PF.hideQ, PF.hideI = {}, 1 end
+end
 PF.BASES = { [0] = "BASES: ALL DRAWN", "BASES: OTHERS HIDDEN", "BASES: ALL HIDDEN" }
 function PF.basesMode() return CFG.HideBases and (CFG.HideMine and 2 or 1) or 0 end
 function PF.setBases(m) -- 0 draw everything, 1 hide other players' bases, 2 hide yours too
@@ -2877,8 +2930,10 @@ function PF.bases(on)
             end
         end)
         if not PF.basesConn then
+            -- a base streaming in brings thousands of parts in one frame: queue them and hide them a
+            -- couple of milliseconds' worth per frame (PF.hideStep), never thousands of threads at once
             PF.basesConn = track(plots.DescendantAdded:Connect(function(d)
-                if CFG.HideBases and PF.notMine(d) then task.defer(function() pcall(PF.hideOne, d) end) end
+                if CFG.HideBases then PF.hideQ[#PF.hideQ + 1] = d end
             end))
         end
     else
@@ -2973,14 +3028,11 @@ function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
         PF.extraAt = now()
         pcall(PF.lights, true)
         pcall(PF.fxPatch, true)
+        if S.plot then pcall(PF.quietPlots, true) end
         if not next(PF.reel) then pcall(PF.rollFx, true) end
         if not (PF.tc and PF.tc.old) and now() - (PF.topsTry or -100) > 60 then PF.topsTry = now() pcall(PF.tops, true) end
     end
-    local q = PF.queue
-    if CFG.Lite and q and #q > 0 then
-        PF.queue = {}
-        for i, d in ipairs(q) do pcall(PF.muteOne, d) if i % 300 == 0 then task.wait() end end
-    end
+    -- (the queued labels and effects are muted by PF.hideStep, a little every frame)
     -- the station timers once more, by hand: one was seen on near a finish (18 lookups a second)
     local ws = CFG.Lite and S.plot and S.plot:FindFirstChild("WaxStations")
     if ws then
@@ -5622,7 +5674,7 @@ task.spawn(function() -- pets: adopt from the pen and keep wishes going
 end)
 task.spawn(function() -- smoother running: fps, memory watchdog, labels added since
     local frames, t0 = 0, now()
-    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 end))
+    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 if PF.hideI <= #PF.hideQ or (PF.queue and #PF.queue > 0) then pcall(PF.hideStep) end end))
     track(game:GetService("RunService").Heartbeat:Connect(function() if PF.hold then pcall(PF.pinTick) end end))
     PF.noteAt = now()
     while S.alive do

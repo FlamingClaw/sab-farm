@@ -42,7 +42,7 @@ local CFG = {
     Calm = false,                  -- NO ANIMATIONS: switch off the game's own per-frame eye candy (stack squish, glaze rainbow...)
     HideBases = false,             -- don't draw other players' bases (they are still there: helping works)
     HideMine = false,              -- ... and your own base and stack tower too (the farm still works there)
-    MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
+    MemLimit = 1250,               -- MB; above it for 20 s -> rejoin this same server (0 = never)
     Help = false,                  -- step over to other players' waxes in this server and help them
     HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
     Campfire = true,               -- sit at the event campfire (+50% cash per camper) whenever a seat is free
@@ -2647,15 +2647,34 @@ end
 -- Every label and effect is watched, not only the ones showing right now: the game switches a wax
 -- station's timer on when a wax starts, so a timer that was off when LITE began must stay off too.
 -- PF.bb / PF.fx remember what the game wants each one to be, so switching LITE off puts that back.
+-- (no watcher per label: with bases streaming in and out that was thousands of connections, each
+-- keeping its label alive after the game had dropped it. PF.sweep turns them off again instead.)
 function PF.muteOne(d)
     if not CFG.Lite or not d.Parent then return end
     local store = (d:IsA("BillboardGui") and PF.bb) or (PF.isFx(d) and PF.fx) or nil
     if not store or store[d] ~= nil then return end
+    if store == PF.fx and PF.gameLow and not d:IsA("Beam") then return end -- the game's own Low graphics mutes these
     store[d] = d.Enabled
     if d.Enabled then d.Enabled = false end
-    PF.watch[d] = d:GetPropertyChangedSignal("Enabled"):Connect(function()
-        if CFG.Lite and d.Enabled then store[d] = true d.Enabled = false end
-    end)
+end
+function PF.sweep() -- once a second: anything the game switched back on goes off again
+    if PF.sweeping then return end
+    PF.sweeping = true
+    pcall(PF.sweepRun)
+    PF.sweeping = false
+end
+function PF.sweepRun()
+    local list = {}
+    for _, store in ipairs({ PF.bb, PF.fx }) do for d in pairs(store) do list[#list + 1] = d end end
+    local t0 = os.clock()
+    for i, d in ipairs(list) do
+        if CFG.Lite and d.Parent and d.Enabled then
+            local store = PF.bb[d] ~= nil and PF.bb or PF.fx
+            store[d] = true
+            d.Enabled = false
+        end
+        if i % 200 == 0 and os.clock() - t0 > 0.002 then task.wait() t0 = os.clock() end
+    end
 end
 function PF.lite(on)
     CFG.Lite = on
@@ -2810,7 +2829,7 @@ end
 PF.quiet = {}
 function PF.quietPlots(on)
     if not on then
-        for c in pairs(PF.quiet) do pcall(function() c:Enable() end) end
+        for _, c in pairs(PF.quiet) do pcall(function() c:Enable() end) end
         PF.quiet = {}
         return
     end
@@ -2820,8 +2839,9 @@ function PF.quietPlots(on)
         for _, c in ipairs(ok and list or {}) do
             local src = ""
             pcall(function() src = debug.info(c.Function, "s") end)
-            if type(src) == "string" and src:find(pat, 1, true) and not PF.quiet[c] then
-                if pcall(function() c:Disable() end) then PF.quiet[c] = true end
+            local fn = c.Function
+            if fn and type(src) == "string" and src:find(pat, 1, true) and not PF.quiet[fn] then
+                if pcall(function() c:Disable() end) then PF.quiet[fn] = c end
             end
         end
     end
@@ -2833,6 +2853,11 @@ function PF.quietPlots(on)
             if ws then off(ws.DescendantAdded, "LocalToppingsHandler") end
             if ss then off(ss.ChildAdded, "LocalToppingsHandler") end
         end
+    end
+end
+function PF.litPrune() -- held bulbs whose base has left the world are dropped, not kept forever
+    for d, f in pairs(PF.lit) do
+        if not f:IsDescendantOf(game) then PF.lit[d] = nil pcall(function() d:Destroy() end) end
     end
 end
 function PF.extras(on)
@@ -2884,6 +2909,42 @@ function PF.hideOne(d)
 end
 function PF.notMine(d) return CFG.HideMine or (S.plot and not d:IsDescendantOf(S.plot)) end
 PF.hideQ, PF.hideI = {}, 1
+-- Other players' stacks: 6,000-12,000 parts each (43,700 across a full server), drawn by nobody while
+-- their bases are hidden, yet they fill the phone's memory. Roblox then streams whole bases out and
+-- back in about once a minute (seen Nov 22: 67k -> 30k -> 65k instances, 0-3 fps each time, and the
+-- app was killed). So while other bases are hidden, the butters in their stacks are dropped from this
+-- phone a few seconds after they arrive (after the game has set them up, so its own scripts let go
+-- cleanly). Nothing changes for anyone else; they come back with a rejoin.
+PF.dropQ, PF.dropI, PF.dropped, PF.dropSeen = {}, 1, 0, setmetatable({}, { __mode = "k" })
+function PF.dropIt(d) -- queue a butter from someone else's stack
+    local st = d.Parent
+    local pl = st and st.Name == "SquishyStack" and st.Parent
+    if pl and pl ~= S.plot and S.plot and pl.Parent == S.plot.Parent and not PF.dropSeen[d] then
+        PF.dropSeen[d] = true
+        PF.dropQ[#PF.dropQ + 1] = { d, now() + 3 }
+    end
+end
+function PF.dropScan() -- (every 5 s: what arrived before your base was known, or slipped past)
+    local plots = S.plot and S.plot.Parent
+    if not (CFG.HideBases and plots) then return end
+    for _, pl in ipairs(plots:GetChildren()) do
+        local st = pl ~= S.plot and pl:FindFirstChild("SquishyStack")
+        for _, b in ipairs(st and st:GetChildren() or {}) do PF.dropIt(b) end
+    end
+end
+function PF.dropStep(t0)
+    local q = PF.dropQ
+    while PF.dropI <= #q and os.clock() - t0 < 0.003 do
+        local e = q[PF.dropI]
+        if e[2] > now() then break end
+        PF.dropI = PF.dropI + 1
+        if CFG.HideBases and e[1].Parent then
+            pcall(function() e[1]:Destroy() end)
+            PF.dropped = PF.dropped + 1
+        end
+    end
+    if PF.dropI > #q then PF.dropQ, PF.dropI = {}, 1 end
+end
 function PF.hideStep() -- every frame: hide queued parts, mute queued effects, for up to 2 ms in all
     local t0 = os.clock()
     local m = PF.queue
@@ -2895,9 +2956,10 @@ function PF.hideStep() -- every frame: hide queued parts, mute queued effects, f
         end
         if PF.muteI > #m then PF.queue, PF.muteI = {}, 1 end
     end
+    if PF.dropI <= #PF.dropQ then pcall(PF.dropStep, t0) end
     local q = PF.hideQ
     if PF.hideI > #q then return end
-    while PF.hideI <= #q and os.clock() - t0 < 0.002 do
+    while PF.hideI <= #q and os.clock() - t0 < 0.004 do
         local d = q[PF.hideI]
         PF.hideI = PF.hideI + 1
         if CFG.HideBases and d.Parent and PF.notMine(d) then pcall(PF.hideOne, d) end
@@ -2919,6 +2981,8 @@ function PF.bases(on)
         task.spawn(function()
             local n = 0
             for _, pl in ipairs(plots:GetChildren()) do
+                local st = pl ~= S.plot and S.plot and pl:FindFirstChild("SquishyStack")
+                for _, b in ipairs(st and st:GetChildren() or {}) do PF.dropIt(b) end
                 if pl ~= S.plot or CFG.HideMine then
                     for _, d in ipairs(pl:GetDescendants()) do
                         if not CFG.HideBases then return end
@@ -2933,7 +2997,11 @@ function PF.bases(on)
             -- a base streaming in brings thousands of parts in one frame: queue them and hide them a
             -- couple of milliseconds' worth per frame (PF.hideStep), never thousands of threads at once
             PF.basesConn = track(plots.DescendantAdded:Connect(function(d)
-                if CFG.HideBases then PF.hideQ[#PF.hideQ + 1] = d end
+                if CFG.HideBases and PF.notMine(d) then
+                    pcall(PF.hideOne, d)
+                    PF.hideQ[#PF.hideQ + 1] = d -- (a second look later: the game may show it again)
+                    if d.Parent and d.Parent.Name == "SquishyStack" then PF.dropIt(d) end
+                end
             end))
         end
     else
@@ -2962,7 +3030,7 @@ end
 -- The stairs gate (it changes collisions) and anything that runs the farm's prompts stays on.
 PF.CALM = { "LocalScript.SquishyHandler", "LocalScript.GlazeHandler", "LocalScript.ConveyorHandler", "LocalScript.DeckHandler",
     "PetHandler.Walker", "PetHandler.Meadow", "FloorTeleportHandler.SignDodge", "BaseSkinHandler.Cannon", "BaseSkinHandler.TeleportPads" }
-PF.calmed = {}
+PF.calmed, PF.calmedF = {}, setmetatable({}, { __mode = "k" })
 function PF.calmScan() -- (again every 20 s: the game makes new ones after a respawn)
     if not CFG.Calm or type(getconnections) ~= "function" then return 0 end
     local RunS = game:GetService("RunService")
@@ -2978,7 +3046,12 @@ function PF.calmScan() -- (again every 20 s: the game makes new ones after a res
                 if src ~= "" then
                     for _, pat in ipairs(PF.CALM) do
                         if src:find(pat, 1, true) then
-                            if pcall(function() c:Disable() end) then PF.calmed[#PF.calmed + 1] = c n = n + 1 end
+                            local fn = c.Function
+                            if fn and not PF.calmedF[fn] and pcall(function() c:Disable() end) then
+                                PF.calmedF[fn] = true
+                                PF.calmed[#PF.calmed + 1] = c
+                                n = n + 1
+                            end
                             break
                         end
                     end
@@ -2998,7 +3071,7 @@ function PF.calm(on)
         note(("NO ANIMATIONS: %d of the game's animation loops switched off"):format(n))
     else
         for _, c in ipairs(PF.calmed) do pcall(function() c:Enable() end) end
-        PF.calmed = {}
+        PF.calmed, PF.calmedF = {}, setmetatable({}, { __mode = "k" })
     end
 end
 function PF.restoreAll() -- KILL puts the game back exactly as it was
@@ -3024,8 +3097,12 @@ function PF.rejoinSame(why) -- back into this same server, so its wishes and hel
     return ok
 end
 function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
+    if CFG.Lite then task.spawn(PF.sweep) end
+    if CFG.HideBases and now() - (PF.dropAt or 0) > 5 then PF.dropAt = now() pcall(PF.dropScan) end
     if CFG.Lite and now() - (PF.extraAt or 0) > 5 then
         PF.extraAt = now()
+        PF.gameLow = plr:GetAttribute("GraphicsLow") == true
+        pcall(PF.litPrune)
         pcall(PF.lights, true)
         pcall(PF.fxPatch, true)
         if S.plot then pcall(PF.quietPlots, true) end
@@ -3049,9 +3126,12 @@ function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
     if ok and type(mb) == "number" then
         PF.mem = mb
         PF.memPeak = math.max(PF.memPeak, mb)
+        -- Nov 22 on your phone: Roblox starts dropping whole bases at ~1 GB and the app was killed
+        -- in the swings that follow; a rejoin of this same server starts again at ~570 MB.
+        -- Far above the limit (+250 MB) it goes straight away, not after 20 s.
         if (CFG.MemLimit or 0) > 0 and mb > CFG.MemLimit then
-            PF.over = (PF.over or 0) + 1
-            if PF.over >= 30 and not S.busy then -- over the limit for 30 s straight
+            PF.over = (PF.over or 0) + ((mb > CFG.MemLimit + 250) and 20 or 1)
+            if PF.over >= 20 and not S.busy then -- over the limit for 20 s straight
                 PF.over = -600 -- one try, then wait 10 min before another
                 PF.rejoinSame(("memory %d MB > %d MB"):format(mb, CFG.MemLimit))
             end
@@ -3992,7 +4072,13 @@ function HX.list()
     end
     return out
 end
-function HX.due() return CFG.Help and S.running and now() >= HX.nextAt end
+function HX.due() -- (not while memory is high: each help visit loads that whole base onto the phone)
+    if CFG.Help and S.running and now() >= HX.nextAt and (PF.mem or 0) > 900 then
+        HX.nextAt, HX.msg = now() + 30, ("paused - phone memory %d MB (helps load other bases)"):format(PF.mem)
+        return false
+    end
+    return CFG.Help and S.running and now() >= HX.nextAt
+end
 function HX.skipIt(id, why)
     HX.skip[id], HX.skipN = why, HX.skipN + 1
     if HX.skipN > 600 then HX.skip, HX.skipN, HX.tries = { [id] = why }, 1, {} end
@@ -4704,17 +4790,17 @@ do
     local pf = U.card(P, "Performance")
     U.pfCalm = U.switch(pf, "NO ANIMATIONS: OFF", "No animations", "stack squish, rainbows, pets walking")
     U.pfLite = U.switch(pf, "LITE MODE: OFF", "Lite mode", "roll show, fireworks, toppings, labels off")
-    U.pfBases = U.switch(pf, "BASES: ALL DRAWN", "Bases", "stop drawing other bases, or yours too")
+    U.pfBases = U.switch(pf, "BASES: ALL DRAWN", "Bases", "hidden bases' stacks also leave memory")
     U.pfFps = U.switch(pf, "FPS CAP: GAME", "FPS cap", "lower keeps the phone cooler")
     U.pfHud = U.switch(pf, "HIDE GAME HUD: OFF", "Hide the game's menus")
     U.pfRender = U.switch(pf, "STOP 3D: OFF", "Stop 3D", "blank the world behind this window")
     rw = U.row(pf, 28)
     lbl(rw, "rejoin above", 10, C.dim, false, UDim2.new(0, 10, 0, 0), UDim2.new(0.36, -10, 1, 0))
-    U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", UDim2.new(0.36, 0, 0, 0), UDim2.new(0.26, -4, 1, 0))
+    U.pfMem = textbox(rw, tostring(CFG.MemLimit), "1250", UDim2.new(0.36, 0, 0, 0), UDim2.new(0.26, -4, 1, 0))
     lbl(rw, "MB", 10, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0, 22, 1, 0))
     U.pfMemSet = button(rw, "SET", C.accent, 10, UDim2.new(0.75, 4, 0, 0), UDim2.new(0.25, -4, 1, 0))
     U.pfInfo = U.line(pf, C.good)
-    U.note(pf, "Everything here is undone when switched off or on KILL. 0 MB = never rejoin for memory.", 24)
+    U.note(pf, "Everything here is undone when switched off or on KILL. Rejoin above: this phone struggles past ~1 GB; 0 = never.", 24)
     local ab = U.card(P, "About")
     U.note(ab, "CHURN " .. VERSION .. " for Stack A Butter Squishy. The round C button hides or shows this window - hold and drag it anywhere. Drag this window by its top bar. The farm keeps running either way.", 40)
 end
@@ -5674,7 +5760,7 @@ task.spawn(function() -- pets: adopt from the pen and keep wishes going
 end)
 task.spawn(function() -- smoother running: fps, memory watchdog, labels added since
     local frames, t0 = 0, now()
-    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 if PF.hideI <= #PF.hideQ or (PF.queue and #PF.queue > 0) then pcall(PF.hideStep) end end))
+    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 if PF.hideI <= #PF.hideQ or PF.dropI <= #PF.dropQ or (PF.queue and #PF.queue > 0) then pcall(PF.hideStep) end end))
     track(game:GetService("RunService").Heartbeat:Connect(function() if PF.hold then pcall(PF.pinTick) end end))
     PF.noteAt = now()
     while S.alive do

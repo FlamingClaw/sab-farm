@@ -103,12 +103,12 @@ A dark window with a gold accent. Drag it by its top bar. The round gold **C** b
   | --- | --- |
   | NO ANIMATIONS | switches off the game's per-frame eye candy: the stack squish, the glaze rainbow, the conveyor, bounce pads, pets walking, sign and skin animations. On a phone, about 36 fps became 48–55. |
   | LITE MODE | switches off the game's heaviest extras: the roll reel (20-30 whole butters cloned for every roll), fireworks and confetti (each firework also shook the camera), toppings being re-added whenever you move between floors or bases (stacks are drawn plain instead), toppings being built for other players' bases as you walk up to them, fairy lights, the leaderboards, floating labels, sparkles and lighting extras. On a phone the worst frames went from 0.7 s to under 0.1 s. |
-  | BASES (tap to cycle) | ALL DRAWN → OTHERS HIDDEN → ALL HIDDEN. Nothing is removed, so farming keeps working. |
+  | BASES (tap to cycle) | ALL DRAWN → OTHERS HIDDEN → ALL HIDDEN. While other bases are hidden, the butters in their stacks are also dropped from your phone's memory (43,000+ parts on a full server); they come back after a rejoin. Farming and helping keep working. |
   | FPS CAP | 30 / 15 / 10, keeps the phone cool |
   | HIDE GAME HUD | hides the game's own menus |
   | STOP 3D | blanks the world behind the window |
 
-  A memory watchdog rejoins the same server if memory stays above the limit (2000 MB by default) for 30 s. Everything goes back to normal when switched off or on KILL.
+  A memory watchdog rejoins the same server if memory stays above the limit (1250 MB by default) for 20 s, or at once 250 MB above it: past about 1 GB Roblox starts dropping and reloading whole bases on a phone, which is where the freezes and app kills came from. Helping other players' waxes pauses while memory is over 900 MB, since every help visit loads that whole base. Everything goes back to normal when switched off or on KILL.
 
 ## Files
 

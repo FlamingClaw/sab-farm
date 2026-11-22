@@ -2779,7 +2779,32 @@ function PF.lights(on) -- fairy lights: every bulb and wire taken out while LITE
         PF.lit, PF.boardsOff = {}, {}
     end
 end
+-- The roll reel: for every roll the game clones 20-30 whole butters (hundreds of parts each) into
+-- your plot's SquishyShadows for a second, then plays the rarity reveal (fireworks, Dotonbori / Dream
+-- reveals). 44 butters every 15 s with Auto Roll on. Purely a show (SquishyHandler.squishyRollAnimation,
+-- no remotes): the rolled butter still lands on your pad from the server, and the farm's own roll
+-- listener stays on.
+PF.reel = {}
+function PF.rollFx(on)
+    if on then
+        local R = RS:FindFirstChild("Remotes")
+        local ev = R and R:FindFirstChild("SquishyRollAnimation")
+        if not ev or type(getconnections) ~= "function" then return end
+        local ok, cs = pcall(getconnections, ev.OnClientEvent)
+        for _, c in ipairs(ok and cs or {}) do
+            local src = ""
+            pcall(function() src = debug.info(c.Function, "s") end)
+            if type(src) == "string" and src:find("SquishyHandler", 1, true) and not PF.reel[c] then
+                if pcall(function() c:Disable() end) then PF.reel[c] = true end
+            end
+        end
+    else
+        for c in pairs(PF.reel) do pcall(function() c:Enable() end) end
+        PF.reel = {}
+    end
+end
 function PF.extras(on)
+    pcall(PF.rollFx, on)
     pcall(PF.fxPatch, on)
     pcall(PF.tops, on)
     pcall(PF.lights, on)
@@ -2948,6 +2973,7 @@ function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
         PF.extraAt = now()
         pcall(PF.lights, true)
         pcall(PF.fxPatch, true)
+        if not next(PF.reel) then pcall(PF.rollFx, true) end
         if not (PF.tc and PF.tc.old) and now() - (PF.topsTry or -100) > 60 then PF.topsTry = now() pcall(PF.tops, true) end
     end
     local q = PF.queue
@@ -4625,7 +4651,7 @@ do
     U.rejMsg = U.grow(rj, 9, C.dim)
     local pf = U.card(P, "Performance")
     U.pfCalm = U.switch(pf, "NO ANIMATIONS: OFF", "No animations", "stack squish, rainbows, pets walking")
-    U.pfLite = U.switch(pf, "LITE MODE: OFF", "Lite mode", "fireworks, toppings, labels, sparkles off")
+    U.pfLite = U.switch(pf, "LITE MODE: OFF", "Lite mode", "roll show, fireworks, toppings, labels off")
     U.pfBases = U.switch(pf, "BASES: ALL DRAWN", "Bases", "stop drawing other bases, or yours too")
     U.pfFps = U.switch(pf, "FPS CAP: GAME", "FPS cap", "lower keeps the phone cooler")
     U.pfHud = U.switch(pf, "HIDE GAME HUD: OFF", "Hide the game's menus")

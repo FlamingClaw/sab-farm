@@ -1561,7 +1561,11 @@ function CRATE.near()
     local c = char()
     local stand = S.plot and S.plot:FindFirstChild("CrateStand")
     local spot = stand and stand:FindFirstChild("Spot")
-    if not (r and c and spot) then return false, "no crate stand or remote" end
+    if not (r and c and spot) then
+        note(("crate: cannot open %s right now (%s)"):format(tostring(CRATE.title),
+            not r and "no CrateAction remote" or not c and "no character (respawning?)" or "no crate stand"))
+        return false, "no crate stand or remote"
+    end
     local hrp = c.HumanoidRootPart
     local back = hrp.CFrame
     local title, why = CRATE.title, "no answer"
@@ -1607,6 +1611,22 @@ function CRATE.near()
     CRATE.nearFails = (CRATE.nearFails or 0) + 1
     note(("crate: the server would not open %s next to the stand (%s)"):format(title, why))
     return false, why
+end
+CRATE.GIVEUP = 600
+function CRATE.drop() -- last resort for a crate that would not open in 10 min: the game's own Discard
+    local rem = RS:FindFirstChild("Remotes")
+    local r = rem and rem:FindFirstChild("CrateAction")
+    local stand = S.plot and S.plot:FindFirstChild("CrateStand")
+    local spot = stand and stand:FindFirstChild("Spot")
+    local c = char()
+    if spot and c and (c.HumanoidRootPart.Position - spot.Position).Magnitude > 8 then standNear(spot, CRATE.prompt) nap(0.3) end
+    local ok, v = false, nil
+    if r then ok, v = pcall(function() return r:InvokeServer("discard") end) end
+    note(("DISCARDED %s after %d min of failed opens (%s)"):format(tostring(CRATE.title), math.floor(CRATE.GIVEUP / 60),
+        (ok and type(v) == "table" and v.ok) and "done" or ("answer: " .. tostring(type(v) == "table" and (v.reason or v.ok) or v))))
+    CRATE.waiting, CRATE.on, CRATE.quietUntil = false, false, now() + 4
+    CRATE.summonFails, CRATE.nearFails, CRATE.lastFail, CRATE.at, CRATE.prompt = 0, 0, 0, nil, nil
+    if not (ok and type(v) == "table" and v.ok) then doCrate(false) end -- the window's Discard button, if that is what works
 end
 function CRATE.smart()
     local title = CRATE.title
@@ -3327,8 +3347,17 @@ local function decide()
             end
             return "cratesmart", ("opening %s"):format(title), "ok"
         end
+        if CRATE.at and now() - CRATE.at > CRATE.GIVEUP then -- 10 min of tries: it blocks every roll, let it go
+            return "cratedrop", ("%s could not be opened for %d min - discarding it so rolling goes on"):format(title,
+                math.floor(CRATE.GIVEUP / 60)), "bad"
+        end
         if CRATE.summonFails >= 3 then
-            return nil, ("%s waiting - could not open it, open it by hand"):format(title), "bad"
+            if now() - CRATE.lastFail < 45 then
+                return nil, ("%s waiting - could not open it (trying again in %ds)"):format(title,
+                    math.ceil(45 - (now() - CRATE.lastFail))), "bad"
+            end
+            CRATE.summonFails, CRATE.nearFails, CRATE.prompt = 0, 0, nil -- start over by itself
+            note("trying the " .. title .. " again")
         end
         if now() - CRATE.lastFail < 8 then
             return nil, ("%s waiting - retrying shortly"):format(title), "wait"
@@ -3357,6 +3386,9 @@ local function decide()
         S.matchSince = nil
         if not CFG.Crates then return nil, ("%s on the pad - crate opening is off"):format(pcr.name), "idle" end
         if now() - CRATE.lastFail < 8 then return nil, ("%s on the pad - could not open it"):format(pcr.name), "bad" end
+        -- it shows on the pad a moment before it lands on the stand; until the stand has it there is
+        -- nothing to press, and that is not a failure (the v26 overnight stall counted these)
+        if not findCratePrompt() then return nil, ("%s rolled - waiting for it to land on the stand"):format(pcr.name), "wait" end
         return "cratewin", ("%s on the pad - opening its window"):format(pcr.name), "ok"
     end
     local id = identity()
@@ -3806,6 +3838,7 @@ local function step()
     elseif act == "cratesmart" then runAction("opening crate...", CRATE.smart)
     elseif act == "cratewin" then runAction("opening the crate window...", summonCrate)
     elseif act == "nocrate" then runAction("discarding crate...", doCrate, false)
+    elseif act == "cratedrop" then runAction("discarding a crate that would not open...", CRATE.drop)
     elseif act == "sell" then runAction("selling...", doSell)
     elseif act == "buy" then runAction("buying...", doBuy, false)
     elseif not act and not S.matchSince and SH.due() then

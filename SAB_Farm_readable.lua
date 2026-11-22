@@ -2,12 +2,12 @@
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v26"
+local VERSION = "v27"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
     pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", { Title = "SAB " .. VERSION, Text = msg, Duration = 6 })
+        game:GetService("StarterGui"):SetCore("SendNotification", { Title = "CHURN " .. VERSION, Text = msg, Duration = 6 })
     end)
 end
 toast("script started")
@@ -54,6 +54,7 @@ local CFG = {
                                    -- 4 UPGRADES: the top one + anything that beats the weakest butter in your full stack
     BestCrate = false,             -- open the game's dearest crate (a new one counts the moment the game has it)
     Shower = true,                 -- admin shower: grab the butters that fall on the map
+    SnapGlaze = true,              -- admin snap (every wax finishes at once): wear the glaze team for it
 }
 local S = {
     alive = true, running = false, busy = false, busyText = "", holding = false,
@@ -555,7 +556,7 @@ local function configText()
         L[#L + 1] = "P|-"
         for _, x in ipairs(t) do L[#L + 1] = "P|" .. x end
     end
-    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine", "AutoIndex", "BestCrate", "Shower", "Calm" }) do
+    for _, k in ipairs({ "Collect", "SellJunk", "Crates", "Rejoin", "AutoStart", "AutoRoll", "PetBuy", "PetWish", "Teams", "Lite", "HideHud", "NoRender", "AutoFuse", "AutoBuild", "Help", "HelpGuild", "Campfire", "Ghost", "GhostHelps", "Quests", "HideBases", "HideMine", "AutoIndex", "BestCrate", "Shower", "Calm", "SnapGlaze" }) do
         L[#L + 1] = "B|" .. k .. "|" .. (CFG[k] and "1" or "0")
     end
     -- your Auto Roll choices as the game holds them right now (if any), else what we had
@@ -2214,7 +2215,7 @@ function TM.tick()
     -- 1 glaze at a finish, 2 wax while placing (or holding a ticked butter with a station free),
     -- 3 FULL while every station is busy (money + the wax speed every running wax goes at), 4 NORMAL
     local want, why = "", ""
-    local snap = IX.snapAt and (IX.snapAt - t) -- the admin's snap finishes every wax at once: glaze rolls then
+    local snap = CFG.SnapGlaze ~= false and IX.snapAt and (IX.snapAt - t) -- the admin's snap finishes every wax at once: glaze rolls then
     if snap and snap < -8 then IX.snapAt, snap = nil, nil end
     if CFG.TeamGlaze ~= "" and snap and snap <= 20 then
         want, why = CFG.TeamGlaze, (" - the admin snap finishes every wax in %ds"):format(math.max(0, math.floor(snap)))
@@ -3259,8 +3260,17 @@ function IX.tick()
     IX.msg = #parts > 0 and table.concat(parts, " | ") or "index / best: off"
 end
 IX.heard = {}
+IX.feed = {}
+function IX.feedAdd(s)
+    IX.feed[#IX.feed + 1] = os.date("%H:%M ") .. s
+    if #IX.feed > 40 then table.remove(IX.feed, 1) end
+end
 function IX.admin(kind, name, d) -- the AdminShow remote: ("Effect", name, data), ("Say", text), ...
-    if kind ~= "Effect" then return end
+    if kind ~= "Effect" then
+        IX.feedAdd(tostring(kind) .. (name ~= nil and (": " .. tostring(name):sub(1, 80)) or ""))
+        return
+    end
+    if name ~= "ShowerTaken" and name ~= "GoalPoint" then IX.feedAdd(tostring(name)) end
     if name == "Shower" then SH.add(d) return end
     if name == "ShowerTaken" then SH.gone(d) return end
     if name == "ShowerClear" then SH.drops = {} return end
@@ -3269,7 +3279,7 @@ function IX.admin(kind, name, d) -- the AdminShow remote: ("Effect", name, data)
         if t then
             IX.snapAt = t
             note(("ADMIN: every wax finishes in %ds%s"):format(math.floor(t - PX.srv()),
-                (CFG.Teams and CFG.TeamGlaze ~= "") and " - glaze team on for it" or ""))
+                (CFG.SnapGlaze ~= false and CFG.Teams and CFG.TeamGlaze ~= "") and " - glaze team on for it" or ""))
         end
         return
     end
@@ -3955,19 +3965,31 @@ do
 end
 
 ---------------------------------------------------------------- GUI (built before anything touches the game)
+-- CHURN - the window. Dark glass, butter-gold accent, a rail of tabs down the left.
+-- Every control keeps its old name (U.startB, U.ixT ...) and every switch keeps its "NAME: VALUE" text
+-- (hidden, it is what the farm code and the tests read and write); a switch draws itself from that
+-- text: ON/OFF becomes a toggle, anything else (TOP 2, FULL, 30 ...) a value chip.
 local C = {
-    bg = Color3.fromRGB(16, 17, 22), panel = Color3.fromRGB(26, 28, 36), panel2 = Color3.fromRGB(38, 41, 52),
-    line = Color3.fromRGB(52, 56, 70), text = Color3.fromRGB(236, 238, 244), dim = Color3.fromRGB(140, 146, 162),
-    accent = Color3.fromRGB(88, 101, 242), good = Color3.fromRGB(46, 190, 115), warn = Color3.fromRGB(240, 170, 60),
-    bad = Color3.fromRGB(235, 80, 80),
+    bg = Color3.fromRGB(12, 13, 18), panel = Color3.fromRGB(19, 21, 28), panel2 = Color3.fromRGB(36, 39, 51),
+    raise = Color3.fromRGB(26, 29, 38), lit = Color3.fromRGB(42, 36, 24), line = Color3.fromRGB(44, 48, 62),
+    text = Color3.fromRGB(240, 242, 248), dim = Color3.fromRGB(140, 147, 166), faint = Color3.fromRGB(86, 92, 110),
+    accent = Color3.fromRGB(255, 193, 77), accent2 = Color3.fromRGB(255, 128, 60), ink = Color3.fromRGB(30, 21, 6),
+    good = Color3.fromRGB(56, 214, 136), warn = Color3.fromRGB(255, 178, 74), bad = Color3.fromRGB(255, 94, 110),
+    info = Color3.fromRGB(112, 152, 255), white = Color3.fromRGB(255, 255, 255),
 }
 local LV = { ok = C.good, wait = C.warn, warn = C.warn, bad = C.bad, idle = C.dim }
-local RC = { -- a colour per rarity, so the list reads like the game's own
-    Common = Color3.fromRGB(170, 175, 185), Rare = Color3.fromRGB(80, 150, 245), Epic = Color3.fromRGB(175, 95, 240),
-    Legendary = Color3.fromRGB(240, 190, 60), Mythic = Color3.fromRGB(240, 70, 140), Celestial = Color3.fromRGB(120, 150, 255),
-    Divine = Color3.fromRGB(240, 130, 60), Dream = Color3.fromRGB(225, 200, 120), ["Sugar Rush"] = Color3.fromRGB(240, 110, 210),
-    Picnic = Color3.fromRGB(240, 100, 90), Limited = Color3.fromRGB(235, 80, 80),
+local RC = { -- a colour per rarity, so the lists read like the game's own
+    Common = Color3.fromRGB(176, 182, 194), Rare = Color3.fromRGB(86, 156, 255), Epic = Color3.fromRGB(182, 104, 255),
+    Legendary = Color3.fromRGB(255, 200, 64), Mythic = Color3.fromRGB(255, 84, 150), Celestial = Color3.fromRGB(128, 158, 255),
+    Divine = Color3.fromRGB(255, 140, 64), Dream = Color3.fromRGB(232, 208, 128), ["Sugar Rush"] = Color3.fromRGB(255, 118, 216),
+    Picnic = Color3.fromRGB(255, 108, 96), Dotonbori = Color3.fromRGB(80, 226, 255), Limited = Color3.fromRGB(255, 84, 96),
 }
+local FT = { x = Enum.Font.GothamBlack, b = Enum.Font.GothamBold, m = Enum.Font.GothamMedium, r = Enum.Font.Gotham, mono = Enum.Font.Code }
+pcall(function() -- Roblox's own modern face where the client has it
+    local x, b, m, r = Enum.Font.BuilderSansExtraBold, Enum.Font.BuilderSansBold, Enum.Font.BuilderSansMedium, Enum.Font.BuilderSans
+    if x and b and m and r then FT.x, FT.b, FT.m, FT.r = x, b, m, r end
+end)
+pcall(function() local f = Enum.Font.RobotoMono if f then FT.mono = f end end)
 local function mk(class, props, parent)
     local ok, o = pcall(Instance.new, class)
     if not ok then S.uiErrs = S.uiErrs + 1 return nil end
@@ -3977,45 +3999,71 @@ local function mk(class, props, parent)
     o.Parent = parent
     return o
 end
-local function round(o, r) mk("UICorner", { CornerRadius = UDim.new(0, r or 6) }, o) end
-local U = { shown = setmetatable({}, { __mode = "k" }), lit = setmetatable({}, { __mode = "k" }) }
+local function round(o, r) mk("UICorner", { CornerRadius = UDim.new(0, r or 8) }, o) end
+local U = { shown = setmetatable({}, { __mode = "k" }), lit = setmetatable({}, { __mode = "k" }),
+    sw = setmetatable({}, { __mode = "k" }), ord = setmetatable({}, { __mode = "k" }), tabsAll = {} }
 -- set a label's text only when it really changed: re-setting text makes Roblox lay it out again
 function U.put(o, t)
     if o and U.shown[o] ~= t then U.shown[o] = t o.Text = t end
 end
+function U.stroke(o, col, tr)
+    return mk("UIStroke", { Color = col or C.line, Thickness = 1, Transparency = tr or 0,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, o) -- Border: on a text object it would outline the letters
+end
+function U.grad(o, a, b, rot)
+    local ok, cs = pcall(function() return ColorSequence.new(a, b) end)
+    if ok and cs then return mk("UIGradient", { Color = cs, Rotation = rot or 0 }, o) end
+end
+function U.pad(o, l, t, r, b)
+    mk("UIPadding", { PaddingLeft = UDim.new(0, l or 0), PaddingTop = UDim.new(0, t or 0),
+        PaddingRight = UDim.new(0, r or l or 0), PaddingBottom = UDim.new(0, b or t or 0) }, o)
+end
+function U.list(o, gap, horiz)
+    return mk("UIListLayout", { Padding = UDim.new(0, gap or 0), SortOrder = Enum.SortOrder.LayoutOrder,
+        FillDirection = horiz and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical }, o)
+end
+function U.ink(col) -- dark letters on a light button, light letters on a dark one
+    local ok, l = pcall(function() return 0.299 * col.R + 0.587 * col.G + 0.114 * col.B end)
+    return (ok and l > 0.55) and C.ink or C.text
+end
+function U.nextIn(parent) local n = (U.ord[parent] or 0) + 1 U.ord[parent] = n return n end
 local pg = plr:FindFirstChildOfClass("PlayerGui") or plr:WaitForChild("PlayerGui")
 local oldGui = pg:FindFirstChild("SABFarmGui")
 if oldGui then oldGui:Destroy() end
-local sg = mk("ScreenGui", { Name = "SABFarmGui", ResetOnSpawn = false, DisplayOrder = 999, IgnoreGuiInset = true }, pg)
--- sized to the screen it opens on (measured: your phone is 742 x 360 in landscape): ~44% of the width,
--- ~84% of the height, so the game stays visible beside it
-local Z = { w = 320, h = 300, head = 28, strip = 34, tabs = 24 }
+local sg = mk("ScreenGui", { Name = "SABFarmGui", ResetOnSpawn = false, DisplayOrder = 999, IgnoreGuiInset = true,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, pg)
+-- sized to the screen it opens on (measured: your phone is 742 x 360 in landscape): ~48% of the width,
+-- ~86% of the height, so the game stays visible beside it
+local Z = { w = 340, h = 300, head = 38, status = 30, rail = 44 }
 pcall(function()
     local vp = WS.CurrentCamera.ViewportSize
     if vp.X > 100 and vp.Y > 100 then
-        Z.w = math.clamp(math.floor(vp.X * 0.44), 300, 360)
-        Z.h = math.clamp(math.floor(vp.Y * 0.84), 240, 340)
+        Z.w = math.clamp(math.floor(vp.X * 0.48), 320, 400)
+        Z.h = math.clamp(math.floor(vp.Y * 0.86), 250, 360)
     end
 end)
 U.root = mk("Frame", { Name = "Root", Size = UDim2.new(0, Z.w, 0, Z.h),
     Position = UDim2.new(0, S.winPos and S.winPos[1] or 10, 0, S.winPos and S.winPos[2] or 44),
     BackgroundColor3 = C.bg, BorderSizePixel = 0, Active = true, ClipsDescendants = true }, sg)
-round(U.root, 10)
-mk("UIStroke", { Color = C.line, Thickness = 1 }, U.root)
+round(U.root, 14)
+U.stroke(U.root, C.line, 0)
+U.grad(U.root, C.white, Color3.fromRGB(205, 208, 222), 90) -- a touch lighter at the top
 local FILL = UDim2.new(1, 0, 1, 0)
 local function at(x, w) return UDim2.new(x, 0, 0, 0), UDim2.new(w, (x + w > 0.99) and 0 or -4, 1, 0) end
 local function button(parent, text, color, ts, pos, size)
     local b = mk("TextButton", { Text = text, Position = pos, Size = size, BackgroundColor3 = color, BorderSizePixel = 0,
-        Font = Enum.Font.GothamBold, TextSize = ts, TextColor3 = C.text, AutoButtonColor = true }, parent)
-    round(b, 6)
+        Font = FT.b, TextSize = ts, TextColor3 = U.ink(color), AutoButtonColor = true }, parent)
+    round(b, 8)
+    if color == C.panel2 or color == C.raise or color == C.panel then U.stroke(b, C.line, 0.4) end
     return b
 end
 local function textbox(parent, text, ph, pos, size)
-    local b = mk("TextBox", { Text = text, PlaceholderText = ph, Position = pos, Size = size, BackgroundColor3 = C.panel2,
-        BorderSizePixel = 0, Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = C.text, PlaceholderColor3 = C.dim,
+    local b = mk("TextBox", { Text = text, PlaceholderText = ph, Position = pos, Size = size, BackgroundColor3 = C.bg,
+        BorderSizePixel = 0, Font = FT.m, TextSize = 12, TextColor3 = C.text, PlaceholderColor3 = C.faint,
         ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left }, parent)
-    round(b, 6)
-    mk("UIPadding", { PaddingLeft = UDim.new(0, 8) }, b)
+    round(b, 8)
+    U.stroke(b, C.line, 0)
+    U.pad(b, 9, 0, 6, 0)
     return b
 end
 -- Phones rotate, and a spot that was fine in portrait can be off the bottom in landscape,
@@ -4085,210 +4133,462 @@ track(UIS.InputEnded:Connect(function(i) -- backup: a release the input object i
 end))
 local function lbl(parent, text, ts, color, bold, pos, size)
     return mk("TextLabel", { Text = text, Position = pos or UDim2.new(0, 0, 0, 0), Size = size or FILL, BackgroundTransparency = 1,
-        Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham, TextSize = ts, TextColor3 = color,
+        Font = bold and FT.b or FT.m, TextSize = ts, TextColor3 = color,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, TextWrapped = true }, parent)
 end
--- header
-U.title = mk("Frame", { Size = UDim2.new(1, 0, 0, Z.head), BackgroundColor3 = C.panel, BorderSizePixel = 0, Active = true }, U.root)
-U.dot = mk("Frame", { Size = UDim2.new(0, 9, 0, 9), Position = UDim2.new(0, 11, 0.5, -4), BackgroundColor3 = C.dim, BorderSizePixel = 0 }, U.title)
-round(U.dot, 5)
-lbl(U.title, "SAB  BUTTER FARM  " .. VERSION, 12, C.text, true, UDim2.new(0, 28, 0, 0), UDim2.new(1, -120, 1, 0))
-U.minB = button(U.title, "-", C.panel2, 14, UDim2.new(1, -78, 0.5, -10), UDim2.new(0, 34, 0, 20))
-U.xB = button(U.title, "X", C.bad, 12, UDim2.new(1, -40, 0.5, -10), UDim2.new(0, 34, 0, 20))
--- reason strip, always visible
-U.strip = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head), Size = UDim2.new(1, 0, 0, Z.strip), BackgroundColor3 = C.bg, BorderSizePixel = 0 }, U.root)
-U.bar = mk("Frame", { Size = UDim2.new(0, 4, 1, -10), Position = UDim2.new(0, 9, 0, 5), BackgroundColor3 = C.warn, BorderSizePixel = 0 }, U.strip)
-round(U.bar, 2)
-U.reason = lbl(U.strip, "starting", 12, C.text, false, UDim2.new(0, 20, 0, 2), UDim2.new(1, -28, 1, -4))
--- tabs
-U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip), Size = UDim2.new(1, 0, 0, Z.tabs), BackgroundTransparency = 1 }, U.root)
-U.tabFarm = button(U.tabs, "FARM", C.accent, 9, UDim2.new(0, 6, 0, 0), UDim2.new(1 / 6, -7, 1, -4))
-U.tabBut = button(U.tabs, "BUTTERS", C.panel2, 9, UDim2.new(1 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
-U.tabCrt = button(U.tabs, "CRATES", C.panel2, 9, UDim2.new(2 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
-U.tabPet = button(U.tabs, "PETS", C.panel2, 9, UDim2.new(3 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
-U.tabTeam = button(U.tabs, "TEAMS", C.panel2, 9, UDim2.new(4 / 6, 1, 0, 0), UDim2.new(1 / 6, -2, 1, -4))
-U.tabSet = button(U.tabs, "SETUP", C.panel2, 9, UDim2.new(5 / 6, 1, 0, 0), UDim2.new(1 / 6, -7, 1, -4))
-local function pane()
-    local f = mk("ScrollingFrame", { Position = UDim2.new(0, 0, 0, Z.head + Z.strip + Z.tabs), Size = UDim2.new(1, 0, 1, -(Z.head + Z.strip + Z.tabs)),
-        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.line,
-        CanvasSize = UDim2.new(0, 0, 0, 100) }, U.root)
-    mk("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, f)
-    mk("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) }, f)
+-- ---- the design kit: cards, rows, switches, chips
+function U.row(parent, h) -- a plain row inside a card or a tab
+    return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, BorderSizePixel = 0,
+        LayoutOrder = U.nextIn(parent) }, parent)
+end
+function U.card(parent, title, note2) -- a rounded panel that grows with what is put in it
+    local f = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.panel,
+        BorderSizePixel = 0, LayoutOrder = U.nextIn(parent) }, parent)
+    round(f, 11)
+    U.stroke(f, C.line, 0.25)
+    U.list(f, 5)
+    U.pad(f, 8, 8, 8, 9)
+    if title then
+        local h = U.row(f, 14)
+        mk("Frame", { Size = UDim2.new(0, 3, 0, 10), Position = UDim2.new(0, 0, 0.5, -5), BackgroundColor3 = C.accent,
+            BorderSizePixel = 0 }, h)
+        lbl(h, title:upper(), 9, C.dim, true, UDim2.new(0, 8, 0, 0), UDim2.new(1, -8, 1, 0))
+        if note2 then
+            local n = lbl(h, note2, 9, C.faint, false, UDim2.new(0.4, 0, 0, 0), UDim2.new(0.6, 0, 1, 0))
+            n.TextXAlignment = Enum.TextXAlignment.Right
+        end
+    end
     return f
 end
-U.farm, U.but, U.set, U.crt = pane(), pane(), pane(), pane()
-U.pet, U.team = pane(), pane()
-U.but.Visible, U.set.Visible, U.crt.Visible, U.pet.Visible, U.team.Visible = false, false, false, false, false
-
--- ---- FARM tab
-local order, total, rw = 0, 12, nil
-local function row(h, parent)
-    order, total = order + 1, total + h + 6
-    return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = order }, parent or U.farm)
+function U.heading(parent, title, sub) -- the big title at the top of a tab
+    local f = U.row(parent, sub and 34 or 22)
+    lbl(f, title, 16, C.text, true, UDim2.new(0, 2, 0, 0), UDim2.new(1, -4, 0, 20)).Font = FT.x
+    if sub then lbl(f, sub, 10, C.dim, false, UDim2.new(0, 2, 0, 19), UDim2.new(1, -4, 0, 14)).TextTruncate = Enum.TextTruncate.AtEnd end
+    return f
 end
-local function caption(t) lbl(row(14), t, 10, C.dim, true) end
-rw = row(32)
-U.startB = button(rw, "START", C.good, 14, at(0, 0.68))
-U.killB = button(rw, "KILL", C.bad, 14, at(0.68, 0.32))
-do -- the five counters
-local r2 = row(40)
-local function cell(i, cap, n)
-    local f = mk("Frame", { Position = UDim2.new((i - 1) / n, 0, 0, 0), Size = UDim2.new(1 / n, i < n and -4 or 0, 1, 0),
-        BackgroundColor3 = C.panel, BorderSizePixel = 0 }, r2)
-    round(f, 6)
-    local v = lbl(f, "0", 14, C.text, true, UDim2.new(0, 0, 0, 3), UDim2.new(1, 0, 0, 20))
-    local c = lbl(f, cap, 9, C.dim, false, UDim2.new(0, 0, 0, 23), UDim2.new(1, 0, 0, 13))
-    v.TextXAlignment, c.TextXAlignment = Enum.TextXAlignment.Center, Enum.TextXAlignment.Center
-    return v
-end
-U.sBought, U.sPlaced, U.sSold, U.sColl, U.sFree = cell(1, "BOUGHT", 5), cell(2, "WAXED", 5), cell(3, "SOLD", 5), cell(4, "MONEY", 5), cell(5, "FREE", 5)
-end
-U.info = lbl(row(40), "", 10, C.dim, false)
-U.tgt = lbl(row(16), "", 10, C.good, false)
-caption("SWITCHES")
-do
-local function pair(a1, a2) -- two switches side by side
-    local f = row(26)
-    return button(f, a1, C.panel2, 10, at(0, 0.5)), button(f, a2, C.panel2, 10, at(0.5, 0.5))
-end
-U.colT, U.sellT = pair("COLLECT: ON", "SELL THEM: ON")
-U.crateT, U.arT = pair("OPEN CRATES: ON", "AUTO ROLL: OFF")
-U.helpT, U.helpGT = pair("HELP WAXES: OFF", "GUILD CALLS: OFF")
-U.campT, U.ghostT = pair("CAMPFIRE: OFF", "GHOST: OFF")
-U.ixT, U.bestT = pair("AUTO INDEX: OFF", "BEST BUTTER: OFF")
-U.bcT, U.shT = pair("BEST CRATE: OFF", "GRAB SHOWER: ON")
-rw = row(26)
-U.questT = button(rw, "QUESTS: OFF", C.panel2, 10, at(0, 0.5))
-lbl(rw, "collect every", 9, C.dim, false, at(0.52, 0.2))
-U.secB = textbox(rw, tostring(CFG.Every), "60", at(0.72, 0.13))
-U.secB.TextSize = 11
-U.secSet = button(rw, "SET", C.accent, 10, at(0.85, 0.15))
-local st = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, row(76))
-round(st, 6)
-mk("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, st)
-mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 3) }, st)
-local function sline(i) -- one status line per feature, cut short rather than wrapped
-    local l = lbl(st, "", 9, C.dim, false, nil, UDim2.new(1, -6, 0, 14))
-    l.LayoutOrder, l.TextWrapped, l.TextTruncate = i, false, Enum.TextTruncate.AtEnd
+function U.note(parent, text, h) -- small grey explanation text
+    local l = lbl(U.row(parent, h or 28), text, 9, C.dim, false)
+    l.TextYAlignment = Enum.TextYAlignment.Top
     return l
 end
-U.helpL, U.campL, U.questL, U.arL, U.ixL = sline(1), sline(2), sline(3), sline(4), sline(5)
+U.OFF = { OFF = true, GAME = true, ["ALL DRAWN"] = true }
+function U.skin(b) -- a switch paints itself from its own "NAME: VALUE" text
+    local s = U.sw[b]
+    if not s then return end
+    local v = tostring(b.Text or ""):match(":%s*(.-)%s*$") or ""
+    local on = v ~= "" and not U.OFF[v]
+    local pill = not s.chips and (v == "ON" or v == "OFF")
+    s.pill.Visible, s.chip.Visible = pill, not pill
+    if pill then
+        s.pill.BackgroundColor3 = on and C.accent or C.panel2
+        s.knob.Position = on and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+        s.knob.BackgroundColor3 = on and C.white or C.dim
+    else
+        s.chip.Text = v ~= "" and v or "-"
+        s.chip.BackgroundColor3 = on and C.accent or C.panel2
+        s.chip.TextColor3 = on and C.ink or C.dim
+    end
+    b.BackgroundColor3 = on and C.lit or C.raise
+    if s.edge then s.edge.Color = on and C.accent or C.line s.edge.Transparency = on and 0.55 or 0.45 end
 end
-caption("LOG")
-U.log = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
-    TextSize = 10, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-    TextWrapped = true, Text = "" }, row(84))
-round(U.log, 6)
-mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 4), PaddingRight = UDim.new(0, 6) }, U.log)
-U.farm.CanvasSize = UDim2.new(0, 0, 0, total)
+function U.switch(parent, text, title, sub) -- a full-width switch row; returns the TextButton
+    local b = mk("TextButton", { Name = "Switch", Text = text, TextTransparency = 1, TextSize = 8, Font = FT.b,
+        Size = UDim2.new(1, 0, 0, sub and 36 or 28), BackgroundColor3 = C.raise, BorderSizePixel = 0, AutoButtonColor = true,
+        LayoutOrder = U.nextIn(parent) }, parent)
+    round(b, 9)
+    local s = { edge = U.stroke(b, C.line, 0.45) }
+    s.title = lbl(b, title, 11, C.text, true, UDim2.new(0, 10, 0, sub and 4 or 0), UDim2.new(1, -100, 0, sub and 15 or 28))
+    s.title.TextWrapped, s.title.TextTruncate = false, Enum.TextTruncate.AtEnd
+    if sub then
+        s.sub = lbl(b, sub, 9, C.dim, false, UDim2.new(0, 10, 0, 19), UDim2.new(1, -100, 0, 13))
+        s.sub.TextWrapped, s.sub.TextTruncate = false, Enum.TextTruncate.AtEnd
+    end
+    s.pill = mk("Frame", { Size = UDim2.new(0, 34, 0, 18), Position = UDim2.new(1, -42, 0.5, -9), BackgroundColor3 = C.panel2,
+        BorderSizePixel = 0 }, b)
+    round(s.pill, 9)
+    s.knob = mk("Frame", { Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(0, 2, 0.5, -7), BackgroundColor3 = C.dim,
+        BorderSizePixel = 0 }, s.pill)
+    round(s.knob, 7)
+    s.chip = mk("TextLabel", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.new(0, 0, 0, 18),
+        AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = C.panel2, BorderSizePixel = 0, Font = FT.b, TextSize = 9,
+        TextColor3 = C.dim, Text = "" }, b)
+    round(s.chip, 9)
+    U.pad(s.chip, 10, 0, 10, 0)
+    U.sw[b] = s
+    track(b:GetPropertyChangedSignal("Text"):Connect(function() U.skin(b) end))
+    U.skin(b)
+    return b
+end
+function U.chips(b) -- this switch has more than two settings: always a value chip
+    if U.sw[b] then U.sw[b].chips = true U.skin(b) end
+end
+function U.line(parent, dotColor) -- one status line with a coloured dot
+    local f = U.row(parent, 15)
+    local d = mk("Frame", { Size = UDim2.new(0, 6, 0, 6), Position = UDim2.new(0, 1, 0.5, -3), BackgroundColor3 = dotColor or C.dim,
+        BorderSizePixel = 0 }, f)
+    round(d, 3)
+    local l = lbl(f, "", 10, C.dim, false, UDim2.new(0, 12, 0, 0), UDim2.new(1, -12, 1, 0))
+    l.TextWrapped, l.TextTruncate = false, Enum.TextTruncate.AtEnd
+    return l, d
+end
+function U.grow(parent, ts, color) -- a label that is as tall as its text
+    local l = mk("TextLabel", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+        Font = FT.m, TextSize = ts or 10, TextColor3 = color or C.dim, TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Text = "", LayoutOrder = U.nextIn(parent) }, parent)
+    return l
+end
+function U.actions(parent, specs) -- a row of buttons sharing the width: { {text, colour}, ... }
+    local f = U.row(parent, 28)
+    local out, n = {}, #specs
+    for i, sp in ipairs(specs) do
+        out[i] = button(f, sp[1], sp[2] or C.panel2, 10, UDim2.new((i - 1) / n, i > 1 and 3 or 0, 0, 0),
+            UDim2.new(1 / n, (i > 1 and -3 or 0) + (i < n and -3 or 0), 1, 0))
+    end
+    return table.unpack(out)
+end
+local function setToggle(b, on, onText, offText)
+    U.put(b, on and onText or offText)
+    if not U.sw[b] and U.lit[b] ~= on then
+        U.lit[b] = on
+        b.BackgroundColor3 = on and C.accent or C.panel2
+        b.TextColor3 = U.ink(b.BackgroundColor3)
+    end
+end
+-- ---- header: logo, name, the running pill, minimise and close
+U.title = mk("Frame", { Size = UDim2.new(1, 0, 0, Z.head), BackgroundColor3 = C.panel, BorderSizePixel = 0, Active = true }, U.root)
+mk("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1), BackgroundColor3 = C.line, BorderSizePixel = 0 }, U.title)
+do
+    local logo = mk("Frame", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(0, 9, 0.5, -13), BackgroundColor3 = C.white,
+        BorderSizePixel = 0 }, U.title)
+    round(logo, 8)
+    U.grad(logo, C.accent, C.accent2, 45)
+    local m = lbl(logo, "C", 16, C.ink, true)
+    m.Font, m.TextXAlignment = FT.x, Enum.TextXAlignment.Center
+    local w = lbl(U.title, "CHURN", 15, C.text, true, UDim2.new(0, 42, 0, 4), UDim2.new(0, 120, 0, 18))
+    w.Font = FT.x
+    lbl(U.title, "butter farm  " .. VERSION, 9, C.dim, false, UDim2.new(0, 42, 0, 21), UDim2.new(0, 120, 0, 12))
+end
+U.pill = mk("Frame", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -66, 0.5, 0), Size = UDim2.new(0, 78, 0, 22),
+    BackgroundColor3 = C.raise, BorderSizePixel = 0 }, U.title)
+round(U.pill, 11)
+U.pillEdge = U.stroke(U.pill, C.line, 0.2)
+U.dot = mk("Frame", { Size = UDim2.new(0, 8, 0, 8), Position = UDim2.new(0, 9, 0.5, -4), BackgroundColor3 = C.dim, BorderSizePixel = 0 }, U.pill)
+round(U.dot, 4)
+U.runL = lbl(U.pill, "STOPPED", 9, C.dim, true, UDim2.new(0, 22, 0, 0), UDim2.new(1, -26, 1, 0))
+U.minB = button(U.title, "-", C.raise, 14, UDim2.new(1, -60, 0.5, -12), UDim2.new(0, 24, 0, 24))
+U.xB = button(U.title, "X", C.raise, 11, UDim2.new(1, -32, 0.5, -12), UDim2.new(0, 24, 0, 24))
+U.xB.TextColor3 = C.bad
+-- ---- status: what the farm is doing right now, on every tab
+U.strip = mk("Frame", { Position = UDim2.new(0, Z.rail + 8, 0, Z.head + 6), Size = UDim2.new(1, -(Z.rail + 16), 0, Z.status),
+    BackgroundColor3 = C.raise, BorderSizePixel = 0 }, U.root)
+round(U.strip, 9)
+U.stroke(U.strip, C.line, 0.3)
+U.bar = mk("Frame", { Size = UDim2.new(0, 3, 1, -12), Position = UDim2.new(0, 7, 0, 6), BackgroundColor3 = C.warn, BorderSizePixel = 0 }, U.strip)
+round(U.bar, 2)
+U.reason = lbl(U.strip, "starting", 10, C.text, false, UDim2.new(0, 16, 0, 1), UDim2.new(1, -22, 1, -2))
+U.reason.TextTruncate = Enum.TextTruncate.AtEnd
+-- ---- the rail: one icon per tab
+U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head), Size = UDim2.new(0, Z.rail, 1, -Z.head), BackgroundColor3 = C.panel,
+    BorderSizePixel = 0 }, U.root)
+U.railLine = mk("Frame", { Size = UDim2.new(0, 1, 1, -Z.head), Position = UDim2.new(0, Z.rail - 1, 0, Z.head), BackgroundColor3 = C.line,
+    BorderSizePixel = 0 }, U.root) -- (outside the rail: its list layout would treat it as a tab)
+do
+    local l = U.list(U.tabs, 3)
+    pcall(function() l.HorizontalAlignment = Enum.HorizontalAlignment.Center end)
+    U.pad(U.tabs, 5, 6, 6, 6)
+end
+U.railH = math.clamp(math.floor((Z.h - Z.head - 12) / 9) - 3, 22, 34)
+local function railBtn(icon, name, sub)
+    local b = mk("TextButton", { Text = icon, Font = FT.b, TextSize = 15, TextColor3 = C.text, TextTransparency = 0.45,
+        Size = UDim2.new(1, 0, 0, U.railH), BackgroundColor3 = C.raise, BackgroundTransparency = 1, BorderSizePixel = 0,
+        AutoButtonColor = false, LayoutOrder = #U.tabsAll + 1 }, U.tabs)
+    round(b, 9)
+    local bar = mk("Frame", { Size = UDim2.new(0, 3, 0.56, 0), Position = UDim2.new(0, -5, 0.22, 0), BackgroundColor3 = C.accent,
+        BorderSizePixel = 0, Visible = false }, b)
+    round(bar, 2)
+    U.tabsAll[#U.tabsAll + 1] = { b = b, bar = bar, name = name, sub = sub }
+    return b
+end
+U.tabFarm = railBtn("🏠", "Home", "what the farm is doing")
+U.tabRun = railBtn("🌾", "Farm", "the buy - wax - collect loop")
+U.tabBut = railBtn("🧈", "Butters", "what gets bought and waxed")
+U.tabCrt = railBtn("📦", "Crates", "which crates get opened")
+U.tabPet = railBtn("🐾", "Pets", "adopt, wish, fuse")
+U.tabTeam = railBtn("👥", "Teams", "the right pets at the right moment")
+U.tabSrv = railBtn("🤝", "Server", "helping, campfire, ghost")
+U.tabAdm = railBtn("⚡", "Admin", "admin abuse and its boosts")
+U.tabSet = railBtn("⚙", "Settings", "configs, startup, performance")
+local function pane()
+    local f = mk("ScrollingFrame", { Position = UDim2.new(0, Z.rail, 0, Z.head + Z.status + 10),
+        Size = UDim2.new(1, -Z.rail, 1, -(Z.head + Z.status + 10)), BackgroundTransparency = 1, BorderSizePixel = 0,
+        ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent, ScrollBarImageTransparency = 0.35,
+        CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y, Visible = false }, U.root)
+    U.list(f, 8)
+    U.pad(f, 8, 2, 10, 12)
+    return f
+end
+U.farm, U.run, U.but, U.crt, U.pet, U.team, U.srv, U.adm, U.set = pane(), pane(), pane(), pane(), pane(), pane(), pane(), pane(), pane()
+U.farm.Visible = true
 
--- ---- SETUP tab
-order, total = 0, 12
-local function srow(h) return row(h, U.set) end
-local function scap(t) lbl(srow(14), t, 10, C.dim, true) end
-scap("ONE-OFF ACTIONS")
-rw = srow(26)
-U.buyB = button(rw, "BUY THE PAD", C.warn, 10, at(0, 0.5))
-U.plB = button(rw, "WAX WHAT I HOLD", C.good, 10, at(0.5, 0.5))
-rw = srow(26)
-U.sellB = button(rw, "SELL WHAT I HOLD", C.warn, 10, at(0, 0.5))
-U.crateB = button(rw, "OPEN CRATE NOW", C.warn, 10, at(0.5, 0.5))
-rw = srow(26)
-U.padB = button(rw, "SET PAD (stand on it)", C.panel2, 10, at(0, 0.55))
-U.padL = lbl(rw, "", 10, C.dim, false, at(0.56, 0.44))
-scap("SETTINGS FILE  (saved on your phone)")
-rw = srow(28)
-U.cfgName = textbox(rw, "default", "config name", at(0, 0.5))
-U.cfgSave = button(rw, "SAVE", C.good, 11, at(0.5, 0.25))
-U.cfgLoad = button(rw, "LOAD", C.accent, 11, at(0.75, 0.25))
-rw = srow(26)
-U.cfgPrev = button(rw, "<", C.panel2, 11, at(0, 0.13))
-U.cfgPick = button(rw, "(none saved)", C.panel2, 10, at(0.13, 0.74))
-U.cfgNext = button(rw, ">", C.panel2, 11, at(0.87, 0.13))
-rw = srow(26)
-U.cfgAuto = button(rw, "LOAD IT ON LAUNCH: OFF", C.panel2, 10, at(0, 1))
-U.cfgMsg = lbl(srow(26), "", 10, C.dim, false)
-scap("START BY ITSELF")
-rw = srow(26)
-U.autoB = button(rw, "INSTALL F.exec", C.accent, 10, at(0, 1))
-U.autoMsg = lbl(srow(30), "", 10, C.dim, false)
-rw = srow(28)
-U.startT = button(rw, "START FARMING ON LOAD: ON", C.accent, 10, at(0, 1))
-lbl(srow(26), "Pressing START or STOP also sets this, so saving the config keeps whatever you were doing.", 10, C.dim, false)
-scap("IF THE GAME DROPS ME")
-rw = srow(28)
-U.rejT = button(rw, "AUTO REJOIN: ON", C.accent, 11, at(0, 0.55))
-U.rejB = button(rw, "REJOIN NOW", C.warn, 11, at(0.55, 0.45))
-U.rejMsg = lbl(srow(30), "", 10, C.dim, false)
-scap("SMOOTHER RUNNING  (for long / overnight runs)")
-rw = srow(28)
-U.pfLite = button(rw, "LITE MODE: OFF", C.panel2, 10, at(0, 0.5))
-U.pfHud = button(rw, "HIDE GAME HUD: OFF", C.panel2, 10, at(0.5, 0.5))
-rw = srow(28)
-U.pfFps = button(rw, "FPS CAP: GAME", C.panel2, 10, at(0, 0.5))
-U.pfRender = button(rw, "STOP 3D: OFF", C.panel2, 10, at(0.5, 0.5))
-rw = srow(28)
-U.pfCalm = button(rw, "NO ANIMATIONS: OFF", C.panel2, 10, at(0, 1))
-U.pfBases = button(srow(28), "BASES: ALL DRAWN", C.panel2, 10, at(0, 1))
-rw = srow(28)
-U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", at(0, 0.24))
-lbl(rw, "MB: rejoin this server above it (0 = never)", 9, C.dim, false, at(0.26, 0.52))
-U.pfMemSet = button(rw, "SET", C.accent, 11, at(0.8, 0.2))
-U.pfInfo = lbl(srow(18), "", 10, C.text, false)
-lbl(srow(66), "LITE MODE turns off floating labels, sparkles and lighting extras; the screen stays normal. BASES: OTHERS HIDDEN stops drawing other players' bases and stacks, ALL HIDDEN yours too (nothing is removed, so helping and farming work). HIDE GAME HUD hides the game's own menus. A lower FPS CAP keeps the phone cooler overnight. STOP 3D blanks the world behind this window. All of it goes back to normal when switched off or on KILL.", 9, C.dim, false)
-scap("THE ROUND SAB BUTTON")
-lbl(srow(30), "Tap it to hide or show this window. Hold and drag it anywhere on screen. The farm keeps running either way.", 10, C.dim, false)
-U.set.CanvasSize = UDim2.new(0, 0, 0, total)
+-- ---- HOME: start, the numbers, what each part is doing, the log
+do
+    local P = U.farm
+    local hero = U.row(P, 34)
+    U.startB = button(hero, "START", C.good, 14, UDim2.new(0, 0, 0, 0), UDim2.new(0.7, -3, 1, 0))
+    U.startB.Font = FT.x
+    U.grad(U.startB, C.white, Color3.fromRGB(215, 215, 215), 90)
+    U.killB = button(hero, "KILL", C.raise, 12, UDim2.new(0.7, 3, 0, 0), UDim2.new(0.3, -3, 1, 0))
+    U.killB.TextColor3 = C.bad
+    U.stroke(U.killB, C.bad, 0.5)
+    local grid = U.row(P, 44)
+    local function cell(i, cap, n)
+        local f = mk("Frame", { Position = UDim2.new((i - 1) / n, i > 1 and 2 or 0, 0, 0), Size = UDim2.new(1 / n, -4, 1, 0),
+            BackgroundColor3 = C.panel, BorderSizePixel = 0 }, grid)
+        round(f, 9)
+        U.stroke(f, C.line, 0.3)
+        local v = lbl(f, "0", 14, C.text, true, UDim2.new(0, 0, 0, 5), UDim2.new(1, 0, 0, 18))
+        v.Font, v.TextXAlignment, v.TextWrapped = FT.x, Enum.TextXAlignment.Center, false
+        local c = lbl(f, cap, 8, C.dim, true, UDim2.new(0, 0, 0, 25), UDim2.new(1, 0, 0, 12))
+        c.TextXAlignment = Enum.TextXAlignment.Center
+        return v
+    end
+    U.sBought, U.sPlaced, U.sSold, U.sColl, U.sFree = cell(1, "BOUGHT", 5), cell(2, "WAXED", 5), cell(3, "SOLD", 5), cell(4, "MONEY", 5), cell(5, "FREE", 5)
+    local now1 = U.card(P, "Right now")
+    U.info = lbl(U.row(now1, 40), "", 10, C.text, false)
+    U.info.TextYAlignment = Enum.TextYAlignment.Top
+    U.tgt = lbl(U.row(now1, 14), "", 10, C.good, true)
+    U.tgt.TextWrapped, U.tgt.TextTruncate = false, Enum.TextTruncate.AtEnd
+    local sys = U.card(P, "Systems")
+    U.helpL = U.line(sys, C.info)
+    U.campL = U.line(sys, C.accent2)
+    U.questL = U.line(sys, C.good)
+    U.arL = U.line(sys, C.accent)
+    U.ixL = U.line(sys, RC.Dotonbori)
+    local lg = U.card(P, "Activity")
+    U.log = mk("TextLabel", { Size = UDim2.new(1, 0, 0, 86), BackgroundColor3 = C.bg, BorderSizePixel = 0, Font = FT.mono,
+        TextSize = 9, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true, Text = "", LayoutOrder = U.nextIn(lg) }, lg)
+    round(U.log, 7)
+    U.pad(U.log, 7, 5, 7, 5)
+end
+-- old helper names, now cards: row(h, parent) still makes a row
+local function row(h, parent) return U.row(parent or U.farm, h) end
+local rw
+
+-- ---- FARM: the loop and the things you can do by hand
+do
+    local P = U.run
+    U.heading(P, "Farm", "buy what rolls, wax it, collect the cash")
+    local loop = U.card(P, "Loop")
+    U.colT = U.switch(loop, "COLLECT: ON", "Collect cash", "step on the collector by itself")
+    rw = U.row(loop, 26)
+    lbl(rw, "collect every", 10, C.dim, false, UDim2.new(0, 10, 0, 0), UDim2.new(0.45, -10, 1, 0))
+    U.secB = textbox(rw, tostring(CFG.Every), "60", UDim2.new(0.45, 0, 0, 0), UDim2.new(0.25, -4, 1, 0))
+    lbl(rw, "s", 10, C.dim, false, UDim2.new(0.7, -2, 0, 0), UDim2.new(0, 10, 1, 0))
+    U.secSet = button(rw, "SET", C.accent, 10, UDim2.new(0.75, 4, 0, 0), UDim2.new(0.25, -4, 1, 0))
+    U.sellT = U.switch(loop, "SELL THEM: ON", "Sell junk", "anything not ticked is sold, never waxed")
+    U.arT = U.switch(loop, "AUTO ROLL: OFF", "Auto Roll", "keep the game's Auto Roll pass running")
+    U.questT = U.switch(loop, "QUESTS: OFF", "Event quests", "claim them, pull or collect when asked")
+    local man = U.card(P, "By hand")
+    U.buyB, U.plB = U.actions(man, { { "BUY THE PAD", C.warn }, { "WAX WHAT I HOLD", C.good } })
+    U.sellB, U.crateB = U.actions(man, { { "SELL WHAT I HOLD", C.panel2 }, { "OPEN CRATE NOW", C.panel2 } })
+    rw = U.row(man, 28)
+    U.padB = button(rw, "SET PAD (stand on it)", C.panel2, 10, at(0, 0.55))
+    U.padL = lbl(rw, "", 10, C.dim, false, UDim2.new(0.55, 6, 0, 0), UDim2.new(0.45, -6, 1, 0))
+end
+
+-- ---- BUTTERS: the strategy switches; the list is built into U.butList the first time you open it
+do
+    local P = U.but
+    U.heading(P, "Butters", "what gets bought and waxed")
+    local st = U.card(P, "Strategy")
+    U.ixT = U.switch(st, "AUTO INDEX: OFF", "Auto Index", "wax each butter missing from your Index")
+    U.bestT = U.switch(st, "BEST BUTTER: OFF", "Best butter", "TOP 1-3 of the game, or UPGRADES")
+    U.butList = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+        LayoutOrder = U.nextIn(P) }, P)
+    U.list(U.butList, 5)
+end
+
+-- ---- CRATES: the switches; the list goes into U.crtList
+do
+    local P = U.crt
+    U.heading(P, "Crates", "only ticked crates are opened")
+    local st = U.card(P, "Opening")
+    U.crateT = U.switch(st, "OPEN CRATES: ON", "Open ticked crates", "the rest are left for the game")
+    U.bcT = U.switch(st, "BEST CRATE: OFF", "Best crate too", "the game's dearest one, new ones too")
+    U.crtList = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+        LayoutOrder = U.nextIn(P) }, P)
+    U.list(U.crtList, 5)
+end
+
+-- ---- PETS: the switches and the live line; the list goes into U.petList
+do
+    local P = U.pet
+    U.heading(P, "Pets", "adopt from the pen, keep wishes going, fuse Bigs")
+    local st = U.card(P, "Automatic")
+    U.pbT = U.switch(st, "AUTO ADOPT: OFF", "Auto adopt", "pets marked BUY, from the pen")
+    U.pwT = U.switch(st, "AUTO WISH: OFF", "Auto wish", "keep wishes going for pets marked WISH")
+    U.pfT = U.switch(st, "AUTO FUSE: OFF", "Auto fuse", "copies into Bigs, up to each goal")
+    U.pInfo = U.grow(st, 10, C.dim)
+    U.note(st, "BUY adopt it  -  ANY / BIG only its Big  -  WISH 2x its price, 20 min  -  FUSE how many Bigs (7 = one Huge, you fuse that)", 28)
+    U.petList = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+        LayoutOrder = U.nextIn(P) }, P)
+    U.list(U.petList, 4)
+end
+
+-- ---- TEAMS: built into U.teamList the first time you open it
+do
+    U.heading(U.team, "Teams", "the right pets at the right moment")
+    U.teamList = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+        LayoutOrder = U.nextIn(U.team) }, U.team)
+    U.list(U.teamList, 8)
+end
+
+-- ---- SERVER: everything that involves other players
+do
+    local P = U.srv
+    U.heading(P, "Server", "other players' waxes, the campfire, staying out of sight")
+    local hp = U.card(P, "Helping")
+    U.helpT = U.switch(hp, "HELP WAXES: OFF", "Help waxes", "other players' waxes in this server")
+    U.helpGT = U.switch(hp, "GUILD CALLS: OFF", "Guild calls", "answer guildmates' \"need help\" calls")
+    U.srvHelp = U.line(hp, C.info)
+    local cp = U.card(P, "Campfire")
+    U.campT = U.switch(cp, "CAMPFIRE: OFF", "Sit at the campfire", "+50% cash per camper, farm keeps going")
+    U.srvCamp = U.line(cp, C.accent2)
+    local gh = U.card(P, "Ghost")
+    U.ghostT = U.switch(gh, "GHOST: OFF", "Ghost mode", "HELP: hidden helps  FULL: underground")
+    U.srvGhost = U.line(gh, C.dim)
+    U.note(gh, "The round C button's small chip switches ghost too, without opening this window.", 24)
+end
+
+-- ---- ADMIN: admin abuse - when, what is boosted, the shower and the snap
+do
+    local P = U.adm
+    U.heading(P, "Admin abuse", "the show, its boosts and what the farm does in it")
+    local wh = U.card(P, "When")
+    U.admBig = lbl(U.row(wh, 22), "-", 15, C.text, true)
+    U.admBig.Font = FT.x
+    U.admSub = lbl(U.row(wh, 14), "", 10, C.dim, false)
+    local bo = U.card(P, "Boosts now")
+    U.admBoost = U.grow(bo, 11, C.text)
+    local au = U.card(P, "What the farm does")
+    U.shT = U.switch(au, "GRAB SHOWER: ON", "Grab the butter shower", "wanted pieces first, then the rarest")
+    U.snapT = U.switch(au, "SNAP GLAZE: ON", "Glaze team for the snap", "every wax finishes at once: glaze team on")
+    U.admStat = U.line(au, C.accent)
+    local fd = U.card(P, "Show feed")
+    U.admFeed = mk("TextLabel", { Size = UDim2.new(1, 0, 0, 70), BackgroundColor3 = C.bg, BorderSizePixel = 0, Font = FT.mono,
+        TextSize = 9, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true, Text = "nothing yet", LayoutOrder = U.nextIn(fd) }, fd)
+    round(U.admFeed, 7)
+    U.pad(U.admFeed, 7, 5, 7, 5)
+end
+
+-- ---- SETTINGS: configs, starting, rejoining, performance
+do
+    local P = U.set
+    U.heading(P, "Settings", "kept on your phone, per config")
+    local cf = U.card(P, "Config")
+    rw = U.row(cf, 28)
+    U.cfgName = textbox(rw, "default", "config name", UDim2.new(0, 0, 0, 0), UDim2.new(0.5, -3, 1, 0))
+    U.cfgSave = button(rw, "SAVE", C.good, 11, UDim2.new(0.5, 3, 0, 0), UDim2.new(0.25, -6, 1, 0))
+    U.cfgLoad = button(rw, "LOAD", C.accent, 11, UDim2.new(0.75, 3, 0, 0), UDim2.new(0.25, -3, 1, 0))
+    rw = U.row(cf, 26)
+    U.cfgPrev = button(rw, "<", C.panel2, 12, UDim2.new(0, 0, 0, 0), UDim2.new(0, 30, 1, 0))
+    U.cfgPick = button(rw, "(none saved)", C.raise, 10, UDim2.new(0, 34, 0, 0), UDim2.new(1, -68, 1, 0))
+    U.cfgNext = button(rw, ">", C.panel2, 12, UDim2.new(1, -30, 0, 0), UDim2.new(0, 30, 1, 0))
+    U.cfgAuto = U.switch(cf, "LOAD IT ON LAUNCH: OFF", "Load on launch", "this config comes back every start")
+    U.cfgMsg = U.grow(cf, 10, C.dim)
+    local stc = U.card(P, "Starting")
+    U.startT = U.switch(stc, "START FARMING ON LOAD: ON", "Start farming on load", "START / STOP also sets this")
+    U.autoB = U.actions(stc, { { "INSTALL AUTOEXEC LOADER", C.panel2 } })
+    U.autoMsg = U.grow(stc, 9, C.dim)
+    local rj = U.card(P, "If the game drops me")
+    U.rejT = U.switch(rj, "AUTO REJOIN: ON", "Auto rejoin", "after a disconnect or a restart")
+    U.rejB = U.actions(rj, { { "REJOIN NOW", C.panel2 } })
+    U.rejMsg = U.grow(rj, 9, C.dim)
+    local pf = U.card(P, "Performance")
+    U.pfCalm = U.switch(pf, "NO ANIMATIONS: OFF", "No animations", "stack squish, rainbows, pets walking")
+    U.pfLite = U.switch(pf, "LITE MODE: OFF", "Lite mode", "labels, sparkles, lighting extras off")
+    U.pfBases = U.switch(pf, "BASES: ALL DRAWN", "Bases", "stop drawing other bases, or yours too")
+    U.pfFps = U.switch(pf, "FPS CAP: GAME", "FPS cap", "lower keeps the phone cooler")
+    U.pfHud = U.switch(pf, "HIDE GAME HUD: OFF", "Hide the game's menus")
+    U.pfRender = U.switch(pf, "STOP 3D: OFF", "Stop 3D", "blank the world behind this window")
+    rw = U.row(pf, 28)
+    lbl(rw, "rejoin above", 10, C.dim, false, UDim2.new(0, 10, 0, 0), UDim2.new(0.36, -10, 1, 0))
+    U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", UDim2.new(0.36, 0, 0, 0), UDim2.new(0.26, -4, 1, 0))
+    lbl(rw, "MB", 10, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0, 22, 1, 0))
+    U.pfMemSet = button(rw, "SET", C.accent, 10, UDim2.new(0.75, 4, 0, 0), UDim2.new(0.25, -4, 1, 0))
+    U.pfInfo = U.line(pf, C.good)
+    U.note(pf, "Everything here is undone when switched off or on KILL. 0 MB = never rejoin for memory.", 24)
+    local ab = U.card(P, "About")
+    U.note(ab, "CHURN " .. VERSION .. " for Stack A Butter Squishy. The round C button hides or shows this window - hold and drag it anywhere. Drag this window by its top bar. The farm keeps running either way.", 40)
+end
+
+for _, b in ipairs({ U.ghostT, U.bestT, U.pfBases, U.pfFps, U.cfgAuto }) do U.chips(b) end
 
 -- ---- the floating button: hides and brings back the whole window, drag it anywhere
 local tg = mk("ScreenGui", { Name = "SABToggle", ResetOnSpawn = false, DisplayOrder = 1000, IgnoreGuiInset = true }, pg)
-U.tgRoot = mk("Frame", { Size = UDim2.new(0, 40, 0, 40),
+U.tgRoot = mk("Frame", { Size = UDim2.new(0, 42, 0, 42),
     Position = S.togPos and UDim2.new(0, S.togPos[1], 0, S.togPos[2]) or UDim2.new(0, 10, 0.45, -20),
     BackgroundColor3 = C.accent, BorderSizePixel = 0, Active = true }, tg)
-round(U.tgRoot, 20)
-mk("UIStroke", { Color = C.line, Thickness = 1 }, U.tgRoot)
-U.tgBtn = mk("TextButton", { Text = "SAB", Size = FILL, BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
-    TextSize = 11, TextColor3 = C.text, AutoButtonColor = false }, U.tgRoot)
-U.tgDot = mk("Frame", { Size = UDim2.new(0, 7, 0, 7), Position = UDim2.new(1, -9, 0, 2), BackgroundColor3 = C.dim,
+round(U.tgRoot, 21)
+U.stroke(U.tgRoot, C.white, 0.75)
+U.grad(U.tgRoot, C.white, Color3.fromRGB(255, 170, 120), 45)
+U.tgBtn = mk("TextButton", { Text = "C", Size = FILL, BackgroundTransparency = 1, Font = FT.x,
+    TextSize = 19, TextColor3 = C.ink, AutoButtonColor = false }, U.tgRoot)
+U.tgDot = mk("Frame", { Size = UDim2.new(0, 10, 0, 10), Position = UDim2.new(1, -10, 0, 0), BackgroundColor3 = C.dim,
     BorderSizePixel = 0 }, U.tgRoot)
-round(U.tgDot, 4)
--- ghost on/off without opening the window: OFF -> HELP -> FULL (it moves with the SAB button)
-U.tgGhost = mk("TextButton", { Text = "G: OFF", Size = UDim2.new(0, 46, 0, 18), Position = UDim2.new(0.5, -23, 1, 4),
-    BackgroundColor3 = C.panel2, Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = C.text, AutoButtonColor = false,
+round(U.tgDot, 5)
+U.stroke(U.tgDot, C.bg, 0)
+-- ghost on/off without opening the window: OFF -> HELP -> FULL (it moves with the button)
+U.tgGhost = mk("TextButton", { Text = "G: OFF", Size = UDim2.new(0, 50, 0, 18), Position = UDim2.new(0.5, -25, 1, 5),
+    BackgroundColor3 = C.panel, Font = FT.b, TextSize = 9, TextColor3 = C.dim, AutoButtonColor = false,
     BorderSizePixel = 0 }, U.tgRoot)
-round(U.tgGhost, 6)
+round(U.tgGhost, 9)
+U.stroke(U.tgGhost, C.line, 0)
 U.tgGhost.MouseButton1Click:Connect(function() PF.cycleGhost() end)
 function PF.paintGhost() -- (here, after the colours exist)
     local m = PF.ghostMode()
-    local col = m == 2 and C.accent or (m == 1 and C.warn or C.panel2)
-    if U.ghostT then U.ghostT.Text, U.ghostT.BackgroundColor3 = PF.GHOST[m][1], col end
-    if U.tgGhost then U.tgGhost.Text, U.tgGhost.BackgroundColor3 = PF.GHOST[m][2], col end
+    if U.ghostT then U.put(U.ghostT, PF.GHOST[m][1]) end
+    if U.tgGhost then
+        U.tgGhost.Text = PF.GHOST[m][2]
+        U.tgGhost.BackgroundColor3 = m == 2 and C.accent or (m == 1 and C.warn or C.panel)
+        U.tgGhost.TextColor3 = m > 0 and C.ink or C.dim
+    end
 end
 
--- ---- BUTTERS tab: worst at the top, best at the bottom, built the first time you open it
+-- ---- BUTTERS list: a card per rarity, worst at the top, best at the bottom; built the first time you open the tab
 local LST = { built = false, boxes = {}, at = 0 }
+function U.check(b, on) -- a tick box: gold with a mark when on
+    b.Text = on and "✓" or ""
+    b.BackgroundColor3 = on and C.accent or C.bg
+    b.TextColor3 = C.ink
+    local row = b.Parent
+    if row and row:IsA("TextButton") then row.BackgroundColor3 = on and C.lit or C.raise end
+end
 local function setTick(k, on)
     CFG.Targets[k] = on or nil
     local b = LST.boxes[k]
-    if b then
-        b.Text = on and "X" or ""
-        b.BackgroundColor3 = on and C.good or C.panel2
-    end
+    if b then U.check(b, on) end
 end
 local function refreshTicks()
-    for k, b in pairs(LST.boxes) do
-        local on = CFG.Targets[k] == true
-        b.Text = on and "X" or ""
-        b.BackgroundColor3 = on and C.good or C.panel2
-    end
+    for k, b in pairs(LST.boxes) do U.check(b, CFG.Targets[k] == true) end
+end
+function U.tickBox(parent) -- the little box at the right end of a list row
+    local t = mk("TextButton", { Text = "", Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new(1, -27, 0.5, -10),
+        BackgroundColor3 = C.bg, BorderSizePixel = 0, Font = FT.x, TextSize = 13, TextColor3 = C.ink, AutoButtonColor = false }, parent)
+    round(t, 6)
+    U.stroke(t, C.line, 0)
+    return t
 end
 local buildList
 local function butHead()
-    local n = 0
-    local f = mk("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, LayoutOrder = 1 }, U.but)
-    U.butInfo = lbl(f, "", 10, C.dim, false, at(0, 0.5))
-    local cl = button(f, "CLEAR", C.panel2, 10, at(0.5, 0.24))
-    local rf = button(f, "REFRESH", C.panel2, 10, at(0.74, 0.26))
+    local f = U.card(U.butList, "Butter list")
+    local r = U.row(f, 26)
+    U.butInfo = lbl(r, "", 10, C.dim, false, UDim2.new(0, 2, 0, 0), UDim2.new(0.5, -2, 1, 0))
+    local cl = button(r, "CLEAR", C.panel2, 10, UDim2.new(0.5, 0, 0, 0), UDim2.new(0.25, -3, 1, 0))
+    local rf = button(r, "REFRESH", C.panel2, 10, UDim2.new(0.75, 3, 0, 0), UDim2.new(0.25, -3, 1, 0))
     cl.MouseButton1Click:Connect(function()
         for k in pairs(CFG.Targets) do CFG.Targets[k] = nil end
         refreshTicks()
@@ -4298,36 +4598,33 @@ local function butHead()
         catReady()
         buildList(true)
     end)
-    return n
 end
 buildList = function(force)
     if not catReady() then
         if not U.butEmpty then
-            U.butEmpty = lbl(mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, LayoutOrder = 2 }, U.but),
-                "butter list not loaded yet - open this tab again in a moment", 11, C.warn, false)
+            U.butEmpty = lbl(U.row(U.butList, 40), "butter list not loaded yet - open this tab again in a moment", 11, C.warn, false)
         end
         return
     end
     if LST.built and not force and LST.at == CAT.at then return end
-    for _, ch in ipairs(U.but:GetChildren()) do
-        if ch:IsA("Frame") or ch:IsA("TextButton") then ch:Destroy() end
+    for _, ch in ipairs(U.butList:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextButton") or ch:IsA("TextLabel") then ch:Destroy() end
     end
     LST.boxes, U.butEmpty = {}, nil
     butHead()
-    local y, ord = 36, 1
-    local function add(h)
-        ord = ord + 1
-        local f = mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.but)
-        y = y + h + 6
-        return f
-    end
     for _, r in ipairs(CAT.rarOrder) do
-        local hf = add(24)
         local col = RC[r] or C.text
-        local hb = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, hf)
-        round(hb, 6)
-        lbl(hb, "  " .. r:upper(), 11, col, true, UDim2.new(0, 4, 0, 0), UDim2.new(1, -70, 1, 0))
-        local allB = button(hb, "ALL", C.panel2, 9, UDim2.new(1, -62, 0.5, -9), UDim2.new(0, 56, 0, 18))
+        local card = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.panel,
+            BorderSizePixel = 0, LayoutOrder = U.nextIn(U.butList) }, U.butList)
+        round(card, 11)
+        U.stroke(card, col, 0.7)
+        U.list(card, 4)
+        U.pad(card, 7, 7, 7, 8)
+        local hb = U.row(card, 22)
+        mk("Frame", { Size = UDim2.new(0, 4, 0, 14), Position = UDim2.new(0, 1, 0.5, -7), BackgroundColor3 = col, BorderSizePixel = 0 }, hb)
+        local hl = lbl(hb, r:upper(), 11, col, true, UDim2.new(0, 11, 0, 0), UDim2.new(1, -74, 1, 0))
+        hl.Font = FT.x
+        local allB = button(hb, "ALL", C.panel2, 9, UDim2.new(1, -54, 0.5, -10), UDim2.new(0, 54, 0, 20))
         local rr = r
         allB.MouseButton1Click:Connect(function()
             local list = CAT.members[rr] or {}
@@ -4336,15 +4633,12 @@ buildList = function(force)
             for _, k in ipairs(list) do setTick(k, anyOff) end
         end)
         for _, k in ipairs(CAT.members[r] or {}) do
-            local rf2 = add(22)
-            local b = mk("TextButton", { Text = "", Size = FILL, BackgroundColor3 = C.bg, BorderSizePixel = 0,
-                AutoButtonColor = true }, rf2)
-            round(b, 5)
-            lbl(b, "   " .. prettyOf(k), 11, C.text, false, UDim2.new(0, 4, 0, 0), UDim2.new(1, -40, 1, 0))
-            local tick = mk("TextButton", { Text = "", Size = UDim2.new(0, 22, 0, 16), Position = UDim2.new(1, -28, 0.5, -8),
-                BackgroundColor3 = C.panel2, BorderSizePixel = 0, Font = Enum.Font.GothamBold, TextSize = 10,
-                TextColor3 = C.text, AutoButtonColor = false }, b)
-            round(tick, 4)
+            local b = mk("TextButton", { Text = "", Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = C.raise, BorderSizePixel = 0,
+                AutoButtonColor = true, LayoutOrder = U.nextIn(card) }, card)
+            round(b, 8)
+            local nl = lbl(b, prettyOf(k), 11, C.text, false, UDim2.new(0, 10, 0, 0), UDim2.new(1, -44, 1, 0))
+            nl.TextWrapped, nl.TextTruncate = false, Enum.TextTruncate.AtEnd
+            local tick = U.tickBox(b)
             LST.boxes[k] = tick
             local kk = k
             local function toggle() setTick(kk, not CFG.Targets[kk]) end
@@ -4353,57 +4647,42 @@ buildList = function(force)
         end
     end
     refreshTicks()
-    U.but.CanvasSize = UDim2.new(0, 0, 0, y + 10)
     LST.built, LST.at = true, CAT.at
 end
+-- ---- CRATES list
 function CR.paint()
-    for k, b in pairs(CR.boxes) do
-        local on = CFG.CrateTicks[k] == true
-        b.Text = on and "X" or ""
-        b.BackgroundColor3 = on and C.good or C.panel2
-    end
+    for k, b in pairs(CR.boxes) do U.check(b, CFG.CrateTicks[k] == true) end
     if U.crtInfo then
         local n, t = 0, 0
         for _ in pairs(CR.boxes) do n = n + 1 end
         for _, on in pairs(CFG.CrateTicks) do if on then t = t + 1 end end
-        U.crtInfo.Text = ("%d crates, %d ticked"):format(n, t)
+        U.put(U.crtInfo, ("%d crates, %d ticked"):format(n, t))
     end
-    if U.crtAll then
-        U.crtAll.Text = CFG.Crates and "OPEN TICKED CRATES: ON" or "OPEN TICKED CRATES: OFF"
-        U.crtAll.BackgroundColor3 = CFG.Crates and C.accent or C.panel2
-    end
+    if U.crateT then setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF") end
 end
 function CR.build()
-    for _, ch in ipairs(U.crt:GetChildren()) do
-        if ch:IsA("Frame") or ch:IsA("TextButton") then ch:Destroy() end
+    for _, ch in ipairs(U.crtList:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextButton") or ch:IsA("TextLabel") then ch:Destroy() end
     end
     CR.boxes = {}
-    local y, ord = 12, 0
-    local function add(h)
-        ord = ord + 1
-        y = y + h + 6
-        return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.crt)
-    end
-    local hf = add(28)
-    U.crtInfo = lbl(hf, "", 10, C.dim, false, at(0, 0.5))
-    local cl = button(hf, "CLEAR", C.panel2, 10, at(0.5, 0.24))
-    local rf = button(hf, "REFRESH", C.panel2, 10, at(0.74, 0.26))
+    local card = U.card(U.crtList, "All of them", "worst first")
+    local hf = U.row(card, 26)
+    U.crtInfo = lbl(hf, "", 10, C.dim, false, UDim2.new(0, 2, 0, 0), UDim2.new(0.5, -2, 1, 0))
+    local cl = button(hf, "CLEAR", C.panel2, 10, UDim2.new(0.5, 0, 0, 0), UDim2.new(0.25, -3, 1, 0))
+    local rf = button(hf, "REFRESH", C.panel2, 10, UDim2.new(0.75, 3, 0, 0), UDim2.new(0.25, -3, 1, 0))
     track(cl.MouseButton1Click:Connect(function() CFG.CrateTicks = {} CR.paint() end))
     track(rf.MouseButton1Click:Connect(function() CR.build() end))
-    U.crtAll = button(add(28), "", C.accent, 11, at(0, 1))
-    track(U.crtAll.MouseButton1Click:Connect(function() CFG.Crates = not CFG.Crates CR.paint() end))
-    lbl(add(30), "Only ticked crates are opened. Any other crate is left alone - the game spins it away by itself.", 10, C.dim, false)
     for _, c in ipairs(CR.list()) do
-        local row = add(24)
-        local b = mk("TextButton", { Text = "", Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, AutoButtonColor = true }, row)
-        round(b, 5)
-        lbl(b, "  " .. (c.title or c.name) .. (c.guess and "  (?)" or ""), 11, RC[c.rar or ""] or C.text, true,
-            UDim2.new(0, 4, 0, 0), UDim2.new(0.62, 0, 1, 0))
-        lbl(b, c.price and ("$" .. fmt(c.price)) or (c.rar or ""), 9, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0.25, 0, 1, 0))
-        local tick = mk("TextButton", { Text = "", Size = UDim2.new(0, 22, 0, 16), Position = UDim2.new(1, -28, 0.5, -8),
-            BackgroundColor3 = C.panel2, BorderSizePixel = 0, Font = Enum.Font.GothamBold, TextSize = 10,
-            TextColor3 = C.text, AutoButtonColor = false }, b)
-        round(tick, 4)
+        local col = RC[c.rar or ""] or C.text
+        local b = mk("TextButton", { Text = "", Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = C.raise, BorderSizePixel = 0,
+            AutoButtonColor = true, LayoutOrder = U.nextIn(card) }, card)
+        round(b, 8)
+        mk("Frame", { Size = UDim2.new(0, 3, 0, 14), Position = UDim2.new(0, 6, 0.5, -7), BackgroundColor3 = col, BorderSizePixel = 0 }, b)
+        local tl = lbl(b, (c.title or c.name) .. (c.guess and "  (?)" or ""), 11, col, true, UDim2.new(0, 15, 0, 0), UDim2.new(0.62, -15, 1, 0))
+        tl.TextWrapped, tl.TextTruncate = false, Enum.TextTruncate.AtEnd
+        local pl = lbl(b, c.price and ("$" .. fmt(c.price)) or (c.rar or ""), 10, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0.38, -34, 1, 0))
+        pl.TextXAlignment = Enum.TextXAlignment.Right
+        local tick = U.tickBox(b)
         CR.boxes[c.k] = tick
         local kk = c.k
         local function toggle()
@@ -4413,48 +4692,47 @@ function CR.build()
         track(b.MouseButton1Click:Connect(toggle))
         track(tick.MouseButton1Click:Connect(toggle))
     end
-    U.crt.CanvasSize = UDim2.new(0, 0, 0, y + 10)
     CR.built = CR.at
     CR.paint()
 end
 local tab = "farm"
+U.tabKeys = { "farm", "run", "but", "crt", "pet", "team", "srv", "adm", "set" } -- in the rail's order
 local function showTab(which)
     tab = which
-    U.farm.Visible, U.but.Visible, U.set.Visible = (which == "farm"), (which == "but"), (which == "set")
-    U.crt.Visible = (which == "crt")
-    U.pet.Visible, U.team.Visible = (which == "pet"), (which == "team")
-    U.tabCrt.BackgroundColor3 = (which == "crt") and C.accent or C.panel2
-    U.tabPet.BackgroundColor3 = (which == "pet") and C.accent or C.panel2
-    U.tabTeam.BackgroundColor3 = (which == "team") and C.accent or C.panel2
+    for i, k in ipairs(U.tabKeys) do
+        U[k].Visible = (k == which)
+        local t = U.tabsAll[i]
+        if t then
+            local on = k == which
+            t.b.BackgroundTransparency, t.b.TextTransparency, t.bar.Visible = on and 0 or 1, on and 0 or 0.45, on
+        end
+    end
     if which == "pet" and not PX.built then pcall(PX.build) end
     if which == "team" and not TM.built then pcall(TM.build) end
     if which == "crt" and (CR.built ~= CR.at or not next(CR.boxes)) then CR.build() end
-    U.tabFarm.BackgroundColor3 = (which == "farm") and C.accent or C.panel2
-    U.tabBut.BackgroundColor3 = (which == "but") and C.accent or C.panel2
-    U.tabSet.BackgroundColor3 = (which == "set") and C.accent or C.panel2
     if which == "but" then buildList(false) end
 end
-
 ---------------------------------------------------------------- button handlers
-local function setToggle(b, on, onText, offText)
-    U.put(b, on and onText or offText)
-    if U.lit[b] ~= on then U.lit[b] = on b.BackgroundColor3 = on and C.accent or C.panel2 end
-end
 -- ---- PETS tab: worst pet at the top, best at the bottom. BUY = adopt it when it is in the pen,
 -- BIG = only its Big version, WISH = keep a wish running for it in this server.
 PX.RC = { Common = Color3.fromRGB(120, 220, 120), Rare = Color3.fromRGB(90, 170, 255), Epic = Color3.fromRGB(190, 110, 255),
-    Legendary = Color3.fromRGB(255, 215, 60), Mythic = Color3.fromRGB(255, 90, 150), Exotic = Color3.fromRGB(90, 235, 215) }
+    Legendary = Color3.fromRGB(255, 210, 70), Mythic = Color3.fromRGB(255, 90, 150), Exotic = Color3.fromRGB(90, 235, 215),
+    Cosmic = Color3.fromRGB(150, 130, 255) }
+function U.flag(b, on, col, text) -- a small pill button in a list row: coloured when on
+    if text then b.Text = text end
+    b.BackgroundColor3 = on and col or C.bg
+    b.TextColor3 = on and U.ink(col) or C.dim
+end
 function PX.paintRow(name)
     local r = PX.rows and PX.rows[name]
     if not r then return end
     local w = CFG.Pets[name] or {}
-    r.b.BackgroundColor3 = w.b and C.good or C.panel2
-    r.g.BackgroundColor3 = w.g and C.accent or C.panel2
-    r.g.Text = w.g and "BIG" or "ANY"
-    r.w.BackgroundColor3 = w.w and C.warn or C.panel2
     local f = tonumber(w.f) or 0
-    r.f.Text = f >= 7 and "7 BIG/HUGE" or (f > 0 and (f .. " BIG") or "FUSE")
-    r.f.BackgroundColor3 = f > 0 and C.good or C.panel2
+    U.flag(r.b, w.b, C.good)
+    U.flag(r.g, w.g, C.accent, w.g and "BIG" or "ANY")
+    U.flag(r.w, w.w, C.warn)
+    U.flag(r.f, f > 0, C.good, f >= 7 and "7 BIG/HUGE" or (f > 0 and (f .. " BIG") or "FUSE"))
+    if r.row then r.row.BackgroundColor3 = (w.b or w.w or f > 0) and C.lit or C.raise end
 end
 function PX.flag(name, f)
     local w = CFG.Pets[name] or {}
@@ -4469,7 +4747,7 @@ function PX.flag(name, f)
 end
 function PX.paintAll()
     for n in pairs(PX.rows or {}) do PX.paintRow(n) end
-    if U.pbT then
+    if U.pbT then -- (the switches live in the tab from the start now)
         setToggle(U.pbT, CFG.PetBuy, "AUTO ADOPT: ON", "AUTO ADOPT: OFF")
         setToggle(U.pwT, CFG.PetWish, "AUTO WISH: ON", "AUTO WISH: OFF")
         setToggle(U.pfT, CFG.AutoFuse, "AUTO FUSE: ON", "AUTO FUSE: OFF")
@@ -4492,27 +4770,12 @@ function PX.live() -- once a second while the tab is open: wish timers and statu
 end
 function PX.build()
     local I = PX.info()
-    for _, ch in ipairs(U.pet:GetChildren()) do
-        if ch:IsA("Frame") or ch:IsA("TextLabel") then ch:Destroy() end
+    for _, ch in ipairs(U.petList:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextLabel") or ch:IsA("TextButton") then ch:Destroy() end
     end
     PX.rows = {}
-    local ord, y = 0, 12
-    local function add(h)
-        ord, y = ord + 1, y + h + 6
-        return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.pet)
-    end
-    local f = add(28)
-    U.pbT = button(f, "AUTO ADOPT: OFF", C.panel2, 9, at(0, 0.34))
-    U.pwT = button(f, "AUTO WISH: OFF", C.panel2, 9, at(0.34, 0.33))
-    U.pfT = button(f, "AUTO FUSE: OFF", C.panel2, 9, at(0.67, 0.33))
-    U.pbT.MouseButton1Click:Connect(function() CFG.PetBuy = not CFG.PetBuy PX.paintAll() end)
-    U.pwT.MouseButton1Click:Connect(function() CFG.PetWish = not CFG.PetWish PX.paintAll() end)
-    U.pfT.MouseButton1Click:Connect(function() CFG.AutoFuse = not CFG.AutoFuse PX.paintAll() end)
-    U.pInfo = lbl(add(44), "", 10, C.dim, false)
-    lbl(add(52), "BUY: adopt it whenever it is in the pen.  ANY/BIG: BIG = only its Big version.  WISH: keep a wish on it here (2x its price, 20 min, one per pet per server).  FUSE: how many Bigs you want - buying and wishing stop once there is enough, and AUTO FUSE makes them.", 9, C.dim, false)
     if not I then
-        lbl(add(30), "pet list not loaded yet - open this tab again in a moment", 11, C.warn, false)
-        U.pet.CanvasSize = UDim2.new(0, 0, 0, y)
+        lbl(U.row(U.petList, 30), "pet list not loaded yet - open this tab again in a moment", 11, C.warn, false)
         PX.built = false
         return
     end
@@ -4526,29 +4789,41 @@ function PX.build()
     for _, r in ipairs(I.Rarities or {}) do if byR[r] then rars[#rars + 1] = r end end
     for r in pairs(byR) do if not table.find(rars, r) then rars[#rars + 1] = r end end
     for _, r in ipairs(rars) do
-        local hb = mk("Frame", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0 }, add(22))
-        round(hb, 6)
-        lbl(hb, "  " .. r:upper(), 11, PX.RC[r] or C.text, true)
+        local col = PX.RC[r] or C.text
+        local card = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.panel,
+            BorderSizePixel = 0, LayoutOrder = U.nextIn(U.petList) }, U.petList)
+        round(card, 11)
+        U.stroke(card, col, 0.7)
+        U.list(card, 4)
+        U.pad(card, 7, 7, 7, 8)
+        local hb = U.row(card, 18)
+        mk("Frame", { Size = UDim2.new(0, 4, 0, 14), Position = UDim2.new(0, 1, 0.5, -7), BackgroundColor3 = col, BorderSizePixel = 0 }, hb)
+        local hl = lbl(hb, r:upper(), 11, col, true, UDim2.new(0, 11, 0, 0), UDim2.new(1, -11, 1, 0))
+        hl.Font = FT.x
         for _, n in ipairs(byR[r]) do
-            local rowF = mk("Frame", { Size = FILL, BackgroundColor3 = C.bg, BorderSizePixel = 0 }, add(38))
-            round(rowF, 5)
-            local nm = lbl(rowF, PX.nice(n), 11, PX.RC[r] or C.text, true, UDim2.new(0, 6, 0, 2), UDim2.new(1, -150, 0, 17))
+            local rowF = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.raise, BorderSizePixel = 0,
+                LayoutOrder = U.nextIn(card) }, card)
+            round(rowF, 8)
+            local nm = lbl(rowF, PX.nice(n), 11, col, true, UDim2.new(0, 9, 0, 3), UDim2.new(1, -172, 0, 17))
+            nm.TextWrapped, nm.TextTruncate = false, Enum.TextTruncate.AtEnd
             local ok, ds = pcall(function() return I.describe(n) end)
             local bt = ok and tostring(ds) or ""
-            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 6, 0, 19), UDim2.new(1, -150, 0, 17))
-            local b = button(rowF, "BUY", C.panel2, 8, UDim2.new(1, -144, 0.5, -11), UDim2.new(0, 32, 0, 22))
-            local g = button(rowF, "ANY", C.panel2, 8, UDim2.new(1, -110, 0.5, -11), UDim2.new(0, 32, 0, 22))
-            local wb = button(rowF, "WISH", C.panel2, 8, UDim2.new(1, -76, 0.5, -11), UDim2.new(0, 34, 0, 22))
-            local fb = button(rowF, "FUSE", C.panel2, 8, UDim2.new(1, -40, 0.5, -11), UDim2.new(0, 38, 0, 22))
+            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 9, 0, 20), UDim2.new(1, -172, 0, 16))
+            dl.TextWrapped, dl.TextTruncate = false, Enum.TextTruncate.AtEnd
+            local function small(t, x, w)
+                local sb = button(rowF, t, C.bg, 8, UDim2.new(1, x, 0.5, -11), UDim2.new(0, w, 0, 22))
+                sb.AutoButtonColor = true
+                return sb
+            end
+            local b, g, wb, fb = small("BUY", -164, 30), small("ANY", -131, 30), small("WISH", -98, 34), small("FUSE", -61, 56)
             local name = n
             b.MouseButton1Click:Connect(function() PX.flag(name, "b") end)
             g.MouseButton1Click:Connect(function() PX.flag(name, "g") end)
             wb.MouseButton1Click:Connect(function() PX.flag(name, "w") end)
             fb.MouseButton1Click:Connect(function() PX.flag(name, "f") end)
-            PX.rows[n] = { b = b, g = g, w = wb, f = fb, name = nm, desc = dl, boostText = bt }
+            PX.rows[n] = { b = b, g = g, w = wb, f = fb, name = nm, desc = dl, boostText = bt, row = rowF }
         end
     end
-    U.pet.CanvasSize = UDim2.new(0, 0, 0, y + 10)
     PX.built = true
     PX.paintAll()
 end
@@ -4624,67 +4899,62 @@ function TM.paint()
     U.tmList.Text = #L > 0 and table.concat(L, "\n") or "no waxes running"
 end
 function TM.build()
-    for _, ch in ipairs(U.team:GetChildren()) do
-        if ch:IsA("Frame") or ch:IsA("TextLabel") then ch:Destroy() end
+    for _, ch in ipairs(U.teamList:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextLabel") or ch:IsA("TextButton") then ch:Destroy() end
     end
     TM.pick = {}
-    local ord, y = 0, 12
-    local function add(h)
-        ord, y = ord + 1, y + h + 6
-        return mk("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, LayoutOrder = ord }, U.team)
-    end
-    local function cap(t) lbl(add(14), t, 10, C.dim, true) end
-    local function picker(k)
-        local f = add(26)
-        local l = button(f, "<", C.panel2, 11, at(0, 0.14))
-        local m = button(f, "(none)", C.panel, 10, at(0.14, 0.72))
-        local r = button(f, ">", C.panel2, 11, at(0.86, 0.14))
-        l.MouseButton1Click:Connect(function() TM.cycle(k, -1) end)
-        r.MouseButton1Click:Connect(function() TM.cycle(k, 1) end)
-        m.MouseButton1Click:Connect(function() TM.cycle(k, 1) end)
-        TM.pick[k] = m
-    end
-    U.tmT = button(add(28), "AUTO TEAMS: OFF", C.panel2, 11, at(0, 1))
+    local au = U.card(U.teamList, "Automatic")
+    U.tmT = U.switch(au, "AUTO TEAMS: OFF", "Auto teams", "the right saved team for each moment")
     U.tmT.MouseButton1Click:Connect(function()
         CFG.Teams = not CFG.Teams
         if CFG.Teams and CFG.TeamNormal == "" then CFG.TeamNormal = TM.current() end -- start from what you wear now
         TM.paint()
     end)
-    U.tmInfo = lbl(add(42), "", 10, C.dim, false)
-    local bf = add(26)
-    U.tmBuild = button(bf, "AUTO BUILD TEAMS: OFF", C.panel2, 9, at(0, 0.62))
-    U.tmBuildNow = button(bf, "BUILD NOW", C.warn, 9, at(0.62, 0.38))
+    U.tmBuild = U.switch(au, "AUTO BUILD TEAMS: OFF", "Auto build teams", "again after new pets or fuses")
     U.tmBuild.MouseButton1Click:Connect(function() CFG.AutoBuild = not CFG.AutoBuild TM.paint() end)
+    U.tmBuildNow = U.actions(au, { { "BUILD TEAMS NOW", C.warn } })
     U.tmBuildNow.MouseButton1Click:Connect(function()
         if TM.editing then return end
         FU.buildMsg = "building..."
         task.spawn(function() local ok, e = pcall(FU.rebuild, "you asked") if not ok then note("BUILD ERR " .. tostring(e)) end end)
     end)
-    cap("NORMAL TEAM  (worn the rest of the time)")
-    picker("TeamNormal")
-    cap("FULL TEAM  (every station busy: money + wax speed)")
-    picker("TeamFull")
-    cap("GLAZE TEAM  (worn just before a wax finishes)")
-    picker("TeamGlaze")
-    local f = add(26)
-    U.tmLead = textbox(f, tostring(CFG.GlazeLead), "45", at(0, 0.2))
-    lbl(f, "sec before it finishes", 10, C.dim, false, at(0.22, 0.5))
-    local setB = button(f, "SET", C.accent, 11, at(0.75, 0.25))
+    U.tmInfo = U.grow(au, 10, C.dim)
+    local pk = U.card(U.teamList, "Which team when")
+    local function picker(k, title, sub)
+        local f = U.row(pk, 54)
+        lbl(f, title, 11, C.text, true, UDim2.new(0, 2, 0, 0), UDim2.new(1, -4, 0, 15))
+        local sl = lbl(f, sub, 9, C.dim, false, UDim2.new(0, 2, 0, 14), UDim2.new(1, -4, 0, 13))
+        sl.TextWrapped, sl.TextTruncate = false, Enum.TextTruncate.AtEnd
+        local l = button(f, "<", C.panel2, 12, UDim2.new(0, 0, 0, 29), UDim2.new(0, 30, 0, 24))
+        local m = button(f, "(none)", C.bg, 10, UDim2.new(0, 34, 0, 29), UDim2.new(1, -68, 0, 24))
+        local r = button(f, ">", C.panel2, 12, UDim2.new(1, -30, 0, 29), UDim2.new(0, 30, 0, 24))
+        l.MouseButton1Click:Connect(function() TM.cycle(k, -1) end)
+        r.MouseButton1Click:Connect(function() TM.cycle(k, 1) end)
+        m.MouseButton1Click:Connect(function() TM.cycle(k, 1) end)
+        TM.pick[k] = m
+    end
+    picker("TeamNormal", "Normal", "the rest of the time: money + luck")
+    picker("TeamFull", "Full", "every station busy: money + wax speed")
+    picker("TeamGlaze", "Glaze", "worn just before a wax finishes")
+    local f = U.row(pk, 26)
+    lbl(f, "glaze lead", 10, C.dim, false, UDim2.new(0, 2, 0, 0), UDim2.new(0.36, -2, 1, 0))
+    U.tmLead = textbox(f, tostring(CFG.GlazeLead), "45", UDim2.new(0.36, 0, 0, 0), UDim2.new(0.26, -4, 1, 0))
+    lbl(f, "s", 10, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0, 12, 1, 0))
+    local setB = button(f, "SET", C.accent, 10, UDim2.new(0.75, 4, 0, 0), UDim2.new(0.25, -4, 1, 0))
     setB.MouseButton1Click:Connect(function()
         local n = tonumber(U.tmLead.Text)
         if n and n >= 5 and n <= 600 then CFG.GlazeLead = math.floor(n) else U.tmLead.Text = tostring(CFG.GlazeLead) end
         TM.paint()
     end)
-    cap("WAX TEAM  (worn while a butter is placed: head starts)")
-    picker("TeamWax")
-    cap("YOUR WAXES  (time left, helps)")
-    U.tmList = mk("TextLabel", { Size = FILL, BackgroundColor3 = C.panel, BorderSizePixel = 0, Font = Enum.Font.Code,
-        TextSize = 9, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-        TextWrapped = false, Text = "" }, add(150))
-    round(U.tmList, 6)
-    mk("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingTop = UDim.new(0, 4) }, U.tmList)
-    lbl(add(92), "Teams are the loadouts you saved in the game's Teams page. Every running wax goes at the speed of the pets you wear right now (the times below are the stations' own countdowns), head starts are decided when a butter is placed, and the glaze is rolled when a wax finishes. So: WAX team (head starts) while placing, GLAZE team at a finish, FULL (money + wax speed) while every station is busy, NORMAL (money + luck) while stations wait for Apple Pies. The lead counts in glaze-team time. While AUTO TEAMS is on it keeps putting the right team back.", 9, C.dim, false)
-    U.team.CanvasSize = UDim2.new(0, 0, 0, y + 10)
+    picker("TeamWax", "Wax", "while a butter is placed: head starts")
+    local wx = U.card(U.teamList, "Your waxes", "time left, helps")
+    U.tmList = mk("TextLabel", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.bg,
+        BorderSizePixel = 0, Font = FT.mono, TextSize = 9, TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = false, Text = "", LayoutOrder = U.nextIn(wx) }, wx)
+    round(U.tmList, 7)
+    U.pad(U.tmList, 7, 5, 7, 6)
+    local hw = U.card(U.teamList, "How it works")
+    U.note(hw, "Every running wax goes at the speed of the pets you wear right now (the times above are the stations' own countdowns), head starts are decided when a butter is placed, and the glaze is rolled when a wax finishes. So: WAX team while placing, GLAZE team at a finish, FULL while every station is busy, NORMAL while stations wait. The lead counts in glaze-team time.", 84)
     TM.built = true
     TM.paint()
 end
@@ -4780,6 +5050,7 @@ click(U.campT, function()
 end)
 click(U.ghostT, PF.cycleGhost)
 function IX.paint()
+    setToggle(U.snapT, CFG.SnapGlaze ~= false, "SNAP GLAZE: ON", "SNAP GLAZE: OFF")
     setToggle(U.ixT, CFG.AutoIndex, "AUTO INDEX: ON", "AUTO INDEX: OFF")
     setToggle(U.bestT, (CFG.Best or 0) > 0, CFG.Best == 4 and "BEST: UPGRADES" or ("BEST: TOP " .. tostring(CFG.Best)), "BEST BUTTER: OFF")
     setToggle(U.bcT, CFG.BestCrate, "BEST CRATE: ON", "BEST CRATE: OFF")
@@ -4813,6 +5084,62 @@ click(U.shT, function()
     CFG.Shower = not CFG.Shower
     IX.paint()
 end)
+click(U.snapT, function()
+    CFG.SnapGlaze = CFG.SnapGlaze == false
+    IX.paint()
+end)
+-- ---- PETS switches (they live in the tab from the start)
+click(U.pbT, function() CFG.PetBuy = not CFG.PetBuy PX.paintAll() end)
+click(U.pwT, function() CFG.PetWish = not CFG.PetWish PX.paintAll() end)
+click(U.pfT, function() CFG.AutoFuse = not CFG.AutoFuse PX.paintAll() end)
+-- ---- the admin tab, drawn while it is open
+function IX.admPaint()
+    local t = PX.srv()
+    local st
+    pcall(function()
+        IX.aac = IX.aac or require(RS:FindFirstChild("AdminAbuseClient"))
+        st = IX.aac:GetState()
+    end)
+    local big, sub = "nothing scheduled", "the game has not announced one"
+    if type(st) == "table" then
+        local ph, sa, ea = tostring(st.Phase or ""), tonumber(st.StartsAt), tonumber(st.EndsAt)
+        if ph == "Countdown" and sa then
+            big, sub = "starts in " .. TM.clock(sa - t), os.date("%a %H:%M", math.floor(sa)) .. " your time"
+        elseif ph == "Live" and ea then
+            big, sub = "LIVE  -  " .. TM.clock(ea - t) .. " left", "the farm is grabbing, waxing and glazing through it"
+        elseif ph ~= "" and ph ~= "Idle" and ea and ea > t then
+            big, sub = ph:lower() .. "  -  " .. TM.clock(ea - t) .. " left", "after the show"
+        elseif sa and sa > t then
+            big, sub = "next: " .. os.date("%a %H:%M", math.floor(sa)), "your time"
+        elseif sa then
+            big, sub = "no show coming", "last one: " .. os.date("%a %d %b, %H:%M", math.floor(sa)) .. " your time"
+        end
+        if type(st.Kind) == "string" and st.Kind ~= "" then sub = sub .. "  |  " .. st.Kind end
+    end
+    U.put(U.admBig, big)
+    U.put(U.admSub, sub)
+    local L, f = {}, RS:FindFirstChild("AdminShow")
+    if f then
+        local ok, at = pcall(function() return f:GetAttributes() end)
+        for k, v in pairs(ok and at or {}) do
+            local nm = type(k) == "string" and k:match("^(.-)Mult$")
+            local untilT = nm and tonumber(f:GetAttribute(nm .. "Until"))
+            if nm and type(v) == "number" and v ~= 1 and v ~= 0 and untilT and untilT > t then
+                L[#L + 1] = ("%s  x%s   %s left"):format(nm, (v % 1 == 0) and tostring(v) or ("%.2f"):format(v), TM.clock(untilT - t))
+            end
+        end
+    end
+    table.sort(L)
+    U.put(U.admBoost, #L > 0 and table.concat(L, "\n") or "no admin boost running right now")
+    U.admBoost.TextColor3 = #L > 0 and C.accent or C.dim
+    local pieces = 0
+    for _ in pairs(SH.drops) do pieces = pieces + 1 end
+    local snap = IX.snapAt and (IX.snapAt - t)
+    U.put(U.admStat, ("shower %d grabbed, %d missed%s  |  snap %s"):format(SH.got, SH.miss, pieces > 0 and (", " .. pieces .. " falling") or "",
+        snap and ("in " .. math.max(0, math.floor(snap)) .. "s") or "none coming"))
+    U.put(U.admFeed, #IX.feed > 0 and table.concat(IX.feed, "\n", math.max(1, #IX.feed - 6))
+        or "nothing yet - the show's effects appear here as they happen")
+end
 click(U.crateB, function()
     CRATE.lastFail, CRATE.summonFails, CRATE.ignoreUntil, S.crateFails = 0, 0, 0, 0
     task.spawn(runAction, "opening crate...", doCrate, true)
@@ -4835,6 +5162,9 @@ click(U.plB, function()
     task.spawn(runAction, "waxing (manual)...", doPlace)
 end)
 click(U.tabFarm, function() showTab("farm") end)
+click(U.tabRun, function() showTab("run") end)
+click(U.tabSrv, function() showTab("srv") end)
+click(U.tabAdm, function() showTab("adm") end)
 click(U.tabBut, function() showTab("but") end)
 click(U.tabSet, function() showTab("set") end)
 click(U.tabCrt, function() showTab("crt") end)
@@ -4845,7 +5175,7 @@ click(U.tabTeam, function() showTab("team") end)
 local function setHidden(v)
     S.hidden = v
     U.root.Visible = not v
-    U.tgBtn.Text = v and "SAB+" or "SAB"
+    U.tgBtn.TextColor3 = v and C.text or C.ink
 end
 makeDraggable(U.tgBtn, U.tgRoot, function()
     clampIn(U.tgRoot)
@@ -4956,14 +5286,15 @@ click(U.rejB, function() rejoin("you asked") end)
 local minimized = false
 click(U.minB, function()
     minimized = not minimized
-    U.tabs.Visible = not minimized
+    U.tabs.Visible, U.railLine.Visible = not minimized, not minimized
     if minimized then
-        U.farm.Visible, U.but.Visible, U.set.Visible, U.crt.Visible = false, false, false, false
-        U.pet.Visible, U.team.Visible = false, false
+        for _, k in ipairs(U.tabKeys) do U[k].Visible = false end
+        U.strip.Position, U.strip.Size = UDim2.new(0, 8, 0, Z.head + 6), UDim2.new(1, -16, 0, Z.status)
     else
+        U.strip.Position, U.strip.Size = UDim2.new(0, Z.rail + 8, 0, Z.head + 6), UDim2.new(1, -(Z.rail + 16), 0, Z.status)
         showTab(tab)
     end
-    U.root.Size = UDim2.new(0, Z.w, 0, minimized and (Z.head + Z.strip) or Z.h)
+    U.root.Size = UDim2.new(0, Z.w, 0, minimized and (Z.head + Z.status + 12) or Z.h)
     U.minB.Text = minimized and "+" or "-"
 end)
 -- KILL: stops both loops and any action in progress, disconnects every event, removes the window
@@ -4998,7 +5329,11 @@ local function refresh()
         S.reason, S.level = txt, lvl
     end
     local dotC = S.running and C.good or (S.capHit and C.bad or C.dim)
-    if U.lit.dot ~= dotC then U.lit.dot = dotC U.dot.BackgroundColor3, U.tgDot.BackgroundColor3 = dotC, dotC end
+    if U.lit.dot ~= dotC then
+        U.lit.dot = dotC
+        U.dot.BackgroundColor3, U.tgDot.BackgroundColor3, U.runL.TextColor3, U.pillEdge.Color = dotC, dotC, dotC, dotC
+        U.runL.Text = S.running and "RUNNING" or (S.capHit and "BLOCKED" or "STOPPED")
+    end
     if U.lit.tg ~= S.hidden then U.lit.tg = S.hidden U.tgRoot.BackgroundColor3 = S.hidden and C.panel2 or C.accent end
     if S.hidden then return end -- window away: only the little button's colours matter
     U.put(U.reason, txt)
@@ -5007,8 +5342,11 @@ local function refresh()
     if U.lit.run ~= S.running then
         U.lit.run = S.running
         U.startB.Text, U.startB.BackgroundColor3 = S.running and "STOP" or "START", S.running and C.warn or C.good
+        U.startB.TextColor3 = C.ink
     end
     setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
+    setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
+    setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
     local tn = targetNames()
     if U.farm.Visible then
         local free, total2 = freeCount()
@@ -5020,14 +5358,20 @@ local function refresh()
             fmt(cash()), S.rolls, S.gifts, S.crates, held and prettyOf(key(held)) or "nothing",
             CRATE.on and ("   [" .. CRATE.title .. " window open]") or "",
             nxt and ("in " .. nxt .. "s") or "off"))
-        U.put(U.tgt, (#tn == 0) and "NOTHING TICKED - open the BUTTERS tab"
+        U.put(U.tgt, (#tn == 0) and "nothing ticked - pick butters in the Butters tab"
             or ("buying: " .. ((#tn <= 3) and table.concat(tn, ", ") or (#tn .. " butters ticked"))))
         if U.lit.tgt ~= (#tn == 0) then U.lit.tgt = (#tn == 0) U.tgt.TextColor3 = (#tn == 0) and C.bad or C.good end
         if U.logN ~= S.logN then U.logN = S.logN U.log.Text = table.concat(logs, "\n") end
     end
-    if U.set.Visible then
+    if U.run.Visible then
         U.put(U.padL, S.manualPad and "pad: saved" or (S.padPart and ("auto: " .. S.padPart.Name) or "pad: not found"))
     end
+    if U.srv.Visible then
+        U.put(U.srvHelp, (CFG.Help or CFG.HelpGuild) and HX.msg or "helping is off")
+        U.put(U.srvCamp, CFG.Campfire and CF.msg or "campfire is off")
+        U.put(U.srvGhost, PF.ghostMode() > 0 and (PF.hold and "hidden right now" or "up right now") or "you are visible as normal")
+    end
+    if U.adm.Visible then pcall(IX.admPaint) end
     if U.butInfo and U.but.Visible then
         U.put(U.butInfo, ("%d butters, %d rarities\n%d ticked"):format(CAT.n, #CAT.rarOrder, #tn))
     end
@@ -5037,16 +5381,14 @@ local function refresh()
     end
     if U.pet.Visible then PX.live() end
     if U.set.Visible then
-        U.pfInfo.Text = ("%d fps | memory %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak)
+        U.put(U.pfInfo, ("%d fps  |  memory %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak))
     end
     if U.team.Visible then TM.paint() end
     if U.farm.Visible then
-        U.put(U.helpL, "help: " .. ((CFG.Help or CFG.HelpGuild) and HX.msg or "off"))
-        U.put(U.campL, "camp: " .. (CFG.Campfire and CF.msg or "off") .. (PF.ghostMode() > 0 and (PF.hold and " | ghost: hidden" or " | ghost: up") or ""))
-        U.put(U.questL, "quests: " .. (CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"))
+        U.put(U.helpL, "help  " .. ((CFG.Help or CFG.HelpGuild) and HX.msg or "off"))
+        U.put(U.campL, "camp  " .. (CFG.Campfire and CF.msg or "off") .. (PF.ghostMode() > 0 and (PF.hold and " | ghost: hidden" or " | ghost: up") or ""))
+        U.put(U.questL, "quests  " .. (CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"))
         U.put(U.ixL, IX.msg)
-        setToggle(U.crateT, CFG.Crates, "OPEN CRATES: ON", "OPEN CRATES: OFF")
-        setToggle(U.arT, CFG.AutoRoll, "AUTO ROLL: ON", "AUTO ROLL: OFF")
         local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
         U.put(U.arL, AR.msg ~= "" and AR.msg or ("auto roll: game %s | learned %s%s"):format(AR.isOn() and "ON" or "off",
             learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or ""))
@@ -5081,6 +5423,7 @@ setToggle(U.helpGT, CFG.HelpGuild, "GUILD CALLS: ON", "GUILD CALLS: OFF")
 setToggle(U.campT, CFG.Campfire, "CAMPFIRE: ON", "CAMPFIRE: OFF")
 PF.paintGhost()
 IX.paint()
+pcall(PX.paintAll)
 setToggle(U.questT, CFG.Quests, "QUESTS: ON", "QUESTS: OFF")
 setToggle(U.rejT, CFG.Rejoin, "AUTO REJOIN: ON", "AUTO REJOIN: OFF")
 setToggle(U.startT, CFG.AutoStart, "START FARMING ON LOAD: ON", "START FARMING ON LOAD: OFF")
@@ -5290,7 +5633,7 @@ task.spawn(function() -- the farm loop
         task.wait(0.1)
     end
 end)
-toast("loaded - window is at the top left")
+toast("ready - the window is at the top left")
 end -- main
 
 local okMain, errMain = xpcall(main, function(e) return tostring(e) .. "\n" .. debug.traceback() end)

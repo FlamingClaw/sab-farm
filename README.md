@@ -102,7 +102,7 @@ A dark window with a gold accent. Drag it by its top bar. The round gold **C** b
   | switch | what it does |
   | --- | --- |
   | NO ANIMATIONS | switches off the game's per-frame eye candy: the stack squish, the glaze rainbow, the conveyor, bounce pads, pets walking, sign and skin animations. On a phone, about 36 fps became 48–55. |
-  | LITE MODE | removes floating labels, sparkles and lighting extras |
+  | LITE MODE | switches off the game's heaviest extras: the roll reel (20-30 whole butters cloned for every roll), fireworks and confetti (each firework also shook the camera), toppings being re-added whenever you move between floors or bases (stacks are drawn plain instead), fairy lights, the leaderboard screens, floating labels, sparkles and lighting extras. On a phone the worst frames went from 0.7 s to under 0.1 s. |
   | BASES (tap to cycle) | ALL DRAWN → OTHERS HIDDEN → ALL HIDDEN. Nothing is removed, so farming keeps working. |
   | FPS CAP | 30 / 15 / 10, keeps the phone cool |
   | HIDE GAME HUD | hides the game's own menus |

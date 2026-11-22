@@ -2679,7 +2679,9 @@ function PF.lite(on)
         end
         pcall(function() PF.oldShadows = PF.oldShadows == nil and L.GlobalShadows or PF.oldShadows L.GlobalShadows = false end)
         pcall(function() PF.oldDeco = PF.oldDeco == nil and WS.Terrain.Decoration or PF.oldDeco WS.Terrain.Decoration = false end)
+        task.spawn(PF.extras, true)
     else
+        PF.extras(false)
         for _, c in pairs(PF.watch) do pcall(function() c:Disconnect() end) end
         for d, want in pairs(PF.bb) do pcall(function() if d.Parent then d.Enabled = want end end) end
         for d, want in pairs(PF.fx) do pcall(function() if d.Parent then d.Enabled = want end end) end
@@ -2690,6 +2692,122 @@ function PF.lite(on)
         if PF.oldShadows ~= nil then pcall(function() L.GlobalShadows = PF.oldShadows end) PF.oldShadows = nil end
         if PF.oldDeco ~= nil then pcall(function() WS.Terrain.Decoration = PF.oldDeco end) PF.oldDeco = nil end
     end
+end
+-- LITE also stops the game's heaviest extras. Measured on your phone Nov 22 (25 s each):
+--   fireworks for every roll in the server: ~100 every 25 s, and each one shakes the camera
+--   the topping culler: whenever you or the farm move between floors or bases it re-adds thousands of
+--     topping parts (petals, sugar, rays...). Frozen with every stack drawn plain, nothing churns:
+--     worst frame 692 ms -> 138 ms, frames over 100 ms 13 -> 5, fireworks 105 -> 0
+--   fairy lights (put back whenever the camera nears a base) and the leaderboard screens (rebuilt
+--     by the server ~300 pieces a second)
+-- All of it is put back when LITE is switched off or on KILL.
+function PF.fxPatch(on) -- the game's Fireworks / Confetti effects do nothing while LITE is on
+    local ok, ce = pcall(function() return require(RS:FindFirstChild("Packages"):FindFirstChild("ClientEffects")) end)
+    if not ok or type(ce) ~= "table" then return end
+    if on and not PF.ceOld then
+        PF.ceOld = {}
+        for _, k in ipairs({ "Fireworks", "Confetti" }) do
+            local m = ce[k]
+            if type(m) == "table" and type(m.Play) == "function" then
+                PF.ceOld[k] = m.Play
+                pcall(function() m.Play = function() return { Pieces = {}, Destroyed = true, Destroy = function() end } end end)
+            end
+        end
+    elseif not on and PF.ceOld then
+        for k, f in pairs(PF.ceOld) do pcall(function() ce[k].Play = f end) end
+        PF.ceOld = nil
+    end
+end
+function PF.topsFind() -- the game's ToppingCullHandler: its poll (every 0.25 s) and retarget
+    if PF.tc then return PF.tc end
+    if type(getgc) ~= "function" or type(hookfunction) ~= "function" then return nil end
+    local poll, re
+    for _, f in ipairs(getgc(false)) do
+        if type(f) == "function" and (type(islclosure) ~= "function" or islclosure(f)) then
+            local ok, src, nm = pcall(debug.info, f, "sn")
+            if ok and type(src) == "string" and src:find("ToppingCullHandler", 1, true) then
+                if nm == "poll" then poll = f elseif nm == "retarget" then re = f end
+            end
+        end
+    end
+    if not (poll and re) then return nil end
+    local ok, ups = pcall(debug.getupvalues, re)
+    local tf = ok and type(ups) == "table" and ups[3]
+    if type(tf) ~= "function" or debug.info(tf, "n") ~= "targetFor" or (ups[1] ~= nil and type(ups[1]) ~= "number") then return nil end
+    PF.tc = { poll = poll, re = re }
+    return PF.tc
+end
+function PF.tops(on)
+    local tc = PF.topsFind()
+    if not tc then return false end
+    if on and not tc.old then
+        local ok, old = pcall(hookfunction, tc.poll, function() end)
+        if not ok then return false end
+        tc.old = old
+        pcall(debug.setupvalue, tc.re, 1, -1000) -- a floor far below every stack: every butter drawn plain
+        pcall(tc.re)
+    elseif not on and tc.old then
+        local r = type(restorefunction) == "function" and pcall(restorefunction, tc.poll)
+        if not r then pcall(hookfunction, tc.poll, tc.old) end
+        tc.old = nil
+        pcall(tc.poll) -- (it sees where you are and puts the toppings back)
+    end
+    return true
+end
+PF.lit, PF.boardsOff = {}, {}
+function PF.lights(on) -- fairy lights: every bulb and wire taken out while LITE is on
+    local plots = WS:FindFirstChild("Plots")
+    if on then
+        for _, pl in ipairs(plots and plots:GetChildren() or {}) do
+            local sp = pl:FindFirstChild("SkinProps")
+            local fl = sp and sp:FindFirstChild("FairyLights")
+            for _, f in ipairs(fl and fl:GetChildren() or {}) do
+                for _, d in ipairs(f:GetChildren()) do
+                    if d:IsA("BasePart") and (d.Name == "Bulb" or d.Name == "Wire") then PF.lit[d] = f d.Parent = nil end
+                end
+            end
+        end
+        for _, nm in ipairs({ "Leaderboards", "ClanBoard" }) do -- and the leaderboard screens
+            local f = WS:FindFirstChild(nm)
+            for _, d in ipairs(f and f:GetDescendants() or {}) do
+                if d:IsA("SurfaceGui") and d.Enabled then PF.boardsOff[d] = true d.Enabled = false end
+            end
+        end
+    else
+        for d, f in pairs(PF.lit) do pcall(function() if f.Parent then d.Parent = f end end) end
+        for d in pairs(PF.boardsOff) do pcall(function() if d.Parent then d.Enabled = true end end) end
+        PF.lit, PF.boardsOff = {}, {}
+    end
+end
+-- The roll reel: for every roll the game clones 20-30 whole butters (hundreds of parts each) into
+-- your plot's SquishyShadows for a second, then plays the rarity reveal (fireworks, Dotonbori / Dream
+-- reveals). 44 butters every 15 s with Auto Roll on. Purely a show (SquishyHandler.squishyRollAnimation,
+-- no remotes): the rolled butter still lands on your pad from the server, and the farm's own roll
+-- listener stays on.
+PF.reel = {}
+function PF.rollFx(on)
+    if on then
+        local R = RS:FindFirstChild("Remotes")
+        local ev = R and R:FindFirstChild("SquishyRollAnimation")
+        if not ev or type(getconnections) ~= "function" then return end
+        local ok, cs = pcall(getconnections, ev.OnClientEvent)
+        for _, c in ipairs(ok and cs or {}) do
+            local src = ""
+            pcall(function() src = debug.info(c.Function, "s") end)
+            if type(src) == "string" and src:find("SquishyHandler", 1, true) and not PF.reel[c] then
+                if pcall(function() c:Disable() end) then PF.reel[c] = true end
+            end
+        end
+    else
+        for c in pairs(PF.reel) do pcall(function() c:Enable() end) end
+        PF.reel = {}
+    end
+end
+function PF.extras(on)
+    pcall(PF.rollFx, on)
+    pcall(PF.fxPatch, on)
+    pcall(PF.tops, on)
+    pcall(PF.lights, on)
 end
 PF.MINE = { SABFarmGui = true, SABToggle = true, SABError = true, SAB_Bridge = true }
 function PF.hideHud(on)
@@ -2851,6 +2969,13 @@ function PF.rejoinSame(why) -- back into this same server, so its wishes and hel
     return ok
 end
 function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
+    if CFG.Lite and now() - (PF.extraAt or 0) > 5 then
+        PF.extraAt = now()
+        pcall(PF.lights, true)
+        pcall(PF.fxPatch, true)
+        if not next(PF.reel) then pcall(PF.rollFx, true) end
+        if not (PF.tc and PF.tc.old) and now() - (PF.topsTry or -100) > 60 then PF.topsTry = now() pcall(PF.tops, true) end
+    end
     local q = PF.queue
     if CFG.Lite and q and #q > 0 then
         PF.queue = {}
@@ -4526,7 +4651,7 @@ do
     U.rejMsg = U.grow(rj, 9, C.dim)
     local pf = U.card(P, "Performance")
     U.pfCalm = U.switch(pf, "NO ANIMATIONS: OFF", "No animations", "stack squish, rainbows, pets walking")
-    U.pfLite = U.switch(pf, "LITE MODE: OFF", "Lite mode", "labels, sparkles, lighting extras off")
+    U.pfLite = U.switch(pf, "LITE MODE: OFF", "Lite mode", "roll show, fireworks, toppings, labels off")
     U.pfBases = U.switch(pf, "BASES: ALL DRAWN", "Bases", "stop drawing other bases, or yours too")
     U.pfFps = U.switch(pf, "FPS CAP: GAME", "FPS cap", "lower keeps the phone cooler")
     U.pfHud = U.switch(pf, "HIDE GAME HUD: OFF", "Hide the game's menus")

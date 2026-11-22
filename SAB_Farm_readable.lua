@@ -2668,7 +2668,7 @@ function PF.lite(on)
             end
         end)
         if not PF.addConn then
-            PF.queue = {}
+            PF.queue, PF.muteI = {}, 1
             PF.addConn = track(WS.DescendantAdded:Connect(function(d)
                 if CFG.Lite and (d:IsA("BillboardGui") or PF.isFx(d)) then PF.queue[#PF.queue + 1] = d end
             end))
@@ -2687,7 +2687,7 @@ function PF.lite(on)
         for d, want in pairs(PF.fx) do pcall(function() if d.Parent then d.Enabled = want end end) end
         for d in pairs(PF.post) do pcall(function() if d.Parent then d.Enabled = true end end) end
         PF.bb, PF.fx = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
-        PF.watch, PF.post, PF.queue = setmetatable({}, { __mode = "k" }), {}, {}
+        PF.watch, PF.post, PF.queue, PF.muteI = setmetatable({}, { __mode = "k" }), {}, {}, 1
         local L = game:GetService("Lighting")
         if PF.oldShadows ~= nil then pcall(function() L.GlobalShadows = PF.oldShadows end) PF.oldShadows = nil end
         if PF.oldDeco ~= nil then pcall(function() WS.Terrain.Decoration = PF.oldDeco end) PF.oldDeco = nil end
@@ -2757,6 +2757,7 @@ end
 PF.lit, PF.boardsOff = {}, {}
 function PF.lights(on) -- fairy lights: every bulb and wire taken out while LITE is on
     local plots = WS:FindFirstChild("Plots")
+    local t0 = os.clock()
     if on then
         for _, pl in ipairs(plots and plots:GetChildren() or {}) do
             local sp = pl:FindFirstChild("SkinProps")
@@ -2765,6 +2766,7 @@ function PF.lights(on) -- fairy lights: every bulb and wire taken out while LITE
                 for _, d in ipairs(f:GetChildren()) do
                     if d:IsA("BasePart") and (d.Name == "Bulb" or d.Name == "Wire") then PF.lit[d] = f d.Parent = nil end
                 end
+                if os.clock() - t0 > 0.002 then task.wait() t0 = os.clock() end
             end
         end
         for _, nm in ipairs({ "Leaderboards", "ClanBoard" }) do -- and the leaderboards: out of the world
@@ -2882,10 +2884,19 @@ function PF.hideOne(d)
 end
 function PF.notMine(d) return CFG.HideMine or (S.plot and not d:IsDescendantOf(S.plot)) end
 PF.hideQ, PF.hideI = {}, 1
-function PF.hideStep() -- every frame: hide queued parts for up to 2 ms
+function PF.hideStep() -- every frame: hide queued parts, mute queued effects, for up to 2 ms in all
+    local t0 = os.clock()
+    local m = PF.queue
+    if CFG.Lite and m and #m > 0 then
+        PF.muteI = PF.muteI or 1
+        while PF.muteI <= #m and os.clock() - t0 < 0.0015 do
+            pcall(PF.muteOne, m[PF.muteI])
+            PF.muteI = PF.muteI + 1
+        end
+        if PF.muteI > #m then PF.queue, PF.muteI = {}, 1 end
+    end
     local q = PF.hideQ
     if PF.hideI > #q then return end
-    local t0 = os.clock()
     while PF.hideI <= #q and os.clock() - t0 < 0.002 do
         local d = q[PF.hideI]
         PF.hideI = PF.hideI + 1
@@ -3021,11 +3032,7 @@ function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
         if not next(PF.reel) then pcall(PF.rollFx, true) end
         if not (PF.tc and PF.tc.old) and now() - (PF.topsTry or -100) > 60 then PF.topsTry = now() pcall(PF.tops, true) end
     end
-    local q = PF.queue
-    if CFG.Lite and q and #q > 0 then
-        PF.queue = {}
-        for i, d in ipairs(q) do pcall(PF.muteOne, d) if i % 300 == 0 then task.wait() end end
-    end
+    -- (the queued labels and effects are muted by PF.hideStep, a little every frame)
     -- the station timers once more, by hand: one was seen on near a finish (18 lookups a second)
     local ws = CFG.Lite and S.plot and S.plot:FindFirstChild("WaxStations")
     if ws then
@@ -5667,7 +5674,7 @@ task.spawn(function() -- pets: adopt from the pen and keep wishes going
 end)
 task.spawn(function() -- smoother running: fps, memory watchdog, labels added since
     local frames, t0 = 0, now()
-    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 if PF.hideI <= #PF.hideQ then pcall(PF.hideStep) end end))
+    track(game:GetService("RunService").Heartbeat:Connect(function() frames = frames + 1 if PF.hideI <= #PF.hideQ or (PF.queue and #PF.queue > 0) then pcall(PF.hideStep) end end))
     track(game:GetService("RunService").Heartbeat:Connect(function() if PF.hold then pcall(PF.pinTick) end end))
     PF.noteAt = now()
     while S.alive do

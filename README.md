@@ -1,6 +1,6 @@
-# SAB farm
+# CHURN
 
-Farm script for **Stack A Butter Squishy [ASMR]** (place `80959592833753`), built for Delta on Android.
+**CHURN** is a butter farm for **Stack A Butter Squishy [ASMR]** (place `80959592833753`), built for Delta on Android.
 
 ## Run it
 
@@ -12,34 +12,103 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/FlamingClaw/sab-farm/
 
 The `?t=` suffix defeats GitHub's CDN cache, so you always get the newest version.
 
+It reacts to the Auto Roll pass. It never pulls the lever (except for lever quests you have turned on), never rolls, and never touches the Limited holder.
+
+## The window
+
+A dark window with a gold accent. Drag it by its top bar. The round gold **C** button hides or shows it; hold and drag the button anywhere. Its small **G:** chip switches ghost mode without opening the window.
+
+- **Top bar:** the RUNNING / STOPPED pill, **-** to fold the window down to its status line, and **X** to close the script (same as KILL).
+- **Status line:** what the farm is doing right now. It stays visible on every tab.
+- **Rail:** nine tabs down the left side.
+
+| tab | what is in it |
+| --- | --- |
+| 🏠 Home | START / STOP, KILL, today's numbers, what each system is doing, the activity log |
+| 🌾 Farm | the buy - wax - collect loop, selling, Auto Roll, event quests, the by-hand buttons |
+| 🧈 Butters | Auto Index, Best butter, and the butter list to tick |
+| 📦 Crates | opening crates, Best crate, and the crate list to tick |
+| 🐾 Pets | auto adopt, auto wish, auto fuse, and BUY / ANY / WISH / FUSE for every pet |
+| 👥 Teams | auto teams, auto build, which saved team to wear when, and your running waxes |
+| 🤝 Server | helping other players' waxes, guild calls, the campfire, ghost mode |
+| ⚡ Admin | when the next admin show is, live boosts, the butter shower and the snap |
+| ⚙ Settings | configs and load on launch, starting, auto rejoin, performance |
+
 ## What it does
 
-It reacts to the Auto Roll pass. It never pulls the lever, never rolls, and never touches the Limited holder.
-
-- **Buys only what you tick.** The BUTTERS tab lists every butter in the game grouped by rarity, worst at the top down to the best at the bottom. The ordering is read from the game's own crate data (drop chance = rank, crate price = rarity rank) and cached, so a new rarity sorts itself after an update.
-- **Checks your hands before waxing.** A butter someone gifts you, or anything else you did not tick, is never placed on a station. It is sold instead.
-- **Opens crates** you tick in the CRATES tab, with no window: it steps next to the crate stand, asks the server to open it, and steps back (since the November update the server only opens a crate for someone standing at it). Crates you did not tick are left alone.
-- **Adopts pets** (PETS tab): tick BUY on any pet and it is adopted from Biscuit's pen the moment one shows up, from anywhere on the map. ANY/BIG picks whether only the Big version counts. Stops when your pet bag is full or you are short of cash.
-- **Fuses Bigs and stops buying when it has enough** (PETS tab): FUSE sets how many Big copies you want of a pet. Buying and wishing for it stop once there are enough copies for that goal, and AUTO FUSE turns every 7 copies into a Big (spare copies first, never one you are wearing if it can help it).
-- **Builds the teams from your pets** (TEAMS tab, AUTO BUILD TEAMS): after a fuse or new pets it works out the best farm, full, glaze and wax teams from everything you own and re-saves them (never while a wax is about to finish).
-- **Keeps wishes running** (PETS tab): tick WISH and it keeps a wish going on that pet in your server, re-wishing within about a second of the old one ending. A pet someone else already wished on is left alone until their wish ends (one wish per pet per server). Free wishes are used before cash.
-- **Switches pet teams** (TEAMS tab), using the teams you saved in the game's Teams page. Every running wax goes at the speed of the pets you are wearing right now (measured: putting the wax team on cut every station's time by x1.71 at once), so the times come from each station's own countdown, not from when the butter was placed. The GLAZE team goes on 45 s (adjustable, counted at the glaze team's speed) before a wax finishes and stays until it has; the WAX team (head starts, which are decided at the drop) while a butter is placed; the FULL team (money + wax speed) while every station is busy; the NORMAL team (money + luck for Apple Pies) the rest of the time. Each finish is counted once. The tab lists your running waxes with time left and helps.
-- **Closes the "Name your pet" window** after each adopt, the way the game's Later button does, so it never sits on the screen with the keyboard up. You can name pets later from the pet menu.
-- **Helps other players' waxes** (FARM tab, HELP WAXES): between its own jobs it steps next to each wax in your server it is allowed to help, helps it once (10% off their wax, the game's own Help request), and goes back where it was when there is none left. The server only takes a help from someone standing at the station, so it has to step over; it keeps the game's rules (long waxes, one help each, under 6 helpers, over a minute left, not someone who turned helping off). GUILD CALLS answers guildmates' "Need help with a wax" calls from wherever you are.
-- **Sits at the event campfire** (FARM tab, CAMPFIRE, on by default): every weather event brings a campfire with 6 log seats; each camper adds +50% cash for everyone sitting. The farm takes a free seat and carries on with everything else from it (the seat and the boost stay while it moves around).
-- **GHOST** (FARM tab, or the small "G:" button under the floating SAB button), three settings: **OFF** plain teleports, and you can walk around freely between jobs. **HELP** helps are sent from inside the waxing butter, then you are put back where you were. **FULL** also waits inside the solid ground under your base between jobs. Only your position can be hidden: name tags, the leaderboard and the name over your head come from the server and the other players' screens.
-- **Quests** (FARM tab, QUESTS, on by default): claims finished event quests and the day's quest bonus (never the season pass's rank rewards). For "Pull the lever N times" quests (guild or event) it pauses Auto Roll, whose pulls don't count, pulls the lever itself between its own jobs (an Apple Pie that rolls is still bought), and switches Auto Roll back on when they're done. It never rolls away a butter the game asks about. For "Collect your cash N times" it collects every 15 s until done. Buy / wax / help quests are covered by the farm already.
-- **BASES** switch (SETUP tab, tap to cycle): **ALL DRAWN** → **OTHERS HIDDEN** (other players' bases, stacks and butters aren't drawn) → **ALL HIDDEN** (your own base and stack tower too). Much less for the phone to draw. Nothing is removed, so farming, buying and helping waxes all keep working; tap back to ALL DRAWN and everything reappears.
-- **NO ANIMATIONS** (SETUP tab): switches off the game's own per-frame eye candy that only changes what you see: the stack's squish/rise animation, the glaze rainbow, the conveyor, bounce pads, pets walking, the pen pets, sign and skin animations. On a phone this took about 36 fps to 48–55. Tap again (or KILL) and they run again.
-- **AUTO INDEX** (FARM tab): a butter only counts in your Index once a wax of it has *finished*. With this on, every butter you have never finished is bought once and waxed, and not bought again while that wax runs. It reads the game's own butter list, so a new rarity's butters are picked up the moment the update is live. Limited butters (Robux / event-only) are never counted or bought, and the 4 Common butters are left out too (Auto Roll can't stop on them).
-- **BEST BUTTER** (FARM tab, tap to cycle OFF → TOP 1 → TOP 2 → TOP 3 → UPGRADES): buys the game's top 1–3 butters by income *instead of* your BUTTERS ticks. When an update adds a better butter, it takes over by itself. **UPGRADES**: buys only butters that earn more than the weakest one in your stack (each fills a new slot or replaces that one; nothing equal or weaker takes a station) (so after an update the whole new rarity is bought, each one replacing a weaker butter). Turning it off puts your own ticks back.
-- **BEST CRATE** (FARM tab): opens the most expensive crate the game has (a new one counts as soon as it exists), on top of anything ticked in CRATES.
-- While any of those three is on, the farm sets the game's **Auto Roll choices** to stop on exactly what is wanted (and takes a butter off the list as soon as its index wax starts). Needs the Auto Roll pass.
-- **GRAB SHOWER** (FARM tab, on by default): during an admin "butter shower" it steps onto the falling butters' pieces to grab them: wanted ones first (ticked / best / missing from your Index), then the rarest; one in hand at a time, so each is waxed or sold before the next.
-- **Admin snap**: when the admin shows the "every wax finishes" glow, the glaze team goes on for the moment of the snap (needs TEAMS on with a glaze team).
+### 🌾 Farm
+- **Buys only what you tick** on the Butters tab. It checks your hands before waxing: a butter someone gifts you, or anything else you did not tick, is never placed on a station. It is sold instead.
 - **Collects money** on an interval and steps off the pad afterwards.
-- **Runs smoother overnight** (SETUP tab): LITE MODE switches off floating labels (including wax timers the game turns on later), sparkles and lighting extras (about +5 fps on a phone, the screen stays normal); HIDE GAME HUD hides the game's own menus; FPS CAP (30 / 15 / 10) keeps the phone cool; STOP 3D blanks the world behind the window. A memory watchdog rejoins the same server if memory stays above the limit (2000 MB by default) for 30 s, and a health line goes in the log every 30 min. Everything goes back to normal when switched off or on KILL.
-- **Comes back by itself** after a disconnect or a server restart.
+- **Quests** (on by default): claims finished event quests and the day's quest bonus (never the season pass's rank rewards).
+  - "Pull the lever N times" quests (guild or event): Auto Roll pulls don't count, so it pauses Auto Roll, pulls the lever itself between its own jobs, and switches Auto Roll back on when they're done. An Apple Pie that rolls is still bought, and it never rolls away a butter the game asks about.
+  - "Collect your cash N times" quests: it collects every 15 s until done.
+  - Buy / wax / help quests are already covered by the farm.
+- **Buys reliably:** it waits for the server after a long teleport, and retries quickly when cash is fine.
+
+### 🧈 Butters
+- **Butter list:** every butter in the game, grouped by rarity, worst at the top down to the best at the bottom. The order is read from the game's own crate data and cached, so a new rarity sorts itself after an update.
+- **AUTO INDEX:** a butter only counts in your Index once a wax of it has *finished*.
+  - Every butter you have never finished is bought once and waxed, and not bought again while that wax runs.
+  - It reads the game's own butter list, so a new rarity's butters are picked up the moment the update is live.
+  - It never counts or buys Limited butters (Robux / event-only). It also leaves out the 4 Common butters, because Auto Roll can't stop on them.
+- **BEST BUTTER** (tap to cycle OFF → TOP 1 → TOP 2 → TOP 3 → UPGRADES): buys the game's top 1–3 butters by income *instead of* your ticks. When an update adds a better butter, it takes over by itself. Turning it off puts your own ticks back.
+  - **UPGRADES** buys only butters that earn more than the weakest one in your stack. Each one fills a new slot or replaces that weakest butter, so after an update the whole new rarity gets bought.
+- While Auto Index, Best butter or Best crate is on, the farm sets the game's **Auto Roll choices** to stop on exactly what is wanted. Needs the Auto Roll pass.
+
+### 📦 Crates
+- **Opens the crates you tick**, with no window: it steps next to the crate stand, asks the server to open it, and steps back. Crates you did not tick are left alone.
+- **BEST CRATE:** also opens the most expensive crate the game has, including a new one as soon as it exists.
+- **Never stalls.** A crate that has not landed yet is not counted as a failure, the farm retries by itself after 45 s, and a crate that still won't open after 10 minutes is discarded.
+
+### 🐾 Pets
+- **BUY:** a pet with BUY ticked is adopted from Biscuit's pen the moment one shows up, from anywhere on the map. ANY / BIG picks whether only the Big version counts. It stops when your pet bag is full or you are short of cash.
+- **WISH:** keeps a wish going on that pet in your server, re-wishing within about a second of the old one ending. A pet someone else already wished on is left alone until their wish ends. Free wishes are used before cash.
+- **FUSE** (1 / 2 / 3 / 7 Big): how many Big copies you want of that pet. Buying and wishing for it stop once there are enough copies for that goal. AUTO FUSE turns copies into Bigs, spare copies first and never one you are wearing if it can help it. 7 Bigs is what one Huge takes; you fuse the Huge yourself.
+- **Closes the "Name your pet" window** after each adopt, the way the game's Later button does.
+
+### 👥 Teams
+- **Wears the right saved team at each moment**, using the teams in the game's Teams page:
+  - **GLAZE** from 45 s (adjustable) before a wax finishes, until it has.
+  - **WAX** while a butter is being placed (head starts are decided at the drop).
+  - **FULL** (money + wax speed) while every station is busy.
+  - **NORMAL** (money + luck) the rest of the time.
+- **AUTO BUILD TEAMS:** after a fuse or new pets it works out the best teams from everything you own and saves them again, never while a wax is about to finish.
+- Every running wax goes at the speed of the pets you are wearing right now, so times come from each station's own countdown. The tab lists your running waxes with time left and helps.
+
+### 🤝 Server
+- **HELP WAXES:** between its own jobs it steps over to each wax in your server it is allowed to help and helps once (10% off their wax). It keeps the game's rules: long waxes only, one help each, under 6 helpers, over a minute left, and never someone who turned helping off.
+- **GUILD CALLS:** answers guildmates' "Need help with a wax" calls from wherever you are.
+- **CAMPFIRE** (on by default): every weather event brings a campfire with 6 log seats, and each camper adds +50% cash for everyone sitting. The farm takes a free seat and carries on with everything else from it.
+- **GHOST:**
+  - **OFF:** plain teleports.
+  - **HELP:** helps are sent from inside the waxing butter.
+  - **FULL:** also waits inside the ground under your base between jobs.
+
+  Only your position can be hidden. Name tags and the leaderboard come from the server.
+
+### ⚡ Admin
+- **When:** a countdown to the next admin show, or "LIVE" with the time left.
+- **Boosts now:** every admin boost running, with its multiplier and time left.
+- **GRAB SHOWER** (on by default): during a butter shower it steps onto the falling pieces. Wanted ones go first (ticked, best, or missing from your Index), then the rarest. It holds one at a time, so each is waxed or sold before the next.
+- **Glaze team for the snap:** when the admin's "every wax finishes" glow appears, the glaze team goes on for the snap (needs Teams on with a glaze team).
+- **Show feed:** the show's effects as they happen.
+
+### ⚙ Settings
+- **Configs:** save and load named configs, and pick one to load on launch.
+- **Starting:** START FARMING ON LOAD, and an autoexec loader that restarts the newest version after a rejoin.
+- **AUTO REJOIN:** comes back by itself after a disconnect or a server restart.
+- **Performance:**
+
+  | switch | what it does |
+  | --- | --- |
+  | NO ANIMATIONS | switches off the game's per-frame eye candy: the stack squish, the glaze rainbow, the conveyor, bounce pads, pets walking, sign and skin animations. On a phone, about 36 fps became 48–55. |
+  | LITE MODE | removes floating labels, sparkles and lighting extras |
+  | BASES (tap to cycle) | ALL DRAWN → OTHERS HIDDEN → ALL HIDDEN. Nothing is removed, so farming keeps working. |
+  | FPS CAP | 30 / 15 / 10, keeps the phone cool |
+  | HIDE GAME HUD | hides the game's own menus |
+  | STOP 3D | blanks the world behind the window |
+
+  A memory watchdog rejoins the same server if memory stays above the limit (2000 MB by default) for 30 s. Everything goes back to normal when switched off or on KILL.
 
 ## Files
 

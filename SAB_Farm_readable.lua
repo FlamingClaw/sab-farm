@@ -4173,11 +4173,6 @@ function U.heading(parent, title, sub) -- the big title at the top of a tab
     if sub then lbl(f, sub, 10, C.dim, false, UDim2.new(0, 2, 0, 19), UDim2.new(1, -4, 0, 14)).TextTruncate = Enum.TextTruncate.AtEnd end
     return f
 end
-function U.note(parent, text, h) -- small grey explanation text
-    local l = lbl(U.row(parent, h or 28), text, 9, C.dim, false)
-    l.TextYAlignment = Enum.TextYAlignment.Top
-    return l
-end
 U.OFF = { OFF = true, GAME = true, ["ALL DRAWN"] = true }
 function U.skin(b) -- a switch paints itself from its own "NAME: VALUE" text
     local s = U.sw[b]
@@ -4245,6 +4240,11 @@ function U.grow(parent, ts, color) -- a label that is as tall as its text
         Font = FT.m, TextSize = ts or 10, TextColor3 = color or C.dim, TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Text = "", Visible = false, LayoutOrder = U.nextIn(parent) }, parent)
     track(l:GetPropertyChangedSignal("Text"):Connect(function() l.Visible = l.Text ~= "" end))
+    return l
+end
+function U.note(parent, text) -- small grey explanation text, as tall as it needs
+    local l = U.grow(parent, 9, C.dim)
+    l.Text = text
     return l
 end
 function U.actions(parent, specs) -- a row of buttons sharing the width: { {text, colour}, ... }
@@ -4777,9 +4777,9 @@ function PX.live() -- once a second while the tab is open: wish timers and statu
     local w = PX.wishes()
     local d = PX.data()
     for n, r in pairs(PX.rows) do
-        r.name.Text = PX.nice(n) .. (w[n] and ("   * wish %dm"):format(math.ceil(w[n] / 60)) or "")
         local st = FU.status(n, d)
-        r.desc.Text = st and (st .. " | " .. r.boostText) or r.boostText
+        r.desc.Text = (w[n] and ("wishing %dm | "):format(math.ceil(w[n] / 60)) or "") .. (st and (st .. " | ") or "") .. r.boostText
+        r.desc.TextColor3 = w[n] and C.text or C.dim
     end
     local cr = tonumber(plr:GetAttribute("PetWishCredits")) or 0
     U.pInfo.Text = ("pets %d/%d | cash $%s%s\nadopt: %s\nwish: %s"):format(d and #(d.pets or {}) or 0, d and tonumber(d.maxOwned) or 60,
@@ -4818,17 +4818,17 @@ function PX.build()
         local hl = lbl(hb, r:upper(), 11, col, true, UDim2.new(0, 11, 0, 0), UDim2.new(1, -11, 1, 0))
         hl.Font = FT.x
         for _, n in ipairs(byR[r]) do
-            local rowF = mk("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = C.raise, BorderSizePixel = 0,
+            local rowF = mk("Frame", { Size = UDim2.new(1, 0, 0, 54), BackgroundColor3 = C.raise, BorderSizePixel = 0,
                 LayoutOrder = U.nextIn(card) }, card)
             round(rowF, 8)
-            local nm = lbl(rowF, PX.nice(n), 11, col, true, UDim2.new(0, 9, 0, 4), UDim2.new(1, -172, 0, 15))
+            local nm = lbl(rowF, PX.nice(n), 11, col, true, UDim2.new(0, 9, 0, 5), UDim2.new(1, -172, 0, 22))
             nm.TextWrapped, nm.TextTruncate = false, Enum.TextTruncate.AtEnd
             local ok, ds = pcall(function() return I.describe(n) end)
             local bt = ok and tostring(ds) or ""
-            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 9, 0, 20), UDim2.new(1, -172, 0, 20))
+            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 9, 0, 31), UDim2.new(1, -18, 0, 19))
             dl.TextYAlignment, dl.TextTruncate = Enum.TextYAlignment.Top, Enum.TextTruncate.AtEnd
             local function small(t, x, w)
-                local sb = button(rowF, t, C.bg, 8, UDim2.new(1, x, 0.5, -11), UDim2.new(0, w, 0, 22))
+                local sb = button(rowF, t, C.bg, 8, UDim2.new(1, x, 0, 5), UDim2.new(0, w, 0, 22))
                 sb.AutoButtonColor = true
                 return sb
             end

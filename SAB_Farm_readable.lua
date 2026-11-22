@@ -42,7 +42,7 @@ local CFG = {
     Calm = false,                  -- NO ANIMATIONS: switch off the game's own per-frame eye candy (stack squish, glaze rainbow...)
     HideBases = false,             -- don't draw other players' bases (they are still there: helping works)
     HideMine = false,              -- ... and your own base and stack tower too (the farm still works there)
-    MemLimit = 2000,               -- MB; above it for 30 s -> rejoin this same server (0 = never)
+    MemLimit = 1250,               -- MB; above it for 20 s -> rejoin this same server (0 = never)
     Help = false,                  -- step over to other players' waxes in this server and help them
     HelpGuild = false,             -- answer guildmates' "Need help with a wax" calls from here
     Campfire = true,               -- sit at the event campfire (+50% cash per camper) whenever a seat is free
@@ -3114,9 +3114,12 @@ function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
     if ok and type(mb) == "number" then
         PF.mem = mb
         PF.memPeak = math.max(PF.memPeak, mb)
+        -- Nov 22 on your phone: Roblox starts dropping whole bases at ~1 GB and the app was killed
+        -- in the swings that follow; a rejoin of this same server starts again at ~570 MB.
+        -- Far above the limit (+250 MB) it goes straight away, not after 20 s.
         if (CFG.MemLimit or 0) > 0 and mb > CFG.MemLimit then
-            PF.over = (PF.over or 0) + 1
-            if PF.over >= 30 and not S.busy then -- over the limit for 30 s straight
+            PF.over = (PF.over or 0) + ((mb > CFG.MemLimit + 250) and 20 or 1)
+            if PF.over >= 20 and not S.busy then -- over the limit for 20 s straight
                 PF.over = -600 -- one try, then wait 10 min before another
                 PF.rejoinSame(("memory %d MB > %d MB"):format(mb, CFG.MemLimit))
             end
@@ -4057,7 +4060,13 @@ function HX.list()
     end
     return out
 end
-function HX.due() return CFG.Help and S.running and now() >= HX.nextAt end
+function HX.due() -- (not while memory is high: each help visit loads that whole base onto the phone)
+    if CFG.Help and S.running and now() >= HX.nextAt and (PF.mem or 0) > 900 then
+        HX.nextAt, HX.msg = now() + 30, ("paused - phone memory %d MB (helps load other bases)"):format(PF.mem)
+        return false
+    end
+    return CFG.Help and S.running and now() >= HX.nextAt
+end
 function HX.skipIt(id, why)
     HX.skip[id], HX.skipN = why, HX.skipN + 1
     if HX.skipN > 600 then HX.skip, HX.skipN, HX.tries = { [id] = why }, 1, {} end
@@ -4775,11 +4784,11 @@ do
     U.pfRender = U.switch(pf, "STOP 3D: OFF", "Stop 3D", "blank the world behind this window")
     rw = U.row(pf, 28)
     lbl(rw, "rejoin above", 10, C.dim, false, UDim2.new(0, 10, 0, 0), UDim2.new(0.36, -10, 1, 0))
-    U.pfMem = textbox(rw, tostring(CFG.MemLimit), "2000", UDim2.new(0.36, 0, 0, 0), UDim2.new(0.26, -4, 1, 0))
+    U.pfMem = textbox(rw, tostring(CFG.MemLimit), "1250", UDim2.new(0.36, 0, 0, 0), UDim2.new(0.26, -4, 1, 0))
     lbl(rw, "MB", 10, C.dim, false, UDim2.new(0.62, 0, 0, 0), UDim2.new(0, 22, 1, 0))
     U.pfMemSet = button(rw, "SET", C.accent, 10, UDim2.new(0.75, 4, 0, 0), UDim2.new(0.25, -4, 1, 0))
     U.pfInfo = U.line(pf, C.good)
-    U.note(pf, "Everything here is undone when switched off or on KILL. 0 MB = never rejoin for memory.", 24)
+    U.note(pf, "Everything here is undone when switched off or on KILL. Rejoin above: this phone struggles past ~1 GB; 0 = never.", 24)
     local ab = U.card(P, "About")
     U.note(ab, "CHURN " .. VERSION .. " for Stack A Butter Squishy. The round C button hides or shows this window - hold and drag it anywhere. Drag this window by its top bar. The farm keeps running either way.", 40)
 end

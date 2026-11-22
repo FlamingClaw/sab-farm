@@ -2915,11 +2915,22 @@ PF.hideQ, PF.hideI = {}, 1
 -- app was killed). So while other bases are hidden, the butters in their stacks are dropped from this
 -- phone a few seconds after they arrive (after the game has set them up, so its own scripts let go
 -- cleanly). Nothing changes for anyone else; they come back with a rejoin.
-PF.dropQ, PF.dropI, PF.dropped = {}, 1, 0
+PF.dropQ, PF.dropI, PF.dropped, PF.dropSeen = {}, 1, 0, setmetatable({}, { __mode = "k" })
 function PF.dropIt(d) -- queue a butter from someone else's stack
     local st = d.Parent
     local pl = st and st.Name == "SquishyStack" and st.Parent
-    if pl and pl ~= S.plot and S.plot and pl.Parent == S.plot.Parent then PF.dropQ[#PF.dropQ + 1] = { d, now() + 3 } end
+    if pl and pl ~= S.plot and S.plot and pl.Parent == S.plot.Parent and not PF.dropSeen[d] then
+        PF.dropSeen[d] = true
+        PF.dropQ[#PF.dropQ + 1] = { d, now() + 3 }
+    end
+end
+function PF.dropScan() -- (every 5 s: what arrived before your base was known, or slipped past)
+    local plots = S.plot and S.plot.Parent
+    if not (CFG.HideBases and plots) then return end
+    for _, pl in ipairs(plots:GetChildren()) do
+        local st = pl ~= S.plot and pl:FindFirstChild("SquishyStack")
+        for _, b in ipairs(st and st:GetChildren() or {}) do PF.dropIt(b) end
+    end
 end
 function PF.dropStep(t0)
     local q = PF.dropQ
@@ -3087,6 +3098,7 @@ function PF.rejoinSame(why) -- back into this same server, so its wishes and hel
 end
 function PF.tick() -- once a second: fps, memory, queued labels, the watchdog
     if CFG.Lite then task.spawn(PF.sweep) end
+    if CFG.HideBases and now() - (PF.dropAt or 0) > 5 then PF.dropAt = now() pcall(PF.dropScan) end
     if CFG.Lite and now() - (PF.extraAt or 0) > 5 then
         PF.extraAt = now()
         PF.gameLow = plr:GetAttribute("GraphicsLow") == true

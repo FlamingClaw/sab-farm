@@ -4453,13 +4453,15 @@ function PX.paintRow(name)
     r.g.Text = w.g and "BIG" or "ANY"
     r.w.BackgroundColor3 = w.w and C.warn or C.panel2
     local f = tonumber(w.f) or 0
-    r.f.Text = f > 0 and (f .. " BIG") or "FUSE"
+    r.f.Text = f >= 7 and "7 BIG/HUGE" or (f > 0 and (f .. " BIG") or "FUSE")
     r.f.BackgroundColor3 = f > 0 and C.good or C.panel2
 end
 function PX.flag(name, f)
     local w = CFG.Pets[name] or {}
     if f == "f" then
-        local n = ((tonumber(w.f) or 0) + 1) % 4 -- FUSE -> 1 BIG -> 2 BIG -> 3 BIG -> FUSE
+        -- FUSE -> 1 BIG -> 2 BIG -> 3 BIG -> 7 BIG (what one Huge takes; you fuse the Huge) -> FUSE
+        local nextOf = { [0] = 1, [1] = 2, [2] = 3, [3] = 7 }
+        local n = nextOf[tonumber(w.f) or 0] or 0
         w.f = n > 0 and n or nil
     elseif w[f] then w[f] = nil else w[f] = true end
     CFG.Pets[name] = (w.b or w.g or w.w or w.f) and w or nil

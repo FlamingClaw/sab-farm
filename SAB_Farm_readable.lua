@@ -2061,7 +2061,14 @@ function PX.wishTick()
             local want = PX.want(name)
             if want and want.w and w[name] then run[#run + 1] = ("%s %dm"):format(PX.nice(name), math.ceil(w[name] / 60)) end
         end
-        msg = mine == 0 and "no pet has WISH ticked" or ("running: " .. (#run > 0 and table.concat(run, ", ") or "none yet"))
+        local soon
+        for _, name in ipairs(PX.order()) do
+            local want = PX.want(name)
+            if want and want.w and w[name] and (not soon or w[name] < soon) then soon = w[name] end
+        end
+        msg = mine == 0 and "no pet has WISH ticked" or (#run == 0 and "running: none yet")
+            or (#run <= 3 and ("running: " .. table.concat(run, ", ")))
+            or ("%d running, the next one ends in %dm"):format(#run, math.ceil((soon or 0) / 60))
     end
     PX.wishMsg = msg
 end
@@ -3255,7 +3262,7 @@ function IX.tick()
         parts[#parts + 1] = n == 0 and "upgrades: none better than your stack - stations kept free"
             or ("upgrades: %d butter%s"):format(n, n == 1 and "" or "s")
     elseif (CFG.Best or 0) > 0 and IX.order[1] then parts[#parts + 1] = "best: " .. prettyOf(IX.order[1].k) end
-    if CFG.BestCrate and IX.bestCrateName then parts[#parts + 1] = "crate: " .. IX.bestCrateName end
+    if CFG.BestCrate and IX.bestCrateName then parts[#parts + 1] = "crate: " .. IX.bestCrateName:gsub("(%l)(%u)", "%1 %2") end
     if SH.got > 0 then parts[#parts + 1] = "shower: " .. SH.got end
     IX.msg = #parts > 0 and table.concat(parts, " | ") or "index / best: off"
 end
@@ -3597,7 +3604,7 @@ function CF.due()
     local ns = WS:FindFirstChild("NightSeats")
     if not ns then
         if CF.wasOn then CF.wasOn, CF.fails, CF.lost = false, 0, 0 end
-        CF.msg = "no campfire (comes with weather events)"
+        CF.msg = "no campfire now (weather events)"
         return false
     end
     CF.wasOn = true
@@ -4214,6 +4221,8 @@ function U.switch(parent, text, title, sub) -- a full-width switch row; returns 
         TextColor3 = C.dim, Text = "" }, b)
     round(s.chip, 9)
     U.pad(s.chip, 10, 0, 10, 0)
+    mk("UISizeConstraint", { MinSize = Vector2.new(42, 18), MaxSize = Vector2.new(130, 18) }, s.chip)
+    s.chip.TextTruncate = Enum.TextTruncate.AtEnd
     U.sw[b] = s
     track(b:GetPropertyChangedSignal("Text"):Connect(function() U.skin(b) end))
     U.skin(b)
@@ -4234,7 +4243,8 @@ end
 function U.grow(parent, ts, color) -- a label that is as tall as its text
     local l = mk("TextLabel", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
         Font = FT.m, TextSize = ts or 10, TextColor3 = color or C.dim, TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Text = "", LayoutOrder = U.nextIn(parent) }, parent)
+        TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Text = "", Visible = false, LayoutOrder = U.nextIn(parent) }, parent)
+    track(l:GetPropertyChangedSignal("Text"):Connect(function() l.Visible = l.Text ~= "" end))
     return l
 end
 function U.actions(parent, specs) -- a row of buttons sharing the width: { {text, colour}, ... }
@@ -4256,7 +4266,9 @@ local function setToggle(b, on, onText, offText)
 end
 -- ---- header: logo, name, the running pill, minimise and close
 U.title = mk("Frame", { Size = UDim2.new(1, 0, 0, Z.head), BackgroundColor3 = C.panel, BorderSizePixel = 0, Active = true }, U.root)
-mk("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1), BackgroundColor3 = C.line, BorderSizePixel = 0 }, U.title)
+round(U.title, 14) -- (the window is rounded; a square header would poke out at the corners)
+mk("Frame", { Size = UDim2.new(1, 0, 0, 14), Position = UDim2.new(0, 0, 1, -14), BackgroundColor3 = C.panel, BorderSizePixel = 0 }, U.title)
+mk("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1), BackgroundColor3 = C.line, BorderSizePixel = 0, ZIndex = 2 }, U.title)
 do
     local logo = mk("Frame", { Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(0, 9, 0.5, -13), BackgroundColor3 = C.white,
         BorderSizePixel = 0 }, U.title)
@@ -4288,7 +4300,12 @@ round(U.bar, 2)
 U.reason = lbl(U.strip, "starting", 10, C.text, false, UDim2.new(0, 16, 0, 1), UDim2.new(1, -22, 1, -2))
 U.reason.TextTruncate = Enum.TextTruncate.AtEnd
 -- ---- the rail: one icon per tab
-U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head), Size = UDim2.new(0, Z.rail, 1, -Z.head), BackgroundColor3 = C.panel,
+U.railBg = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head), Size = UDim2.new(0, Z.rail, 1, -Z.head), BackgroundColor3 = C.panel,
+    BorderSizePixel = 0 }, U.root)
+round(U.railBg, 14)
+mk("Frame", { Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = C.panel, BorderSizePixel = 0 }, U.railBg)
+mk("Frame", { Size = UDim2.new(0, 14, 1, 0), Position = UDim2.new(1, -14, 0, 0), BackgroundColor3 = C.panel, BorderSizePixel = 0 }, U.railBg)
+U.tabs = mk("Frame", { Position = UDim2.new(0, 0, 0, Z.head), Size = UDim2.new(0, Z.rail, 1, -Z.head), BackgroundTransparency = 1,
     BorderSizePixel = 0 }, U.root)
 U.railLine = mk("Frame", { Size = UDim2.new(0, 1, 1, -Z.head), Position = UDim2.new(0, Z.rail - 1, 0, Z.head), BackgroundColor3 = C.line,
     BorderSizePixel = 0 }, U.root) -- (outside the rail: its list layout would treat it as a tab)
@@ -4394,8 +4411,8 @@ do
     U.buyB, U.plB = U.actions(man, { { "BUY THE PAD", C.warn }, { "WAX WHAT I HOLD", C.good } })
     U.sellB, U.crateB = U.actions(man, { { "SELL WHAT I HOLD", C.panel2 }, { "OPEN CRATE NOW", C.panel2 } })
     rw = U.row(man, 28)
-    U.padB = button(rw, "SET PAD (stand on it)", C.panel2, 10, at(0, 0.55))
-    U.padL = lbl(rw, "", 10, C.dim, false, UDim2.new(0.55, 6, 0, 0), UDim2.new(0.45, -6, 1, 0))
+    U.padB = button(rw, "SET PAD (stand on it)", C.panel2, 10, UDim2.new(0, 0, 0, 0), UDim2.new(0.5, -3, 1, 0))
+    U.padL = lbl(rw, "", 10, C.dim, false, UDim2.new(0.5, 10, 0, 0), UDim2.new(0.5, -10, 1, 0))
 end
 
 -- ---- BUTTERS: the strategy switches; the list is built into U.butList the first time you open it
@@ -4448,13 +4465,13 @@ end
 -- ---- SERVER: everything that involves other players
 do
     local P = U.srv
-    U.heading(P, "Server", "other players' waxes, the campfire, staying out of sight")
+    U.heading(P, "Server", "other players, the campfire, staying hidden")
     local hp = U.card(P, "Helping")
     U.helpT = U.switch(hp, "HELP WAXES: OFF", "Help waxes", "other players' waxes in this server")
     U.helpGT = U.switch(hp, "GUILD CALLS: OFF", "Guild calls", "answer guildmates' \"need help\" calls")
     U.srvHelp = U.line(hp, C.info)
     local cp = U.card(P, "Campfire")
-    U.campT = U.switch(cp, "CAMPFIRE: OFF", "Sit at the campfire", "+50% cash per camper, farm keeps going")
+    U.campT = U.switch(cp, "CAMPFIRE: OFF", "Sit at the campfire", "+50% cash for each camper")
     U.srvCamp = U.line(cp, C.accent2)
     local gh = U.card(P, "Ghost")
     U.ghostT = U.switch(gh, "GHOST: OFF", "Ghost mode", "HELP: hidden helps  FULL: underground")
@@ -4465,7 +4482,7 @@ end
 -- ---- ADMIN: admin abuse - when, what is boosted, the shower and the snap
 do
     local P = U.adm
-    U.heading(P, "Admin abuse", "the show, its boosts and what the farm does in it")
+    U.heading(P, "Admin abuse", "the show, its boosts and the farm in it")
     local wh = U.card(P, "When")
     U.admBig = lbl(U.row(wh, 22), "-", 15, C.text, true)
     U.admBig.Font = FT.x
@@ -4474,7 +4491,7 @@ do
     U.admBoost = U.grow(bo, 11, C.text)
     local au = U.card(P, "What the farm does")
     U.shT = U.switch(au, "GRAB SHOWER: ON", "Grab the butter shower", "wanted pieces first, then the rarest")
-    U.snapT = U.switch(au, "SNAP GLAZE: ON", "Glaze team for the snap", "every wax finishes at once: glaze team on")
+    U.snapT = U.switch(au, "SNAP GLAZE: ON", "Glaze team for the snap", "every wax finishes at once")
     U.admStat = U.line(au, C.accent)
     local fd = U.card(P, "Show feed")
     U.admFeed = mk("TextLabel", { Size = UDim2.new(1, 0, 0, 70), BackgroundColor3 = C.bg, BorderSizePixel = 0, Font = FT.mono,
@@ -4801,15 +4818,15 @@ function PX.build()
         local hl = lbl(hb, r:upper(), 11, col, true, UDim2.new(0, 11, 0, 0), UDim2.new(1, -11, 1, 0))
         hl.Font = FT.x
         for _, n in ipairs(byR[r]) do
-            local rowF = mk("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.raise, BorderSizePixel = 0,
+            local rowF = mk("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = C.raise, BorderSizePixel = 0,
                 LayoutOrder = U.nextIn(card) }, card)
             round(rowF, 8)
-            local nm = lbl(rowF, PX.nice(n), 11, col, true, UDim2.new(0, 9, 0, 3), UDim2.new(1, -172, 0, 17))
+            local nm = lbl(rowF, PX.nice(n), 11, col, true, UDim2.new(0, 9, 0, 4), UDim2.new(1, -172, 0, 15))
             nm.TextWrapped, nm.TextTruncate = false, Enum.TextTruncate.AtEnd
             local ok, ds = pcall(function() return I.describe(n) end)
             local bt = ok and tostring(ds) or ""
-            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 9, 0, 20), UDim2.new(1, -172, 0, 16))
-            dl.TextWrapped, dl.TextTruncate = false, Enum.TextTruncate.AtEnd
+            local dl = lbl(rowF, bt, 9, C.dim, false, UDim2.new(0, 9, 0, 20), UDim2.new(1, -172, 0, 20))
+            dl.TextYAlignment, dl.TextTruncate = Enum.TextYAlignment.Top, Enum.TextTruncate.AtEnd
             local function small(t, x, w)
                 local sb = button(rowF, t, C.bg, 8, UDim2.new(1, x, 0.5, -11), UDim2.new(0, w, 0, 22))
                 sb.AutoButtonColor = true
@@ -5103,6 +5120,8 @@ function IX.admPaint()
     local big, sub = "nothing scheduled", "the game has not announced one"
     if type(st) == "table" then
         local ph, sa, ea = tostring(st.Phase or ""), tonumber(st.StartsAt), tonumber(st.EndsAt)
+        if sa and sa < 1e9 then sa = nil end -- (0 = the game has nothing set)
+        if ea and ea < 1e9 then ea = nil end
         if ph == "Countdown" and sa then
             big, sub = "starts in " .. TM.clock(sa - t), os.date("%a %H:%M", math.floor(sa)) .. " your time"
         elseif ph == "Live" and ea then
@@ -5125,7 +5144,8 @@ function IX.admPaint()
             local nm = type(k) == "string" and k:match("^(.-)Mult$")
             local untilT = nm and tonumber(f:GetAttribute(nm .. "Until"))
             if nm and type(v) == "number" and v ~= 1 and v ~= 0 and untilT and untilT > t then
-                L[#L + 1] = ("%s  x%s   %s left"):format(nm, (v % 1 == 0) and tostring(v) or ("%.2f"):format(v), TM.clock(untilT - t))
+                L[#L + 1] = ("%s  x%s   %s left"):format(nm:gsub("(%l)(%u)", "%1 %2"), (v % 1 == 0) and tostring(v) or ("%.2f"):format(v),
+                    TM.clock(untilT - t))
             end
         end
     end
@@ -5286,7 +5306,7 @@ click(U.rejB, function() rejoin("you asked") end)
 local minimized = false
 click(U.minB, function()
     minimized = not minimized
-    U.tabs.Visible, U.railLine.Visible = not minimized, not minimized
+    U.tabs.Visible, U.railLine.Visible, U.railBg.Visible = not minimized, not minimized, not minimized
     if minimized then
         for _, k in ipairs(U.tabKeys) do U[k].Visible = false end
         U.strip.Position, U.strip.Size = UDim2.new(0, 8, 0, Z.head + 6), UDim2.new(1, -16, 0, Z.status)
@@ -5390,8 +5410,8 @@ local function refresh()
         U.put(U.questL, "quests  " .. (CFG.Quests and (QX.msg ~= "" and QX.msg or "checking...") or "off"))
         U.put(U.ixL, IX.msg)
         local learned = (AR.rec.on and "on" or "") .. (AR.rec.off and ((AR.rec.on and "/" or "") .. "off") or "")
-        U.put(U.arL, AR.msg ~= "" and AR.msg or ("auto roll: game %s | learned %s%s"):format(AR.isOn() and "ON" or "off",
-            learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and ", choices" or ""))
+        U.put(U.arL, AR.msg ~= "" and AR.msg or ("auto roll  %s | knows %s%s"):format(AR.isOn() and "running" or "stopped",
+            learned ~= "" and learned or "nothing yet", #AR.rec.rules > 0 and " + choices" or ""))
         if U.lit.arL ~= (AR.msg ~= "") then U.lit.arL = (AR.msg ~= "") U.arL.TextColor3 = AR.msg ~= "" and C.warn or C.dim end
     end
 end

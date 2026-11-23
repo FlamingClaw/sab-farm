@@ -3322,14 +3322,74 @@ function PF.calmScan() -- (again every 20 s: the game makes new ones after a res
     end
     return n
 end
+-- Pets: one frame loop of the game (PetHandler.Walker) moves every pet, and NO ANIMATIONS stops it.
+-- But a pet adopted from the pen WALKS to its owner's base and is only handed over when it arrives,
+-- so with the walker stopped every adoption in the server stayed frozen at the pen, sparkling every
+-- 0.35 s (Nov 22: 124 pet models, 91 of them adoptions on their way). So while NO ANIMATIONS is on,
+-- a pet's walk ends at once: it is put at its goal and the game's "arrived" step runs (the owner's base
+-- takes it in, or the game clears it 6 s later). Walks already stuck are cleared.
+function PF.walker()
+    local ok, Wk = pcall(function() return require(plr.PlayerScripts.LocalScript.PetHandler.Walker) end)
+    return (ok and type(Wk) == "table" and type(Wk.walkTo) == "function") and Wk or nil
+end
+function PF.walkers(Wk) -- every pet the walker knows (its own lists, read from its destroy())
+    local out = {}
+    local ok, ups = pcall(debug.getupvalues, Wk.destroy)
+    for _, u in ipairs(ok and ups or {}) do
+        if type(u) == "table" then
+            for k in pairs(u) do if type(k) == "table" and rawget(k, "model") ~= nil and rawget(k, "position") ~= nil then out[k] = true end end
+        end
+    end
+    return out
+end
+function PF.walkPatch(on)
+    local Wk = PF.walker()
+    if not Wk then return 0 end
+    if on and not PF.wkOld then
+        local old = Wk.walkTo
+        PF.wkOld = old
+        Wk.walkTo = function(self, target, speed, onArrive)
+            local okT = target ~= nil and pcall(function() return target.X + target.Z end)
+            if not CFG.Calm or not okT then return old(self, target, speed, onArrive) end
+            self.target, self.onArrive = nil, nil
+            pcall(function() self:teleport(target) self:render(0) end)
+            if onArrive then task.spawn(onArrive) end
+        end
+    elseif not on then
+        if PF.wkOld then Wk.walkTo, PF.wkOld = PF.wkOld, nil end
+        return 0
+    end
+    local n = 0
+    for w in pairs(PF.walkers(Wk)) do
+        if w.target and not w.destroyed then
+            local bb = w.model and w.model:FindFirstChild("Body") and w.model.Body:FindFirstChild("PetBillboard")
+            local tl = bb and bb:FindFirstChild("TimerLabel", true)
+            if tl and tostring(tl.Text):find("'s plot!", 1, true) then
+                -- an adoption stuck on its way: its owner has the pet already, this is only the walk
+                pcall(function() w:destroy() end)
+                pcall(function() w.model:Destroy() end)
+            else -- a pet stopped mid-step: put it where it was going
+                local t, cb = w.target, w.onArrive
+                w.target, w.onArrive = nil, nil
+                pcall(function() w:teleport(t) w:render(0) end)
+                if cb then task.spawn(cb) end
+            end
+            n = n + 1
+        end
+    end
+    return n
+end
 function PF.calm(on)
     CFG.Calm = on
     if on then
         local n = PF.calmScan()
-        note(("NO ANIMATIONS: %d of the game's animation loops switched off"):format(n))
+        local w = 0
+        pcall(function() w = PF.walkPatch(true) end)
+        note(("NO ANIMATIONS: %d of the game's animation loops switched off%s"):format(n, w > 0 and (", " .. w .. " stuck pet walks cleared") or ""))
     else
         for _, c in ipairs(PF.calmed) do pcall(function() c:Enable() end) end
         PF.calmed, PF.calmedF = {}, setmetatable({}, { __mode = "k" })
+        pcall(PF.walkPatch, false)
     end
 end
 function PF.restoreAll() -- KILL puts the game back exactly as it was
@@ -6119,7 +6179,7 @@ end)
 task.spawn(function() -- NO ANIMATIONS: catch the loops the game starts again after a respawn
     while S.alive do
         task.wait(20)
-        if CFG.Calm then pcall(PF.calmScan) end
+        if CFG.Calm then pcall(PF.calmScan) pcall(PF.walkPatch, true) end
     end
 end)
 task.spawn(function() -- index / best butter / best crate, and the admin show

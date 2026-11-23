@@ -2486,13 +2486,14 @@ function FU.kinds(pets) -- your pets as kinds (name + size) with how many of eac
     end
     return list
 end
-function FU.bestKinds(role, kinds, slots, keepN) -- greedy fill, then swaps until nothing improves (counts respected)
+function FU.bestKinds(role, kinds, slots, keepN, thrifty) -- greedy fill, then swaps until nothing improves (counts respected)
     local chosen, used = {}, {}
     local function sc(idx)
         local l, c = {}, {}
         for i, k in ipairs(idx) do l[i] = kinds[k] c[k] = (c[k] or 0) + 1 end
         local v = FU.score(role, l)
         if keepN then for k, n in pairs(c) do v = v + 1e-7 * math.min(n, keepN[k] or 0) end end -- ties: stay as you are
+        if thrifty then for k, n in pairs(c) do v = v - 1e-8 * n * thrifty[kinds[k].variant] end end -- ties: fewer copies to find
         return v
     end
     for _ = 1, slots do
@@ -2562,7 +2563,7 @@ function FU.dream() -- the plan: the best team for each role if you owned every 
         local want, teams = {}, {}
         for _, r in ipairs(FU.ROLES) do
             if CFG[r[1]] ~= "" then
-                local chosen, sc = FU.bestKinds(r[2], kinds, slots)
+                local chosen, sc = FU.bestKinds(r[2], kinds, slots, nil, { [""] = 1, Big = FU.unit("Big"), Huge = FU.unit("Huge") })
                 local cnt, names = {}, {}
                 for _, k in ipairs(chosen) do cnt[k] = (cnt[k] or 0) + 1 end
                 for k, c in pairs(cnt) do

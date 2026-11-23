@@ -2,7 +2,7 @@
 -- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
 -- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
 -- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v27"
+local VERSION = "v28"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)
@@ -549,7 +549,7 @@ local function configText()
     do
         local t = {}
         for n, w in pairs(CFG.Pets) do
-            local f = (w.b and "b" or "") .. (w.g and "g" or "") .. (w.w and "w" or "") .. ((tonumber(w.f) or 0) > 0 and tostring(w.f) or "")
+            local f = (w.b and "b" or "") .. (w.g and "g" or "") .. (w.w and "w" or "") .. (tonumber(w.f) == -1 and "k" or "") -- k = KEEP
             if f ~= "" then t[#t + 1] = n .. "|" .. f end
         end
         table.sort(t)
@@ -600,8 +600,9 @@ local function applyConfig(raw)
         elseif a == "P" and b ~= "" then
             if not pets then pets = {} end
             if b ~= "-" and c ~= "" then
+                -- (an old Big goal number is dropped: fusing follows the plan now; k = KEEP, never fused)
                 pets[b] = { b = c:find("b", 1, true) and true or nil, g = c:find("g", 1, true) and true or nil,
-                    w = c:find("w", 1, true) and true or nil, f = tonumber(c:match("%d")) }
+                    w = c:find("w", 1, true) and true or nil, f = c:find("k", 1, true) and -1 or nil }
             end
         elseif a == "B" then
             if CFG[b] ~= nil then CFG[b] = (c == "1") end
@@ -2013,6 +2014,42 @@ function PX.buyTick()
     for k in pairs(PX.tryAt) do if not seen[k] then PX.tryAt[k] = nil end end
     PX.buyMsg = msg or ("watching the pen (%d/%d pets)"):format(owned, maxOwned)
 end
+function PX.stacks() -- wishes stacked on each pet in this server (the pen's WishStacks), 1 when not stacked
+    local pen = PX.pen()
+    local raw = pen and pen:GetAttribute("WishStacks")
+    local ok, t = pcall(function() return PX.HS:JSONDecode(raw) end)
+    return (ok and type(t) == "table") and t or {}
+end
+-- Wishing again on a running wish stacks it (measured Nov 22: x2 on Eagle, timer back to 20 min): each
+-- stack adds x9 to that pet's share of the pen (x10 for one wish, x46 at the 5 stacks the game allows),
+-- for 3x the price of the last. Even 5 stacks of a Star Whale are 0.003% of your cash, so the farm keeps
+-- every wished pet at full stacks while the plan wants more of it.
+function PX.stackTick(w, dd)
+    local I = PX.info()
+    local max = (type(I.Wish) == "table" and tonumber(I.Wish.maxStacks)) or 1
+    if max <= 1 then return end
+    local st = PX.stacks()
+    PX.stackTry = PX.stackTry or {}
+    for _, name in ipairs(PX.order()) do
+        local want = PX.want(name)
+        local n = tonumber(st[name]) or 1
+        if want and want.w and w[name] and n < max and FU.wantMore(name, "", dd) and now() >= (PX.stackTry[name] or 0) then
+            local ok, price = pcall(I.wishPrice, name, n + 1)
+            price = ok and tonumber(price) or ((I.Pets[name].price or 0) * 2 * 3 ^ n)
+            PX.stackTry[name] = now() + 5
+            if price <= PX.money() * 0.01 then
+                local r = PX.call("wish", name)
+                if type(r) == "table" and r.ok then
+                    PX.wishN = PX.wishN + 1
+                    note(("WISH x%d on %s ($%s)"):format(n + 1, PX.nice(name), fmt(price)))
+                else
+                    PX.stackTry[name] = now() + 60
+                end
+                return -- one at a time
+            end
+        end
+    end
+end
 function PX.wishTick()
     if not CFG.PetWish then PX.wishMsg = "auto wish is off" return end
     local I = PX.info()
@@ -2049,6 +2086,7 @@ function PX.wishTick()
             end
         end
     end
+    pcall(PX.stackTick, w, dd)
     if not msg then
         for _, name in ipairs(PX.order()) do
             local want = PX.want(name)
@@ -2059,7 +2097,8 @@ function PX.wishTick()
         local run = {}
         for _, name in ipairs(PX.order()) do
             local want = PX.want(name)
-            if want and want.w and w[name] then run[#run + 1] = ("%s %dm"):format(PX.nice(name), math.ceil(w[name] / 60)) end
+            local n = tonumber(PX.stacks()[name]) or 1
+            if want and want.w and w[name] then run[#run + 1] = ("%s%s %dm"):format(PX.nice(name), n > 1 and (" x" .. n) or "", math.ceil(w[name] / 60)) end
         end
         local soon
         for _, name in ipairs(PX.order()) do
@@ -2296,11 +2335,23 @@ end
 function TM.glazeSoon() -- placing waits while the glaze team is covering a finish
     return CFG.Teams and CFG.TeamGlaze ~= "" and (TM.glazeFor ~= nil or now() < (TM.afterUntil or 0))
 end
--- ---- fusing and team building
--- Fuse: 7 non-Big copies of one pet (3 with the Fuse pass) -> one Big, by PetRequest("fuse", { ids = {...} }).
--- Each ticked pet can have a goal of Big copies; buying and wishing stop once there is enough for it,
--- and the fuse happens as soon as the copies are there. A fuse can use up pets your teams wear, so the
--- teams are then worked out again from everything you own, one role at a time:
+-- ---- fusing, Huges and team building
+-- The game's rules (Modules.PetInfo, read Nov 22):
+--   fuseNeed: copies per fuse - 3 with the Fuse Pass (or Fuse Pass 4), 5 with Fuse Pass 5, else 7. The
+--     same number of Bigs fuses into a Huge (recipe "Ladder"), all by PetRequest("fuse", { ids = {...} }).
+--   Big = x1.5 boost (counted boosts at least +1), Huge = x1.75 (at least +2, and one more than a Big).
+--   Wearing a Huge raises the limit of its boost kind (HugeCaps): income 50% -> 60%, luck +3 -> +4 (lucky
+--     pulls count as luck), Eagle find x3 -> x3.5, roll speed 40% -> 50%, glaze 25% -> 30%, glaze-up
+--     50% -> 60%, head start 40% -> 50%, wax speed 25% -> 30%, long wax 30% -> 40%, cash gifts 9 -> 11 s
+--     a minute, stirs 30 -> 36 s a minute. A Star Whale (Cosmic) may also go 10% past the roll-speed limit.
+-- THE PLAN: the best team for each role if you owned every pet in every size (FU.dream). Buying and
+-- wishing go on while you own fewer copies than that plan needs (a Big = 3 copies, a Huge = 9 with the
+-- pass), plus one fuse's worth of slack.
+-- FUSING never weakens a team: a fuse (regulars -> Big, or Bigs -> Huge) happens only when it moves
+-- toward the plan AND the best team you can wear for every role is at least as good afterwards
+-- (FU.noLoss). Until then the copies wait, and more are bought. Spare copies are used first, and a fuse
+-- that takes a pet from a team waits for a quiet moment (no wax finishing soon).
+-- After a fuse the teams are worked out again from everything you own, one role at a time:
 --   farm  (stations free)      money and Apple Pie supply (luck, social luck, Eagle), then wax speed
 --   full  (every station busy) money and wax speed: every running wax goes at the speed worn right now
 --   glaze (at a finish)        the glaze gain per finish, money to break ties
@@ -2309,7 +2360,32 @@ FU.CAPS = { income = 0.5, price = 0.25, waxSpeed = 0.25, offline = 1, luck = 3, 
     glaze = 0.25, glazeUp = 0.5, headStart = 0.4, cashGiftPerMinute = 9, newFind = 2, longWax = 0.3 }
 FU.ROUND = { luck = true, luckyPull = true, crate = true, waxStir = true, socialLuck = true, cashGift = true }
 FU.buildMsg, FU.fuseMsg, FU.fused, FU.builds = "", "", 0, 0
-function FU.need() return plr:GetAttribute("FusePass") == true and 3 or 7 end
+function FU.needFor(variant) -- copies per fuse: the game's own fuseNeed (Fuse Pass tiers)
+    local I = PX.info()
+    if I and type(I.fuseNeed) == "function" then
+        local ok, n = pcall(I.fuseNeed, plr, variant or "")
+        if ok and tonumber(n) and tonumber(n) >= 2 then return tonumber(n) end
+    end
+    if plr:GetAttribute("FusePass") == true or plr:GetAttribute("FusePass4") == true then return 3 end
+    if plr:GetAttribute("FusePass5") == true then return 5 end
+    return 7
+end
+function FU.need() return FU.needFor("") end
+function FU.unit(variant) -- a pet in copies: Big = need, Huge = need x need
+    if variant == "Huge" then return FU.needFor("") * FU.needFor("Big") end
+    if variant == "Big" then return FU.needFor("") end
+    return 1
+end
+function FU.nextOf(v) return (v == "" and "Big") or (v == "Big" and "Huge") or nil end
+FU.HCAPS = { income = 0.6, price = 0.3, waxSpeed = 0.3, offline = 1.25, luck = 4, waxStirPerMinute = 36, cratePulls = 3, glaze = 0.3,
+    glazeUp = 0.6, headStart = 0.5, cashGiftPerMinute = 11, newFind = 2.5, longWax = 0.4, rollSpeed = 0.5 }
+FU.CAPKEY = { luckyPull = "luck", waxStir = "waxStirPerMinute", cashGift = "cashGiftPerMinute", crate = "cratePulls" }
+function FU.hcaps() local I = PX.info() return (I and type(I.HugeCaps) == "table") and I.HugeCaps or FU.HCAPS end
+function FU.cosmic() local I = PX.info() return (I and type(I.CosmicCaps) == "table") and I.CosmicCaps or { StarWhale = 0.1 } end
+function FU.slots()
+    local d = PX.data()
+    return tonumber(d and d.slots) or (3 + (tonumber(plr:GetAttribute("PetEquipBought")) or 0))
+end
 function FU.caps()
     local I = PX.info()
     return (I and type(I.Caps) == "table") and I.Caps or FU.CAPS
@@ -2323,27 +2399,34 @@ function FU.value(name, variant) -- this pet's boost kind, value (Big included) 
         local ok, x = pcall(I.boostValue, name, (variant ~= "" and variant) or nil)
         v = ok and tonumber(x) or nil
     end
-    if not v then
-        v = p.boost.value or 0
-        if variant == "Big" then
-            local b = v * 1.5
-            v = FU.ROUND[p.boost.kind] and math.max(v + 1, math.floor(b + 0.5)) or b
+    if not v then -- (the game's boostValue, by hand)
+        local v0 = p.boost.value or 0
+        v = v0
+        if variant == "Big" or variant == "Huge" then
+            local b = v0 * (variant == "Huge" and 1.75 or 1.5)
+            v = FU.ROUND[p.boost.kind] and math.max(v0 + (variant == "Huge" and 2 or 1), math.floor(b + 0.5)) or b
+            if variant == "Huge" and FU.ROUND[p.boost.kind] then v = math.max(v, math.max(v0 + 1, math.floor(v0 * 1.5 + 0.5)) + 1) end
         end
     end
     return p.boost.kind, v, p.boost.every
 end
-function FU.stats(list)
-    local s, soc = {}, {}
+function FU.stats(list) -- totals by kind, socials (best one only), the limits raised by a Huge, Cosmic shares
+    local s, soc, hk, cos = {}, {}, {}, {}
+    local cosmic = FU.cosmic()
     for _, p in ipairs(list) do
         local kind, v, every = FU.value(p.name, p.variant or "")
         if kind then
+            if p.variant == "Huge" then hk[FU.CAPKEY[kind] or kind] = true end
             if kind:sub(1, 6) == "social" then soc[kind] = math.max(soc[kind] or 0, v) -- only the best one counts
             elseif kind == "waxStir" or kind == "cashGift" then s[kind] = (s[kind] or 0) + v * 60 / (every or 60)
             elseif kind == "luckyPull" then s.luckyPull = (s.luckyPull or 0) + v / (every or 10)
-            else s[kind] = (s[kind] or 0) + v end
+            else
+                s[kind] = (s[kind] or 0) + v
+                if cosmic[p.name] then cos[kind] = cos[kind] or {} cos[kind][p.name] = (cos[kind][p.name] or 0) + v end
+            end
         end
     end
-    return s, soc
+    return s, soc, hk, cos
 end
 function FU.glazeGain(bonus, up) -- the game's GlazeOdds: worth of one finish, in plain-butter incomes
     local base, mult, order = { 0.003, 0.0005, 0.0002 }, { 1.5, 2, 2.5 }, nil
@@ -2355,17 +2438,27 @@ function FU.glazeGain(bonus, up) -- the game's GlazeOdds: worth of one finish, i
     return f[1] * (mult[1] - 1) + f[2] * (mult[2] - 1) + f[3] * (mult[3] - 1)
 end
 function FU.score(role, list)
-    local c = FU.caps()
-    local s, soc = FU.stats(list)
-    local function cap(k) return math.min(s[k] or 0, c[k] or math.huge) end
-    local money = (1 + cap("income")) * (1 + (soc.socialIncome or 0)) * (1 + math.min(s.cashGift or 0, c.cashGiftPerMinute or 9) / 60)
+    local c, hc, cosmic = FU.caps(), FU.hcaps(), FU.cosmic()
+    local s, soc, hk, cos = FU.stats(list)
+    local function lim(k) return (hk[k] and hc[k]) or c[k] or math.huge end
+    local function cap(k) -- the game's applyCap: up to the limit (a Huge's if one is worn), + the Cosmic share past it
+        local tot, l = s[k] or 0, lim(k)
+        local v = math.min(tot, l)
+        if cos[k] and tot > l then
+            local room = 0
+            for n, x in pairs(cos[k]) do room = room + math.min(x, cosmic[n] or 0) end
+            v = v + math.min(tot - l, room)
+        end
+        return v
+    end
+    local money = (1 + cap("income")) * (1 + (soc.socialIncome or 0)) * (1 + math.min(s.cashGift or 0, lim("cashGiftPerMinute")) / 60)
     local rolls = 1 + cap("luck") + (s.luckyPull or 0) + (soc.socialLuck or 0)
     local pie = rolls * (1 + cap("newFind")) * (1 + cap("rollSpeed")) -- rollSpeed (Ostrich, Star Whale): more rolls a minute
     local lm = math.log(money)
     local st = math.max(tonumber(plr:GetAttribute("WaxStations")) or 18, 1)
     -- a stir pet works on one wax at a time: +30 s a minute is ~3% more speed spread over 18 stations
     local speed = (1 + cap("waxSpeed") + cap("longWax")) * (1 + (soc.socialWax or 0))
-        + math.min(s.waxStir or 0, c.waxStirPerMinute or 30) / 60 / st
+        + math.min(s.waxStir or 0, lim("waxStirPerMinute")) / 60 / st
     local hs = 1 - (1 - cap("headStart")) * (1 - (soc.socialHeadStart or 0))
     -- weights: with the stack full of Apple Pie a finish only pays through its glaze: ~0.085% more income
     -- for good per finish with the glaze team. With every station busy, x1.71 speed is ~3.6 more finishes
@@ -2378,19 +2471,34 @@ function FU.score(role, list)
     if role == "wax" then return -math.log(1 - 0.5 * hs) + 0.001 * lm + 0.001 * math.log(speed) end
     return lm
 end
-function FU.best(role, pets, slots, keep) -- greedy fill, then swaps until nothing improves
-    keep = keep or {}
+function FU.kinds(pets) -- your pets as kinds (name + size) with how many of each
+    local by, list = {}, {}
+    for _, p in ipairs(pets) do
+        local k = p.name .. "|" .. (p.variant or "")
+        local e = by[k]
+        if not e then
+            e = { name = p.name, variant = p.variant or "", n = 0, ids = {} }
+            by[k] = e
+            list[#list + 1] = e
+        end
+        e.n = e.n + 1
+        e.ids[#e.ids + 1] = p.id
+    end
+    return list
+end
+function FU.bestKinds(role, kinds, slots, keepN) -- greedy fill, then swaps until nothing improves (counts respected)
     local chosen, used = {}, {}
-    local function listOf(idx) local l = {} for i, k in ipairs(idx) do l[i] = pets[k] end return l end
     local function sc(idx)
-        local v = FU.score(role, listOf(idx))
-        for _, k in ipairs(idx) do if keep[pets[k].id] then v = v + 1e-7 end end -- ties: stay as you are
+        local l, c = {}, {}
+        for i, k in ipairs(idx) do l[i] = kinds[k] c[k] = (c[k] or 0) + 1 end
+        local v = FU.score(role, l)
+        if keepN then for k, n in pairs(c) do v = v + 1e-7 * math.min(n, keepN[k] or 0) end end -- ties: stay as you are
         return v
     end
-    for _ = 1, math.min(slots, #pets) do
+    for _ = 1, slots do
         local bi, bs
-        for k = 1, #pets do
-            if not used[k] then
+        for k = 1, #kinds do
+            if (used[k] or 0) < kinds[k].n then
                 chosen[#chosen + 1] = k
                 local v = sc(chosen)
                 chosen[#chosen] = nil
@@ -2398,63 +2506,135 @@ function FU.best(role, pets, slots, keep) -- greedy fill, then swaps until nothi
             end
         end
         if not bi then break end
-        used[bi] = true
+        used[bi] = (used[bi] or 0) + 1
         chosen[#chosen + 1] = bi
+        if #kinds > 40 then task.wait() end
     end
     for _ = 1, 6 do
         task.wait() -- spread the search over frames
         local improved, cur = false, sc(chosen)
         for a = 1, #chosen do
-            for k = 1, #pets do
-                if not used[k] then
-                    local old = chosen[a]
+            for k = 1, #kinds do
+                local old = chosen[a]
+                if k ~= old and (used[k] or 0) < kinds[k].n then
                     chosen[a] = k
                     local v = sc(chosen)
-                    if v > cur + 1e-9 then used[old], used[k], cur, improved = nil, true, v, true
+                    if v > cur + 1e-9 then used[old], used[k], cur, improved = used[old] - 1, (used[k] or 0) + 1, v, true
                     else chosen[a] = old end
                 end
             end
         end
         if not improved then break end
     end
-    local ids = {}
-    for i, k in ipairs(chosen) do ids[i] = tostring(pets[k].id) end
-    return ids, FU.score(role, listOf(chosen))
+    local l = {}
+    for i, k in ipairs(chosen) do l[i] = kinds[k] end
+    return chosen, FU.score(role, l)
 end
-function FU.count(name, d, forFuse)
-    local regs, bigs = {}, 0
-    local arriving, seen = {}, {}
-    for _, id in ipairs(d.arriving or {}) do arriving[tostring(id)] = true end
-    for _, p in ipairs(d.pets or {}) do
-        seen[tostring(p.id)] = true
-        if p.name == name and not arriving[tostring(p.id)] then
-            if p.variant == "Big" then bigs = bigs + 1 elseif (p.variant or "") == "" then regs[#regs + 1] = p end
-        end
+function FU.best(role, pets, slots, keep) -- the best team from these pets: their ids and its score
+    keep = keep or {}
+    local kinds = FU.kinds(pets)
+    local keepN = {}
+    for k, e in ipairs(kinds) do for _, id in ipairs(e.ids) do if keep[tostring(id)] then keepN[k] = (keepN[k] or 0) + 1 end end end
+    local chosen, score = FU.bestKinds(role, kinds, slots, keepN)
+    local taken, ids = {}, {}
+    for _, k in ipairs(chosen) do -- the pets you already wear for it first
+        local e, pick = kinds[k], nil
+        for _, id in ipairs(e.ids) do if keep[tostring(id)] and not taken[id] then pick = id break end end
+        if not pick then for _, id in ipairs(e.ids) do if not taken[id] then pick = id break end end end
+        taken[pick] = true
+        ids[#ids + 1] = tostring(pick)
     end
-    if not forFuse then -- pets adopted a moment ago that your pet list does not show yet still count
-        for _, a in ipairs(PX.recent or {}) do
-            if a.name == name and not seen[a.id] and now() - a.at < 20 then
-                if a.variant == "Big" then bigs = bigs + 1 else regs[#regs + 1] = a end
+    return ids, score
+end
+function FU.dream() -- the plan: the best team for each role if you owned every pet in every size
+    local I = PX.info()
+    if not (I and type(I.Pets) == "table") then return nil end
+    local slots = FU.slots()
+    local sig = FU.needFor("") .. "|" .. FU.needFor("Big") .. "|" .. slots .. "|" .. CFG.TeamNormal .. CFG.TeamFull .. CFG.TeamGlaze .. CFG.TeamWax
+    if FU.dreamSig == sig and FU.dreamT then return FU.dreamT end
+    if FU.dreaming then return FU.dreamT end
+    FU.dreaming = true
+    local ok = pcall(function()
+        local kinds = {}
+        for _, name in ipairs(PX.order()) do
+            for _, v in ipairs({ "", "Big", "Huge" }) do kinds[#kinds + 1] = { name = name, variant = v, n = slots, ids = {} } end
+        end
+        local want, teams = {}, {}
+        for _, r in ipairs(FU.ROLES) do
+            if CFG[r[1]] ~= "" then
+                local chosen, sc = FU.bestKinds(r[2], kinds, slots)
+                local cnt, names = {}, {}
+                for _, k in ipairs(chosen) do cnt[k] = (cnt[k] or 0) + 1 end
+                for k, c in pairs(cnt) do
+                    local e = kinds[k]
+                    want[e.name] = want[e.name] or { [""] = 0, Big = 0, Huge = 0 }
+                    want[e.name][e.variant] = math.max(want[e.name][e.variant], c)
+                    names[#names + 1] = (c > 1 and (c .. "x ") or "") .. PX.nice(e.name, e.variant)
+                end
+                table.sort(names)
+                teams[#teams + 1] = { role = r[2], team = CFG[r[1]], names = names, score = sc }
             end
         end
-    end
-    return regs, bigs
+        FU.dreamT, FU.dreamTeams, FU.dreamSig = want, teams, sig
+    end)
+    FU.dreaming = false
+    if not ok then FU.dreamSig = nil end
+    return FU.dreamT
 end
-function FU.goal(name) local w = CFG.Pets[name] return w and tonumber(w.f) or 0 end
-function FU.wantMore(name, variant, d) -- smart buying: only what the Big goal still needs
-    local goal = FU.goal(name)
-    if goal <= 0 or not d then return true end
-    local regs, bigs = FU.count(name, d)
-    if bigs >= goal then return false end
-    if variant == "Big" then return true end
-    return #regs < FU.need() * (goal - bigs)
+function FU.owned(d) -- your pets (not the ones still arriving), as { id, name, variant, named }
+    local arriving, out = {}, {}
+    for _, id in ipairs(d and d.arriving or {}) do arriving[tostring(id)] = true end
+    for _, p in ipairs(d and d.pets or {}) do
+        if not arriving[tostring(p.id)] then
+            out[#out + 1] = { id = tostring(p.id), name = p.name, variant = p.variant or "", named = p.named or (p.nickname and p.nickname ~= "") }
+        end
+    end
+    return out
+end
+function FU.have(name, d, withRecent) -- how many of each size you own, and that in copies
+    local h = { [""] = 0, Big = 0, Huge = 0 }
+    local seen = {}
+    for _, p in ipairs(FU.owned(d)) do
+        seen[p.id] = true
+        if p.name == name and h[p.variant] then h[p.variant] = h[p.variant] + 1 end
+    end
+    if withRecent then -- pets adopted a moment ago that your pet list does not show yet still count
+        for _, a in ipairs(PX.recent or {}) do
+            if a.name == name and not seen[a.id] and now() - a.at < 20 and h[a.variant or ""] then h[a.variant or ""] = h[a.variant or ""] + 1 end
+        end
+    end
+    return h, h[""] + h.Big * FU.unit("Big") + h.Huge * FU.unit("Huge")
+end
+function FU.goal(name) -- the plan for this pet: { [""] = n, Big = n, Huge = n } and that in copies (nil: no plan)
+    local w = CFG.Pets[name]
+    if w and tonumber(w.f) == -1 then return nil, 0 end -- KEEP: never fused, bought as ticked
+    local plan = FU.dream()
+    local g = plan and plan[name]
+    if not g then return nil, 0 end
+    return g, g[""] + g.Big * FU.unit("Big") + g.Huge * FU.unit("Huge")
+end
+function FU.wantMore(name, variant, d) -- smart buying: only what the plan still needs
+    if not d then return true end
+    local w = CFG.Pets[name]
+    if w and tonumber(w.f) == -1 then return true end
+    local g, need = FU.goal(name)
+    if not g then return true end -- (in no best team: bought as you ticked it)
+    local _, have = FU.have(name, d, true)
+    return have < need + FU.need() -- (one fuse's worth of slack: a fuse may have to wait for an extra copy)
 end
 function FU.status(name, d)
-    local goal = FU.goal(name)
-    if goal <= 0 or not d then return nil end
-    local regs, bigs = FU.count(name, d)
-    if bigs >= goal then return ("Big %d/%d done"):format(bigs, goal) end
-    return ("%d/%d to fuse, Big %d/%d"):format(math.min(#regs, FU.need()), FU.need(), bigs, goal)
+    if not d then return nil end
+    local w = CFG.Pets[name]
+    if w and tonumber(w.f) == -1 then return "KEEP: never fused" end
+    local g, need = FU.goal(name)
+    if not g then return FU.dream() and "in no best team: bought as ticked" or nil end
+    local h, have = FU.have(name, d)
+    local parts = {}
+    if g.Huge > 0 then parts[#parts + 1] = ("Huge %d/%d"):format(h.Huge, g.Huge) end
+    if g.Big > 0 then parts[#parts + 1] = ("Big %d/%d"):format(h.Big, g.Big) end
+    if g[""] > 0 then parts[#parts + 1] = ("plain %d/%d"):format(h[""], g[""]) end
+    local tail = FU.blocked and FU.blocked[name] and (" | " .. FU.blocked[name]) or ""
+    return ("%s | %d/%d copies%s"):format(table.concat(parts, " "), math.min(have, need), need, tail)
 end
 function FU.wear(ids) -- put on exactly these pets
     local want = {}
@@ -2574,45 +2754,98 @@ function FU.rebuild(why)
     FU.buildMsg = okAll and ("teams rebuilt " .. os.date("%H:%M")) or "a team could not be saved - see the log"
     return okAll
 end
+function FU.roleScores(pets) -- the best score each role can reach with these pets (cached per pet list)
+    local sig = {}
+    for _, p in ipairs(pets) do sig[#sig + 1] = p.name .. p.variant end
+    table.sort(sig)
+    sig = table.concat(sig, ",")
+    FU.rsCache = FU.rsCache or {}
+    if FU.rsCache[sig] then return FU.rsCache[sig] end
+    local kinds, slots, out = FU.kinds(pets), FU.slots(), {}
+    for _, r in ipairs(FU.ROLES) do
+        if CFG[r[1]] ~= "" then
+            local _, v = FU.bestKinds(r[2], kinds, slots)
+            out[r[2]] = v
+        end
+    end
+    FU.rsN = (FU.rsN or 0) + 1
+    if FU.rsN > 40 then FU.rsCache, FU.rsN = {}, 0 end
+    FU.rsCache[sig] = out
+    return out
+end
+function FU.noLoss(pets, ids, name, newVar) -- after this fuse, is every role's best team at least as good?
+    local gone, after = {}, {}
+    for _, id in ipairs(ids) do gone[id] = true end
+    for _, p in ipairs(pets) do if not gone[p.id] then after[#after + 1] = p end end
+    after[#after + 1] = { id = "new", name = name, variant = newVar }
+    local b, a = FU.roleScores(pets), FU.roleScores(after)
+    local gain = false
+    for role, v in pairs(b) do
+        if (a[role] or -math.huge) < v - 1e-6 then return false, role end
+        if (a[role] or 0) > v + 1e-6 then gain = true end
+    end
+    return true, gain
+end
+FU.ROLENAME = { farm = "farm", full = "full", glaze = "glaze", wax = "wax" }
 function FU.fuseTick()
     if not CFG.AutoFuse or TM.editing then return end
     local d = PX.data()
     if not d then return end
-    local need = FU.need()
+    local pets = FU.owned(d)
     local inTeam, eq = {}, {}
     for _, t in ipairs(d.teams or {}) do for _, id in ipairs(t.pets or {}) do inTeam[tostring(id)] = true end end
     for _, id in ipairs(d.equipped or {}) do eq[tostring(id)] = true end
-    FU.failUntil = FU.failUntil or {}
-    for name, w in pairs(CFG.Pets) do
-        local goal = tonumber(w.f) or 0
-        local regs, bigs = FU.count(name, d, true)
-        if goal > 0 and bigs < goal and #regs >= need and now() >= (FU.failUntil[name] or 0) then
-            -- spare copies first: not worn, not in a team, not one you named
-            table.sort(regs, function(a, b)
-                local ra = (eq[tostring(a.id)] and 4 or 0) + (inTeam[tostring(a.id)] and 2 or 0) + (a.named and 1 or 0)
-                local rb = (eq[tostring(b.id)] and 4 or 0) + (inTeam[tostring(b.id)] and 2 or 0) + (b.named and 1 or 0)
-                if ra ~= rb then return ra < rb end
-                return tostring(a.id) < tostring(b.id)
-            end)
-            local ids, worn = {}, {}
-            for i = 1, need do
-                ids[i] = tostring(regs[i].id)
-                if eq[ids[i]] then worn[#worn + 1] = ids[i] end
+    FU.failUntil, FU.blocked = FU.failUntil or {}, {}
+    for _, name in ipairs(PX.order()) do
+        local g = FU.goal(name)
+        if g then
+            local h = FU.have(name, d)
+            for _, v in ipairs({ "Big", "" }) do -- Bigs -> Huge first, then regulars -> Big
+                local nv, need = FU.nextOf(v), FU.needFor(v)
+                -- toward the plan: a Huge it still wants, or a Big it wants (or needs for a Huge)
+                local toward = (v == "Big" and h.Huge < g.Huge)
+                    or (v == "" and h.Big < g.Big + FU.needFor("Big") * math.max(0, g.Huge - h.Huge))
+                local copies = {}
+                for _, p in ipairs(pets) do if p.name == name and p.variant == v then copies[#copies + 1] = p end end
+                if toward and #copies >= need and now() >= (FU.failUntil[name .. v] or 0) then
+                    -- spare copies first: not worn, not in a team, not one you named
+                    table.sort(copies, function(a, b)
+                        local ra = (eq[a.id] and 4 or 0) + (inTeam[a.id] and 2 or 0) + (a.named and 1 or 0)
+                        local rb = (eq[b.id] and 4 or 0) + (inTeam[b.id] and 2 or 0) + (b.named and 1 or 0)
+                        if ra ~= rb then return ra < rb end
+                        return a.id < b.id
+                    end)
+                    local ids, worn, busy = {}, {}, false
+                    for k = 1, need do
+                        ids[k] = copies[k].id
+                        if eq[ids[k]] then worn[#worn + 1] = ids[k] end
+                        if eq[ids[k]] or inTeam[ids[k]] then busy = true end
+                    end
+                    local ok, why = FU.noLoss(pets, ids, name, nv)
+                    if not ok then
+                        FU.blocked[name] = ("%s waits: it would weaken the %s team now"):format(nv, FU.ROLENAME[why] or tostring(why))
+                    elseif busy and not FU.quiet() then
+                        FU.blocked[name] = nv .. " fuse waits for a quiet moment"
+                        FU.fuseMsg = ("%s %s waits: a wax finishes soon"):format(nv, PX.nice(name))
+                        return
+                    else
+                        TM.editing, TM.editingSince = true, now()
+                        for _, id in ipairs(worn) do PX.call("unequip", id) task.wait(0.3) end
+                        local r = PX.call("fuse", { ids = ids })
+                        TM.editing, TM.nextTry = false, 0
+                        if type(r) == "table" and r.ok then
+                            FU.fused = FU.fused + 1
+                            FU.dirtyAt = now()
+                            note(("FUSED %d %s -> %s"):format(need, PX.nice(name, v), PX.nice(name, nv)))
+                            FU.fuseMsg = ("fused a %s %s"):format(PX.nice(name, nv), os.date("%H:%M"))
+                        else
+                            FU.failUntil[name .. v] = now() + 120
+                            note(("fuse %s failed: %s"):format(PX.nice(name, v), type(r) == "table" and tostring(r.reason or "no reason given") or "no answer"))
+                        end
+                        return -- one fuse at a time; the pet list changes under us
+                    end
+                end
             end
-            TM.editing, TM.editingSince = true, now()
-            for _, id in ipairs(worn) do PX.call("unequip", id) task.wait(0.3) end
-            local r = PX.call("fuse", { ids = ids })
-            TM.editing, TM.nextTry = false, 0
-            if type(r) == "table" and r.ok then
-                FU.fused = FU.fused + 1
-                FU.dirtyAt = now()
-                note(("FUSED %d %s -> Big %s"):format(need, PX.nice(name), PX.nice(name)))
-                FU.fuseMsg = ("fused a Big %s %s"):format(PX.nice(name), os.date("%H:%M"))
-            else
-                FU.failUntil[name] = now() + 120
-                note(("fuse %s failed: %s"):format(PX.nice(name), type(r) == "table" and tostring(r.reason or "no reason given") or "no answer"))
-            end
-            return -- one fuse at a time; the pet list changes under us
         end
     end
 end
@@ -2859,6 +3092,30 @@ function PF.litPrune() -- held bulbs whose base has left the world are dropped, 
     for d, f in pairs(PF.lit) do
         if not f:IsDescendantOf(game) then PF.lit[d] = nil pcall(function() d:Destroy() end) end
     end
+end
+-- ---- your game passes: what each one changes and what the farm does with it (player attributes)
+function PF.passText()
+    local A = function(k) return plr:GetAttribute(k) end
+    local L = {}
+    local function row(on, text) L[#L + 1] = (on and "[x] " or "[  ] ") .. text end
+    row(A("VIP") == true, "VIP: money x1.5, offline +50%")
+    row(A("AutoRoll") == true, "Auto Roll: the farm sets what it stops on" .. (A("AutoRoll") == true and "" or " (without it nothing rolls: the farm never pulls)"))
+    local fast = A("SuperFastWax") == true and "Super Fast Wax: waxes take half the time"
+        or (A("FastWax") == true and "Fast Wax: waxes take 2/3 of the time") or "Fast Wax / Super Fast Wax: no"
+    row(A("FastWax") == true or A("SuperFastWax") == true, fast .. " (the farm times by the game's own timers)")
+    local tier = (A("FusePass") == true and "Fuse Pass") or (A("FusePass4") == true and "Fuse Pass 4") or (A("FusePass5") == true and "Fuse Pass 5") or nil
+    row(tier ~= nil, ("%s: %d per fuse, %d Bigs -> Huge"):format(tier or "Fuse pass", FU.needFor(""), FU.needFor("Big")))
+    local d = PX.data()
+    local bag = tonumber(d and d.maxOwned) or 60
+    row(A("PetInventory50") == true or A("PetInventory100") == true, ("Pet bag: %d / %d pets%s"):format(d and #(d.pets or {}) or 0, bag,
+        (A("PetInventory50") == true and A("PetInventory100") == true) and " (both bag passes)" or ""))
+    local eqb = tonumber(A("PetEquipBought")) or 0
+    row(eqb > 0, ("Pet slots: %d worn (%d of 3 extra slots bought)"):format(FU.slots(), eqb))
+    local cr = tonumber(A("PetWishCredits")) or 0
+    if cr > 0 then row(true, ("%d free wishes: used before cash"):format(cr)) end
+    local fa = tonumber(A("FinishAllCredits")) or 0
+    if fa > 0 then row(true, ("%d finish-all credits (yours to use)"):format(fa)) end
+    return table.concat(L, "\n")
 end
 function PF.extras(on)
     pcall(PF.quietPlots, on and S.plot ~= nil)
@@ -4705,13 +4962,16 @@ end
 -- ---- PETS: the switches and the live line; the list goes into U.petList
 do
     local P = U.pet
-    U.heading(P, "Pets", "adopt from the pen, keep wishes going, fuse Bigs")
+    U.heading(P, "Pets", "adopt, wish, fuse Bigs and Huges")
     local st = U.card(P, "Automatic")
     U.pbT = U.switch(st, "AUTO ADOPT: OFF", "Auto adopt", "pets marked BUY, from the pen")
-    U.pwT = U.switch(st, "AUTO WISH: OFF", "Auto wish", "keep wishes going for pets marked WISH")
-    U.pfT = U.switch(st, "AUTO FUSE: OFF", "Auto fuse", "copies into Bigs, up to each goal")
+    U.pwT = U.switch(st, "AUTO WISH: OFF", "Auto wish", "WISH pets, stacked to x5")
+    U.pfT = U.switch(st, "AUTO FUSE: OFF", "Auto fuse", "Bigs and Huges, never weakening a team")
     U.pInfo = U.grow(st, 10, C.dim)
-    U.note(st, "BUY adopt it  -  ANY / BIG only its Big  -  WISH 2x its price, 20 min  -  FUSE how many Bigs (7 = one Huge, you fuse that)", 28)
+    U.note(st, "BUY adopt it  -  ANY / BIG only its Big  -  WISH keep a wish going  -  AUTO fuse it as the plan says  /  KEEP never fuse it")
+    local pl = U.card(P, "The plan", "best teams with every pet")
+    U.planInfo = U.grow(pl, 10, C.text)
+    U.note(pl, "Copies are bought and wished for until you have what these teams need. A fuse only happens when every team is at least as good after it, so nothing gets weaker on the way.")
     U.petList = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
         LayoutOrder = U.nextIn(P) }, P)
     U.list(U.petList, 4)
@@ -4801,6 +5061,8 @@ do
     U.pfMemSet = button(rw, "SET", C.accent, 10, UDim2.new(0.75, 4, 0, 0), UDim2.new(0.25, -4, 1, 0))
     U.pfInfo = U.line(pf, C.good)
     U.note(pf, "Everything here is undone when switched off or on KILL. Rejoin above: this phone struggles past ~1 GB; 0 = never.", 24)
+    local gp = U.card(P, "Your game passes", "read from the game")
+    U.passInfo = U.grow(gp, 10, C.text)
     local ab = U.card(P, "About")
     U.note(ab, "CHURN " .. VERSION .. " for Stack A Butter Squishy. The round C button hides or shows this window - hold and drag it anywhere. Drag this window by its top bar. The farm keeps running either way.", 40)
 end
@@ -5007,20 +5269,17 @@ function PX.paintRow(name)
     local r = PX.rows and PX.rows[name]
     if not r then return end
     local w = CFG.Pets[name] or {}
-    local f = tonumber(w.f) or 0
+    local keep = tonumber(w.f) == -1
     U.flag(r.b, w.b, C.good)
     U.flag(r.g, w.g, C.accent, w.g and "BIG" or "ANY")
     U.flag(r.w, w.w, C.warn)
-    U.flag(r.f, f > 0, C.good, f >= 7 and "7 BIG/HUGE" or (f > 0 and (f .. " BIG") or "FUSE"))
-    if r.row then r.row.BackgroundColor3 = (w.b or w.w or f > 0) and C.lit or C.raise end
+    U.flag(r.f, not keep, C.good, keep and "KEEP" or "AUTO")
+    if r.row then r.row.BackgroundColor3 = (w.b or w.w) and C.lit or C.raise end
 end
 function PX.flag(name, f)
     local w = CFG.Pets[name] or {}
-    if f == "f" then
-        -- FUSE -> 1 BIG -> 2 BIG -> 3 BIG -> 7 BIG (what one Huge takes; you fuse the Huge) -> FUSE
-        local nextOf = { [0] = 1, [1] = 2, [2] = 3, [3] = 7 }
-        local n = nextOf[tonumber(w.f) or 0] or 0
-        w.f = n > 0 and n or nil
+    if f == "f" then -- AUTO (fused into Bigs and Huges as the plan says, never weakening a team) <-> KEEP (never fused)
+        w.f = tonumber(w.f) ~= -1 and -1 or nil
     elseif w[f] then w[f] = nil else w[f] = true end
     CFG.Pets[name] = (w.b or w.g or w.w or w.f) and w or nil
     PX.paintRow(name)
@@ -5033,6 +5292,25 @@ function PX.paintAll()
         setToggle(U.pfT, CFG.AutoFuse, "AUTO FUSE: ON", "AUTO FUSE: OFF")
     end
 end
+function FU.planText(d) -- the Pets tab's plan card (only what is worked out already: never waits here)
+    local plan = FU.dreamT
+    if not plan then return "working the plan out..." end
+    local nb, nh = FU.needFor(""), FU.needFor("Big")
+    local L = { ("%d copies make a Big, %d Bigs a Huge | %d pets worn"):format(nb, nh, FU.slots()) }
+    for _, t in ipairs(FU.dreamTeams or {}) do L[#L + 1] = t.team:upper() .. ": " .. table.concat(t.names, ", ") end
+    local hg, bg, cp = 0, 0, 0
+    for name, g in pairs(plan) do
+        local h, have = FU.have(name, d)
+        local _, need = FU.goal(name)
+        hg = hg + math.max(0, g.Huge - h.Huge)
+        bg = bg + math.max(0, g.Big - h.Big)
+        cp = cp + math.max(0, need - have)
+    end
+    L[#L + 1] = (hg + bg + cp == 0) and "every planned pet is there"
+        or ("to go: %d Huge, %d Big | %d more copies to find"):format(hg, bg, cp)
+    if FU.fuseMsg ~= "" then L[#L + 1] = FU.fuseMsg end
+    return table.concat(L, "\n")
+end
 function PX.live() -- once a second while the tab is open: wish timers and status lines
     if not PX.built then PX.build() return end
     if now() - (PX.liveAt or 0) < 1 then return end
@@ -5044,6 +5322,7 @@ function PX.live() -- once a second while the tab is open: wish timers and statu
         r.desc.Text = (w[n] and ("wishing %dm | "):format(math.ceil(w[n] / 60)) or "") .. (st and (st .. " | ") or "") .. r.boostText
         r.desc.TextColor3 = w[n] and C.text or C.dim
     end
+    if U.planInfo then U.put(U.planInfo, FU.planText(d)) end
     local cr = tonumber(plr:GetAttribute("PetWishCredits")) or 0
     U.pInfo.Text = ("pets %d/%d | cash $%s%s\nadopt: %s\nwish: %s"):format(d and #(d.pets or {}) or 0, d and tonumber(d.maxOwned) or 60,
         fmt(PX.money()), cr > 0 and (" | free wishes " .. cr) or "", PX.buyMsg ~= "" and PX.buyMsg or "-", PX.wishMsg ~= "" and PX.wishMsg or "-")
@@ -5095,7 +5374,7 @@ function PX.build()
                 sb.AutoButtonColor = true
                 return sb
             end
-            local b, g, wb, fb = small("BUY", -164, 30), small("ANY", -131, 30), small("WISH", -98, 34), small("FUSE", -61, 56)
+            local b, g, wb, fb = small("BUY", -164, 30), small("ANY", -131, 30), small("WISH", -98, 34), small("AUTO", -61, 56)
             local name = n
             b.MouseButton1Click:Connect(function() PX.flag(name, "b") end)
             g.MouseButton1Click:Connect(function() PX.flag(name, "g") end)
@@ -5665,6 +5944,7 @@ local function refresh()
     if U.pet.Visible then PX.live() end
     if U.set.Visible then
         U.put(U.pfInfo, ("%d fps  |  memory %d MB (peak %d)"):format(math.floor(PF.fps + 0.5), PF.mem, PF.memPeak))
+        if U.passInfo then U.put(U.passInfo, PF.passText()) end
     end
     if U.team.Visible then TM.paint() end
     if U.farm.Visible then

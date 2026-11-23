@@ -62,8 +62,12 @@ A dark window with a gold accent. Drag it by its top bar. The round gold **C** b
 
 ### 🐾 Pets
 - **BUY:** a pet with BUY ticked is adopted from Biscuit's pen the moment one shows up, from anywhere on the map. ANY / BIG picks whether only the Big version counts. It stops when your pet bag is full or you are short of cash.
-- **WISH:** keeps a wish going on that pet in your server, re-wishing within about a second of the old one ending. A pet someone else already wished on is left alone until their wish ends. Free wishes are used before cash.
-- **FUSE** (1 / 2 / 3 / 7 Big): how many Big copies you want of that pet. Buying and wishing for it stop once there are enough copies for that goal. AUTO FUSE turns copies into Bigs, spare copies first and never one you are wearing if it can help it. 7 Bigs is what one Huge takes; you fuse the Huge yourself.
+- **WISH:** keeps a wish going on that pet in your server, re-wishing within about a second of the old one ending, and **stacks it to the game's 5** (wishing again on a running wish: x46 chance instead of x10, for a tiny share of your cash). Free wishes are used before cash.
+- **The plan** (Pets tab): the best team for every role if you owned every pet in every size, using the game's own rules:
+  - **Fuse passes:** 3 copies per fuse with the Fuse Pass (or Fuse Pass 4), 5 with Fuse Pass 5, else 7. The same number of Bigs makes a Huge.
+  - **Huge boosts:** a Huge is x1.75 (a Big x1.5), and wearing a Huge raises the limit of its boost kind: income 50% → 60%, luck +3 → +4, Eagle find x3 → x3.5, roll speed 40% → 50%, glaze 25% → 30%, glaze-up 50% → 60%, head start 40% → 50%, wax speed 25% → 30%, long wax 30% → 40%. A Star Whale may also go 10% past the roll-speed limit.
+  - Buying and wishing go on for a planned pet until you own what the plan needs (a Big = 3 copies, a Huge = 9 with the pass), plus one fuse's worth. A ticked pet that is in no best team is bought as you ticked it.
+- **AUTO / KEEP** (each pet): AUTO fuses it into Bigs and Huges as the plan says. A fuse happens only when **every team is at least as good afterwards**: if fusing your 3 Big Goats into a Huge would drop the wax team's head start, it waits until there are more Goats. Spare copies are used first, and a fuse that takes a pet out of a team waits for a quiet moment. KEEP never fuses that pet.
 - **Closes the "Name your pet" window** after each adopt, the way the game's Later button does.
 
 ### 👥 Teams
@@ -78,7 +82,7 @@ A dark window with a gold accent. Drag it by its top bar. The round gold **C** b
 ### 🤝 Server
 - **HELP WAXES:** between its own jobs it steps over to each wax in your server it is allowed to help and helps once (10% off their wax). It keeps the game's rules: long waxes only, one help each, under 6 helpers, over a minute left, and never someone who turned helping off.
 - **GUILD CALLS:** answers guildmates' "Need help with a wax" calls from wherever you are.
-- **CAMPFIRE** (on by default): every weather event brings a campfire with 6 log seats, and each camper adds +50% cash for everyone sitting. The farm takes a free seat and carries on with everything else from it.
+- **CAMPFIRE** (on by default): every weather event brings a campfire with 6 log seats, and each camper adds +50% cash for everyone sitting (5 campers = +250%). The farm goes over to the fire (the logs only load near it), takes a free log and sits. The game's seat holds you in place, so jobs that need walking wait until the fire goes out (the money waits in the collector; pets, wishes and teams carry on).
 - **GHOST:**
   - **OFF:** plain teleports.
   - **HELP:** helps are sent from inside the waxing butter.
@@ -94,6 +98,7 @@ A dark window with a gold accent. Drag it by its top bar. The round gold **C** b
 - **Show feed:** the show's effects as they happen.
 
 ### ⚙ Settings
+- **Your game passes:** what you own (VIP, Auto Roll, Fast / Super Fast Wax, Fuse Pass tier, pet bag, pet slots, free wishes) and what the farm does with each.
 - **Configs:** save and load named configs, and pick one to load on launch.
 - **Starting:** START FARMING ON LOAD, and an autoexec loader that restarts the newest version after a rejoin.
 - **AUTO REJOIN:** comes back by itself after a disconnect or a server restart.

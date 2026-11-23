@@ -106,7 +106,7 @@ A dark window with a gold accent. Drag it by its top bar. The round gold **C** b
 
   | switch | what it does |
   | --- | --- |
-  | NO ANIMATIONS | switches off the game's per-frame eye candy: the stack squish, the glaze rainbow, the conveyor, bounce pads, pets walking, sign and skin animations. On a phone, about 36 fps became 48–55. |
+  | NO ANIMATIONS | switches off the game's per-frame eye candy: the stack squish, the glaze rainbow, the conveyor, bounce pads, pets walking, sign and skin animations. On a phone, about 36 fps became 48–55. Pets jump straight to where they were walking instead, so an adopted pet still reaches its owner's base (before, every adoption in the server stayed frozen at the pen). |
   | LITE MODE | switches off the game's heaviest extras: the roll reel (20-30 whole butters cloned for every roll), fireworks and confetti (each firework also shook the camera), toppings being re-added whenever you move between floors or bases (stacks are drawn plain instead), toppings being built for other players' bases as you walk up to them, fairy lights, the leaderboards, floating labels, sparkles and lighting extras. On a phone the worst frames went from 0.7 s to under 0.1 s. |
   | BASES (tap to cycle) | ALL DRAWN → OTHERS HIDDEN → ALL HIDDEN. While other bases are hidden, the butters in their stacks are also dropped from your phone's memory (43,000+ parts on a full server); they come back after a rejoin. Farming and helping keep working. |
   | FPS CAP | 30 / 15 / 10, keeps the phone cool |

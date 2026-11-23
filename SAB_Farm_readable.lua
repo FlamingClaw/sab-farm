@@ -4105,14 +4105,39 @@ end
 -- ---- the event campfire
 -- While a weather event runs the server puts a campfire with 6 log seats near spawn (NightSeats).
 -- Sitting on one (its prompt) gives +50% cash for every camper by the fire, you included
--- (CampfireBoost; 4 campers = +200%, seen Nov 19). Moving around while seated keeps it, so the farm
--- sits down once a seat is free and carries on with everything else from the seat.
+-- (CampfireBoost; 4 campers = +200%, seen Nov 19; 5 = +250% on Nov 22).
+-- Nov 22: the logs are plain Parts now, run by the game's SitService: a taken log has the attribute
+-- Occupant = that player's UserId (you: SitServiceSeated = true), and the seat HOLDS you - a teleport
+-- snaps straight back. So while seated, jobs that need walking wait (the money waits in the
+-- collector; pets, wishes and teams go on), and the crate give-up clock stops. Far from spawn the logs
+-- are not loaded on the phone at all (streaming): the farm walks over to load them first.
 CF.n, CF.fails, CF.nextAt, CF.msg, CF.lost = 0, 0, 0, "no campfire right now", 0
+function CF.uid() local ok, id = pcall(function() return plr.UserId end) return ok and id or 0 end
 function CF.seat()
+    local ns = WS:FindFirstChild("NightSeats")
+    if ns then
+        for _, st in ipairs(ns:GetChildren()) do
+            if st.Name == "LogSeat" and st:GetAttribute("Occupant") == CF.uid() then return st end
+        end
+    end
     local c = plr.Character
     local h = c and c:FindFirstChildOfClass("Humanoid")
     local sp = h and h.SeatPart
     return (sp and sp.Name == "LogSeat") and sp or nil
+end
+function CF.logs() -- the log seats loaded on this phone: all, and the free ones
+    local ns = WS:FindFirstChild("NightSeats")
+    local all, free = {}, {}
+    for _, st in ipairs(ns and ns:GetChildren() or {}) do
+        local p = st.Name == "LogSeat" and st:FindFirstChildOfClass("ProximityPrompt")
+        if p then
+            all[#all + 1] = st
+            local occ = st:GetAttribute("Occupant")
+            local taken = (occ ~= nil and occ ~= 0 and occ ~= "") or (st:IsA("Seat") and st.Occupant ~= nil)
+            if not taken and p.Enabled then free[#free + 1] = { st = st, p = p } end
+        end
+    end
+    return all, free
 end
 function CF.due()
     if not (CFG.Campfire and S.running) or now() < CF.nextAt then return false end
@@ -4125,7 +4150,7 @@ function CF.due()
     CF.wasOn = true
     if CF.seat() then
         CF.sitAt = CF.sitAt or now()
-        CF.msg = ("sitting at the campfire: +%s%% cash"):format(tostring(plr:GetAttribute("CampfireBoost") or "?"))
+        CF.msg = ("at the campfire: +%s%% cash (jobs that walk wait)"):format(tostring(plr:GetAttribute("CampfireBoost") or "?"))
         return false
     end
     if CF.sitAt then -- we were sitting and are not any more
@@ -4141,16 +4166,23 @@ end
 function CF.sit()
     local ns, c = WS:FindFirstChild("NightSeats"), char()
     if not ns or not c then return end
-    local pos, free = c.HumanoidRootPart.Position, {}
-    for _, st in ipairs(ns:GetChildren()) do
-        local p = st:IsA("Seat") and st.Occupant == nil and st:FindFirstChildOfClass("ProximityPrompt")
-        if p then free[#free + 1] = { st = st, p = p } end
+    local all, free = CF.logs()
+    if #all == 0 then -- not loaded on this phone (too far from spawn): go over so they stream in
+        local fire = WS:FindFirstChild("NightCampfire")
+        local okP, fp = pcall(function() return fire:GetPivot().Position end)
+        if not okP then CF.nextAt, CF.msg = now() + 10, "the campfire is not loaded yet" return end
+        PF.unpin(true)
+        pcall(function() plr:RequestStreamAroundAsync(fp, 3) end)
+        teleport(c, fp + Vector3.new(0, 3, 9), fp)
+        waitFor(function() all, free = CF.logs() return #all > 0 end, 6)
+        if #all == 0 then CF.nextAt, CF.msg = now() + 15, "the campfire's logs did not load - trying again soon" return end
     end
-    if #free == 0 then CF.nextAt, CF.msg = now() + 10, "the campfire is full - waiting for a seat" return end
+    local pos = c.HumanoidRootPart.Position
+    if #free == 0 then CF.nextAt, CF.msg = now() + 10, "the campfire is full - waiting for a log" return end
     table.sort(free, function(a, b) return (a.st.Position - pos).Magnitude < (b.st.Position - pos).Magnitude end)
     local st, p = free[1].st, free[1].p
     PF.unpin(true)
-    local cf = st.CFrame
+    local cf = st:IsA("BasePart") and st.CFrame or CFrame.new(st:GetPivot().Position)
     teleport(c, cf.Position + cf.LookVector * 2 + Vector3.new(0, 2.5, 0), cf.Position)
     nap(0.25)
     local ok = activate(p, function() return CF.seat() ~= nil end)
@@ -4436,6 +4468,14 @@ local function runAction(label, fn, ...)
     if not ok and e ~= KILLED then note("ERR " .. tostring(e)) end
 end
 local function step()
+    if CFG.Campfire and CF.seat() then -- the log holds you: walking jobs wait, the crate clock stops
+        if CRATE.at and CF.tickAt then CRATE.at = CRATE.at + (now() - CF.tickAt) end
+        CF.tickAt = now()
+        CF.due() -- (keeps its message fresh)
+        S.reason, S.level = CF.msg, "ok"
+        return
+    end
+    CF.tickAt = nil
     local act, txt, lvl = decide()
     S.reason, S.level = txt, lvl
     if act == "place" then runAction("waxing...", TM.place)

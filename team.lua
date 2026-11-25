@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 4 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 5 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -40,6 +40,12 @@ for n, v in pairs(SI) do
 end
 T.GOOD = GOOD
 local function isGood(n) return n ~= nil and GOOD[key(n)] == true end
+-- Limited butters (the pass's Pecan Pie, the paid Turkey): never sold anywhere, never given to an
+-- alt; an alt hands them straight to the main
+local LIMITED = {}
+for n, v in pairs(SI) do if type(v) == "table" and v.rarity == "Limited" then LIMITED[key(n)] = true end end
+local function isLimited(n) return n ~= nil and LIMITED[key(n)] == true end
+T.LIMITED = LIMITED
 
 ---------------------------------------------------------------- my status
 local function myPlot() local SAB = G.SAB return SAB and SAB.S and SAB.S.plot end
@@ -89,7 +95,7 @@ local function writeMe()
     "seated=" .. tostring(seated()), "open=" .. tostring(P.open or 0),
     "rank=" .. tostring(P.rank or ""), "points=" .. tostring(P.points or ""),
     "boost=" .. tostring(LP:GetAttribute("FriendBoost") or 0), "gifts=" .. T.gifts,
-    "mode=" .. tostring(T.mode or ""),
+    "mode=" .. tostring(T.mode or ""), "ready=" .. tostring(LP:GetAttribute("ThanksgivingReady") or 0),
   }
   pcall(writefile, DIR .. "/" .. T.me .. ".txt", table.concat(L, "\n"))
 end
@@ -112,6 +118,22 @@ function T.peers()
   return out
 end
 
+---------------------------------------------------------------- rank rewards (every account)
+T.claimed = 0
+local function claimRanks()
+  local n = tonumber(LP:GetAttribute("ThanksgivingReady")) or 0
+  if n <= 0 then return end
+  local r = RS.Remotes:FindFirstChild("ThanksgivingAction")
+  local ok, res = pcall(function() return r:InvokeServer("claimAll") end)
+  if ok and type(res) == "table" and res.ok then
+    T.claimed = T.claimed + n
+    note("TEAM: claimed " .. n .. " pass rank reward(s): " .. tostring(res.text or ""))
+    T.refreshPass()
+  else
+    note("TEAM: rank reward claim failed: " .. tostring(type(res) == "table" and (res.reason or res.text) or res))
+  end
+end
+
 ---------------------------------------------------------------- alt rules
 local function altTick()
   local SAB = G.SAB
@@ -123,6 +145,7 @@ local function altTick()
   local Tg = C.Targets
   for k in pairs(Tg) do if not GOOD[k] and not (P.need and ALL[k]) then Tg[k] = nil end end
   for k in pairs(GOOD) do Tg[k] = true end
+  for k in pairs(LIMITED) do Tg[k] = true end
   if P.need then for k in pairs(ALL) do Tg[k] = true end end
   -- the campfire seat holds every walking job: up while quests are open or a gift waits for a station
   local wantUp = (P.live and P.open > 0) or (giftWaiting and freeStations() > 0)
@@ -200,9 +223,18 @@ end
 local function mainTick()
   local SAB = G.SAB
   local C = SAB.CFG
-  -- keep (never sell) every good butter: they go to the alts
+  -- keep (never sell) every good butter: they go to the alts; Limited ones stay with the main
   for k in pairs(GOOD) do C.Targets[k] = true end
+  for k in pairs(LIMITED) do C.Targets[k] = true end
   local held = LP:GetAttribute("SquishyEquipped")
+  -- an alt is bringing a Limited (Pecan Pie): keep the hands free for it, no feeding meanwhile
+  for _, s in ipairs(T.peers()) do
+    if s.fresh and isLimited(s.holding) then
+      T.mode = s.name .. " is bringing " .. tostring(s.holding) .. " - hands kept free"
+      if held and isGood(held) then local a = pickAlt() if a then give(a) end end
+      return
+    end
+  end
   local alt = T.feed.on and pickAlt() or nil
   if isGood(held) and alt then
     give(alt)
@@ -249,6 +281,48 @@ local function mainTick()
   end
 end
 
+---------------------------------------------------------------- alt: a Limited in hand goes to the main
+T.toMain = 0
+local function limitedToMain()
+  local held = LP:GetAttribute("SquishyEquipped")
+  if T.role ~= "alt" or not isLimited(held) then return end
+  local SAB = G.SAB
+  SAB.S.running = false
+  local main = Players:FindFirstChild(MAIN)
+  if not main then note("TEAM: holding " .. tostring(held) .. " for the main, but the main is not here - holding it") return end
+  for _ = 1, 8 do
+    if not isLimited(LP:GetAttribute("SquishyEquipped")) then break end
+    standUp()
+    local th = nearTo(main)
+    task.wait(0.8)
+    local gp = th and th:FindFirstChild("GivePrompt")
+    if gp and gp.Enabled then pcall(fireproximityprompt, gp) else pcall(function() RS.Remotes.GiveSquishy:FireServer(main) end) end
+    local t0 = os.clock()
+    repeat task.wait(0.2) until not isLimited(LP:GetAttribute("SquishyEquipped")) or os.clock() - t0 > 4
+    if not isLimited(LP:GetAttribute("SquishyEquipped")) then
+      T.toMain = T.toMain + 1
+      note("TEAM: gave " .. tostring(held) .. " to the main (" .. MAIN .. ")")
+      break
+    end
+    task.wait(10)
+  end
+  if isLimited(LP:GetAttribute("SquishyEquipped")) then
+    note("TEAM: the main would not take " .. tostring(held) .. " - holding it (CHURN paused so it is not waxed here)")
+    return
+  end
+  SAB.S.running = true
+end
+T.conns = {}
+T.conns[#T.conns + 1] = LP:GetAttributeChangedSignal("SquishyEquipped"):Connect(function()
+  if T.alive and isLimited(LP:GetAttribute("SquishyEquipped")) and T.role == "alt" then
+    local SAB = G.SAB
+    if SAB then SAB.S.running = false end -- at once, before CHURN carries it to a station
+    task.spawn(limitedToMain)
+  end
+end)
+local stop0 = T.stop
+function T.stop() stop0() for _, c in ipairs(T.conns) do pcall(function() c:Disconnect() end) end end
+
 ---------------------------------------------------------------- loop
 task.spawn(function()
   note("TEAM v" .. T.version .. ": " .. T.me .. " as " .. T.role)
@@ -256,6 +330,7 @@ task.spawn(function()
     local SAB = G.SAB
     if SAB and SAB.S and SAB.S.alive then
       pcall(passState)
+      pcall(claimRanks)
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
       if not ok then note("TEAM error: " .. tostring(err)) end
       pcall(writeMe)

@@ -5,6 +5,11 @@
   the default) says which accounts run it, and each account writes its own results:
     out/<id>/<PlayerName>.txt  (and B.post files as out/<id>/<PlayerName>.<name>.txt; names never have dots)
     out/hello/<PlayerName>.txt when it connects
+  v4: a command for several accounts gets ONE combined result. Every account writes its part to the
+  executor workspace (SAB/bridge/<id>/, one folder for every Roblox window on this PC); the first to
+  claim SAB/bridge/<id>/.collector uploads out/<id>/ALL.txt (posts: out/<id>/ALL.<name>.txt). GitHub
+  limits how many files a token may create per hour, and this cuts them by the number of accounts.
+  When GitHub says "slow down" (403/429) uploads wait and keep their place instead of being dropped.
   Your token is stored only in the executor's workspace (SAB_bridge_token.txt), never in this script.
 ]]
 local OWNER, REPO, BRANCH = "FlamingClaw", "sab-bridge", "main"
@@ -22,7 +27,7 @@ local twait = (task and task.wait) or wait
 local tspawn = (task and task.spawn) or function(f, ...) return coroutine.wrap(f)(...) end
 local clock = os.clock
 
-local B = { alive = true, S = {}, ran = 0, last = "starting", version = 3, me = LP.Name }
+local B = { alive = true, S = {}, ran = 0, last = "starting", version = 4, me = LP.Name }
 G.SAB_BRIDGE = B
 
 ---------------------------------------------------------------- base64
@@ -200,10 +205,19 @@ tspawn(function()
     local job = table.remove(queue, 1)
     if job then
       local ok, code
-      for attempt = 1, 6 do
+      local t0 = clock()
+      for attempt = 1, 40 do
         ok, code = putFile(job[1], job[2])
         if ok then break end
-        twait(1.5 * attempt + math.random() * 2)
+        if code == 403 or code == 429 then
+          -- GitHub's limit on new content: wait it out, keep the job (for up to 20 minutes)
+          B.last = "GitHub busy (" .. tostring(code) .. "), waiting"
+          if clock() - t0 > 1200 then break end
+          twait(60 + math.random() * 20)
+        else
+          if attempt >= 6 then break end
+          twait(1.5 * attempt + math.random() * 2)
+        end
       end
       if not ok then B.last = "upload failed (" .. tostring(code) .. ") " .. job[1] end
     else
@@ -339,7 +353,54 @@ local function askToken(reason)
 end
 
 ---------------------------------------------------------------- command runner
-local function runCmd(id, src)
+-- several accounts in one command: their parts meet in the shared workspace, one account uploads them
+local LOCAL = "SAB/bridge"
+local function canShare() return type(writefile) == "function" and type(readfile) == "function" and type(listfiles) == "function" and type(isfile) == "function" end
+local function shareDir(id)
+  pcall(makefolder, "SAB") pcall(makefolder, LOCAL) pcall(makefolder, LOCAL .. "/" .. id)
+  return LOCAL .. "/" .. id
+end
+local function collect(id)
+  local dir = shareDir(id)
+  local lock = dir .. "/.collector"
+  local okI, there = pcall(isfile, lock)
+  if okI and there then return end
+  pcall(writefile, lock, LP.Name)
+  twait(0.3)
+  local okR, who = pcall(readfile, lock)
+  if not (okR and who == LP.Name) then return end
+  -- wait until nobody new has written for 6 s (at most 40 s)
+  local t0, last, lastAt = clock(), -1, clock()
+  local files
+  while clock() - t0 < 40 do
+    local okL, fs = pcall(listfiles, dir)
+    files = {}
+    for _, f in ipairs(okL and fs or {}) do
+      local n = tostring(f):match("([^/\\]+)$")
+      if n and n:sub(1, 1) ~= "." then files[#files + 1] = n end
+    end
+    if #files ~= last then last, lastAt = #files, clock() end
+    if clock() - lastAt >= 6 then break end
+    twait(1)
+  end
+  table.sort(files)
+  local main, posts = {}, {}
+  for _, n in ipairs(files) do
+    local okB, body = pcall(readfile, dir .. "/" .. n)
+    body = okB and body or "?"
+    local who, post = n:match("^([%w_]+)%.(.+)%.txt$")
+    if who then
+      posts[post] = posts[post] or {}
+      table.insert(posts[post], "===== " .. who .. " =====\n" .. body)
+    else
+      main[#main + 1] = body
+    end
+  end
+  B.upload("out/" .. id .. "/ALL.txt", table.concat(main, "\n\n"))
+  for post, parts in pairs(posts) do B.upload("out/" .. id .. "/ALL." .. post .. ".txt", table.concat(parts, "\n\n")) end
+end
+
+local function runCmd(id, src, many)
   B.ran = B.ran + 1
   setStatus("running #" .. id, AMBER)
   local buf, t0 = {}, clock()
@@ -352,11 +413,20 @@ local function runCmd(id, src)
     buf[#buf + 1] = table.concat(t, "\t")
   end
   local base = "out/" .. id .. "/" .. LP.Name
+  local shared = many and canShare()
+  local function put(path, text)
+    if shared then
+      pcall(writefile, shareDir(id) .. "/" .. path:match("[^/]+$"), text)
+    else
+      B.upload(path, text)
+    end
+  end
   local C = setmetatable({ out = out, id = id }, { __index = B })
-  function C.post(name, text) B.upload(base .. "." .. name .. ".txt", tostring(text)) end
+  function C.post(name, text) put(base .. "." .. name .. ".txt", tostring(text)) end
   local fn, cerr = (loadstring or load)(src, "=cmd" .. id)
   if not fn then
-    B.upload(base .. ".txt", "#" .. id .. " " .. LP.Name .. " COMPILE ERROR\n" .. tostring(cerr))
+    put(base .. ".txt", "#" .. id .. " " .. LP.Name .. " COMPILE ERROR\n" .. tostring(cerr))
+    if shared then tspawn(collect, id) end
     setStatus("#" .. id .. " compile error", RED)
     return
   end
@@ -370,20 +440,23 @@ local function runCmd(id, src)
   local secs = string.format("%.2f", clock() - t0)
   local head = "#" .. id .. " " .. LP.Name .. (ok and " OK" or " ERROR") .. " in " .. secs .. "s\n"
   if not ok then buf[#buf + 1] = "ERROR: " .. tostring(err) end
-  B.upload(base .. ".txt", head .. table.concat(buf, "\n"))
+  put(base .. ".txt", head .. table.concat(buf, "\n"))
+  if shared then tspawn(collect, id) end
   setStatus((ok and "done #" or "error #") .. id .. " (" .. B.ran .. " run)", ok and GREEN or RED)
 end
 
 -- is this command for this account? second line "--to:all" or "--to:name1,name2" (no line = all)
-local function forMe(body)
+local function forMe(body) -- returns: for me?, for several accounts?
   local to = body:match("^[^\n]*\n%-%-to:([^\n]*)")
-  if not to then return true end
+  if not to then return true, true end
   to = to:gsub("%s", ""):lower()
-  if to == "" or to == "all" or to == "*" then return true end
-  for n in to:gmatch("[^,]+") do
-    if n == LP.Name:lower() or n == tostring(LP.UserId) then return true end
+  if to == "" or to == "all" or to == "*" then return true, true end
+  local mine, n = false, 0
+  for x in to:gmatch("[^,]+") do
+    n = n + 1
+    if x == LP.Name:lower() or x == tostring(LP.UserId) then mine = true end
   end
-  return false
+  return mine, n > 1
 end
 
 ---------------------------------------------------------------- main loop
@@ -456,7 +529,8 @@ tspawn(function()
       local id = tonumber(body:match("^%-%-id:(%d+)"))
       if id and id > (B.lastId or 0) then
         B.lastId = id
-        if forMe(body) then tspawn(runCmd, id, body) end
+        local mine, many = forMe(body)
+        if mine then tspawn(runCmd, id, body, many) end
       end
     elseif code == 304 or code == 404 then
       fails = 0

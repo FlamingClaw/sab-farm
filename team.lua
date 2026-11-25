@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 6 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 7 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -327,13 +327,15 @@ function T.stop() stop0() for _, c in ipairs(T.conns) do pcall(function() c:Disc
 ---------------------------------------------------------------- the ALTS tab in CHURN
 local PASS_END = 1796083200 -- Thanksgiving pass: Dec 1 00:00 UTC (Nov 30, 5 PM in Calgary)
 local RANK20 = 4300
-local function paceText(points)
+local function paceText(points, open)
   points = tonumber(points)
   if not points then return "?" end
   if points >= RANK20 then return "rank 20 reached" end
   local days = math.max(0, PASS_END - workspace:GetServerTimeNow()) / 86400
   local need = RANK20 - points
-  local quests = math.max(1, math.ceil(days)) -- one set of quests per day left, today included
+  -- one set of quests per (UTC) day left; today's only counts while some of it is still open
+  local quests = math.ceil(days) - ((tonumber(open) or 0) == 0 and 1 or 0)
+  if quests <= 0 then return need .. " short, no quest days left" end
   return ("%d to go, %d/day for %d day(s)"):format(need, math.ceil(need / quests), quests)
 end
 T.ui = {}
@@ -342,7 +344,7 @@ local function buildUI()
   local U = SAB and SAB.U
   if not (U and U.alt and U.mk and U.card) then return false end
   if T.ui.built and T.ui.root and T.ui.root.Parent then return true end
-  if U.altNote then U.altNote.Text = "" U.altNote.Parent.Visible = false end
+  if U.altNote then U.altNote.Text = "" U.altNote.Parent.Parent.Visible = false end
   local C = U.C
   local me = U.card(U.alt, "This account", T.role == "main" and "MAIN" or "ALT")
   T.ui.root = me
@@ -383,14 +385,14 @@ function T.paint()
   U.put(T.ui.mode, "doing: " .. tostring(T.mode or "starting"))
   U.put(T.ui.stats, ("gifts given %d | Limited to main %d | rank rewards claimed %d | friend boost +%s%%"):format(
     T.gifts, T.toMain or 0, T.claimed or 0, tostring(LP:GetAttribute("FriendBoost") or 0)))
-  U.put(T.ui.pass, ("pass: rank %s, %s points | %s"):format(tostring(P.rank or "?"), tostring(P.points or "?"), paceText(P.points)))
+  U.put(T.ui.pass, ("pass: rank %s, %s points | %s"):format(tostring(P.rank or "?"), tostring(P.points or "?"), paceText(P.points, P.open)))
   if T.ui.feedB then
     U.put(T.ui.feedB, T.feed.on and "SUSHI FEEDER: ON (gives Dotonbori/Picnic butters to alts with room)" or "SUSHI FEEDER: OFF")
     T.ui.feedB.BackgroundColor3 = T.feed.on and C.good or C.panel2
     T.ui.feedB.TextColor3 = T.feed.on and C.ink or C.dim
   end
   local list = { { name = T.me, role = T.role, free = nil, stations = LP:GetAttribute("WaxStations"), holding = LP:GetAttribute("SquishyEquipped"),
-    seated = tostring(seated()), rank = P.rank, points = P.points, fresh = true, mode = T.mode } }
+    seated = tostring(seated()), rank = P.rank, points = P.points, open = P.open, fresh = true, mode = T.mode } }
   for _, s in ipairs(T.peers()) do list[#list + 1] = s end
   table.sort(list, function(a, b) if a.role ~= b.role then return a.role == "main" end return a.name < b.name end)
   for i, r in ipairs(T.ui.rows) do
@@ -407,7 +409,7 @@ function T.paint()
   for i, l in ipairs(T.ui.passRows) do
     local s = list[i]
     l.Parent.Visible = s ~= nil
-    if s then U.put(l, ("%s: rank %s, %s pts - %s"):format(s.name, tostring(s.rank or "?"), tostring(s.points or "?"), paceText(s.points))) end
+    if s then U.put(l, ("%s: rank %s, %s pts - %s"):format(s.name, tostring(s.rank or "?"), tostring(s.points or "?"), paceText(s.points, s.open))) end
   end
   local n = #T.log
   U.put(T.ui.log, table.concat(T.log, "\n", math.max(1, n - 9), n))

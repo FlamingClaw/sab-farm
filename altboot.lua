@@ -10,6 +10,7 @@ local MAIN = "o_oFlame3"
 local BR = "https://raw.githubusercontent.com/FlamingClaw/sab-farm/dev/bridge.lua"
 local FARM = "https://raw.githubusercontent.com/FlamingClaw/sab-farm/main/SAB_Farm.lua"
 if not game:IsLoaded() then game.Loaded:Wait() end
+if game.PlaceId ~= 80959592833753 then return end -- only in Stack A Butter Squishy (safe in an autoexec folder)
 local G = getgenv()
 local LP = game:GetService("Players").LocalPlayer
 if not (G.SAB_BRIDGE and G.SAB_BRIDGE.alive) then

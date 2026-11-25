@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 2 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 3 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -182,6 +182,19 @@ local function give(s)
   SAB.S.running = true
   return ok
 end
+local function padName()
+  local p = myPlot()
+  local m = p and p:FindFirstChild("RolledSquishy")
+  local c = m and m:GetChildren()[1]
+  return c and c.Name
+end
+local function buyPrompt()
+  local p = myPlot()
+  local h = p and p:FindFirstChild("RolledSquishyPlaceHolder")
+  local a = h and h:FindFirstChild("BuyPromptAttachment")
+  local b = (a and a:FindFirstChild("BuyPrompt")) or (h and h:FindFirstChild("BuyPrompt", true))
+  return b and b:IsA("ProximityPrompt") and b or nil
+end
 local function mainTick()
   local SAB = G.SAB
   local C = SAB.CFG
@@ -192,6 +205,28 @@ local function mainTick()
   if isGood(held) and alt then
     give(alt)
     return
+  end
+  -- a good butter on the pad while every station of mine is busy: CHURN will not buy it (nowhere to
+  -- wax), so the feeder buys it and carries it to the alt
+  local pn = padName()
+  if alt and not held and isGood(pn) then
+    local b = buyPrompt()
+    if b and b.Enabled then
+      SAB.S.running = false
+      standUp()
+      task.wait(0.3)
+      local part = b.Parent:IsA("Attachment") and b.Parent.Parent or b.Parent
+      local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+      if hrp and part:IsA("BasePart") then hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 2, 3)) end
+      task.wait(0.6)
+      pcall(fireproximityprompt, b)
+      local t0 = os.clock()
+      repeat task.wait(0.2) until LP:GetAttribute("SquishyEquipped") or os.clock() - t0 > 5
+      SAB.S.running = true
+      held = LP:GetAttribute("SquishyEquipped")
+      if held then note("TEAM: bought " .. tostring(held) .. " for " .. alt.name) give(alt) return end
+      note("TEAM: could not buy the " .. tostring(pn) .. " on the pad")
+    end
   end
   if alt and not isGood(held) then
     -- an alt has room: stand up so the crate opens and Auto Roll rolls; CHURN buys the next good one

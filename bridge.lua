@@ -3,7 +3,7 @@
   Polls a PRIVATE GitHub repo for cmd.lua, runs it, uploads the output.
   Several accounts can run it at once: a command's second line "--to:name1,name2" (or "--to:all",
   the default) says which accounts run it, and each account writes its own results:
-    out/<id>/<PlayerName>.txt  (and B.post files as out/<id>/<PlayerName>_<name>.txt)
+    out/<id>/<PlayerName>.txt  (and B.post files as out/<id>/<PlayerName>.<name>.txt; names never have dots)
     out/hello/<PlayerName>.txt when it connects
   Your token is stored only in the executor's workspace (SAB_bridge_token.txt), never in this script.
 ]]
@@ -353,7 +353,7 @@ local function runCmd(id, src)
   end
   local base = "out/" .. id .. "/" .. LP.Name
   local C = setmetatable({ out = out, id = id }, { __index = B })
-  function C.post(name, text) B.upload(base .. "_" .. name .. ".txt", tostring(text)) end
+  function C.post(name, text) B.upload(base .. "." .. name .. ".txt", tostring(text)) end
   local fn, cerr = (loadstring or load)(src, "=cmd" .. id)
   if not fn then
     B.upload(base .. ".txt", "#" .. id .. " " .. LP.Name .. " COMPILE ERROR\n" .. tostring(cerr))

@@ -7,17 +7,25 @@
     server, so CHURN's fallback would land in a public one)
 ]]
 local MAIN = "o_oFlame3"
-local BR = "https://raw.githubusercontent.com/FlamingClaw/sab-farm/dev/bridge.lua"
-local FARM = "https://raw.githubusercontent.com/FlamingClaw/sab-farm/dev/SAB_Farm.lua" -- dev while the team build is tested
+-- GitHub's raw links for a branch can be minutes stale, so the files are loaded by the branch's
+-- newest commit (looked up once); the branch link is the fallback
+local BRANCH = "dev" -- dev while the team build is tested
+local REF = BRANCH
+pcall(function()
+  local body = game:HttpGet("https://api.github.com/repos/FlamingClaw/sab-farm/commits/" .. BRANCH)
+  REF = body:match('"sha"%s*:%s*"(%x+)"') or BRANCH
+end)
+local function url(file) return "https://raw.githubusercontent.com/FlamingClaw/sab-farm/" .. REF .. "/" .. file .. (REF == BRANCH and ("?t=" .. tick()) or "") end
+local BR, FARM, TEAM = url("bridge.lua"), url("SAB_Farm.lua"), url("team.lua")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 80959592833753 then return end -- only in Stack A Butter Squishy (safe in an autoexec folder)
 local G = getgenv()
 local LP = game:GetService("Players").LocalPlayer
 if not (G.SAB_BRIDGE and G.SAB_BRIDGE.alive) then
-  pcall(function() loadstring(game:HttpGet(BR .. "?t=" .. tick()))() end)
+  pcall(function() loadstring(game:HttpGet(BR))() end)
 end
 if not G.SAB then
-  task.spawn(function() pcall(function() loadstring(game:HttpGet(FARM .. "?t=" .. tick()))() end) end)
+  task.spawn(function() pcall(function() loadstring(game:HttpGet(FARM))() end) end)
 end
 local t0 = os.clock()
 while not (G.SAB and G.SAB.CFG and G.SAB.S) and os.clock() - t0 < 120 do task.wait(1) end
@@ -50,6 +58,7 @@ HX.due = function()
 end
 pcall(SAB.IX.compute); pcall(SAB.IX.sync, true)
 -- the team module: shared status between the accounts, the main's Sushi feeder, the alts' rules
-pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/FlamingClaw/sab-farm/dev/team.lua?t=" .. tick()))() end)
+pcall(function() loadstring(game:HttpGet(TEAM))() end)
 G.SAB_ALT_BOOT = os.time()
+G.SAB_ALT_REF = REF
 print("altboot: " .. LP.Name .. (LP.Name == MAIN and " (main)" or " (alt)") .. " ready")

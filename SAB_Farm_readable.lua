@@ -4939,7 +4939,7 @@ do
     pcall(function() l.HorizontalAlignment = Enum.HorizontalAlignment.Center end)
     U.pad(U.tabs, 5, 6, 6, 6)
 end
-U.railH = math.clamp(math.floor((Z.h - Z.head - 12) / 9) - 3, 22, 34)
+U.railH = math.clamp(math.floor((Z.h - Z.head - 12) / 10) - 3, 20, 34)
 local function railBtn(icon, name, sub)
     local b = mk("TextButton", { Text = icon, Font = FT.b, TextSize = 15, TextColor3 = C.text, TextTransparency = 0.45,
         Size = UDim2.new(1, 0, 0, U.railH), BackgroundColor3 = C.raise, BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -4960,6 +4960,7 @@ U.tabTeam = railBtn("👥", "Teams", "the right pets at the right moment")
 U.tabSrv = railBtn("🤝", "Server", "helping, campfire, ghost")
 U.tabAdm = railBtn("⚡", "Admin", "admin abuse and its boosts")
 U.tabSet = railBtn("⚙", "Settings", "configs, startup, performance")
+U.tabAlt = railBtn("🔗", "Alts", "several accounts working together")
 local function pane()
     local f = mk("ScrollingFrame", { Position = UDim2.new(0, Z.rail, 0, Z.head + Z.status + 10),
         Size = UDim2.new(1, -Z.rail, 1, -(Z.head + Z.status + 10)), BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -4972,6 +4973,7 @@ local function pane()
 end
 U.farm, U.run, U.but, U.crt, U.pet, U.team, U.srv, U.adm, U.set = pane(), pane(), pane(), pane(), pane(), pane(), pane(), pane(), pane()
 U.farm.Visible = true
+U.alt = pane() -- ALTS: drawn by the team module (team.lua, loaded by altboot); a note until then
 
 -- ---- HOME: start, the numbers, what each part is doing, the log
 do
@@ -5343,7 +5345,7 @@ function CR.build()
     CR.paint()
 end
 local tab = "farm"
-U.tabKeys = { "farm", "run", "but", "crt", "pet", "team", "srv", "adm", "set" } -- in the rail's order
+U.tabKeys = { "farm", "run", "but", "crt", "pet", "team", "srv", "adm", "set", "alt" } -- in the rail's order
 local function showTab(which)
     tab = which
     for i, k in ipairs(U.tabKeys) do
@@ -5837,6 +5839,14 @@ click(U.tabSet, function() showTab("set") end)
 click(U.tabCrt, function() showTab("crt") end)
 click(U.tabPet, function() showTab("pet") end)
 click(U.tabTeam, function() showTab("team") end)
+click(U.tabAlt, function() showTab("alt") if type(U.altShown) == "function" then pcall(U.altShown) end end)
+-- the kit, for add-ons that draw into a tab (the team module's ALTS tab)
+U.mk, U.lbl, U.button, U.round, U.C, U.FT, U.click = mk, lbl, button, round, C, FT, click
+do
+    local cd = U.card(U.alt, "Alts", "several accounts in one server")
+    U.altNote = lbl(U.row(cd, 40), "The team module is not running on this account. Load the farm with altboot.lua to use it.", 10, C.dim, false)
+    U.altNote.TextWrapped, U.altNote.TextYAlignment = true, Enum.TextYAlignment.Top
+end
 
 -- the floating button: tap to hide or show, drag to move
 local function setHidden(v)

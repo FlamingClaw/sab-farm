@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 5 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 6 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -323,6 +323,96 @@ end)
 local stop0 = T.stop
 function T.stop() stop0() for _, c in ipairs(T.conns) do pcall(function() c:Disconnect() end) end end
 
+
+---------------------------------------------------------------- the ALTS tab in CHURN
+local PASS_END = 1796083200 -- Thanksgiving pass: Dec 1 00:00 UTC (Nov 30, 5 PM in Calgary)
+local RANK20 = 4300
+local function paceText(points)
+  points = tonumber(points)
+  if not points then return "?" end
+  if points >= RANK20 then return "rank 20 reached" end
+  local days = math.max(0, PASS_END - workspace:GetServerTimeNow()) / 86400
+  local need = RANK20 - points
+  local quests = math.max(1, math.ceil(days)) -- one set of quests per day left, today included
+  return ("%d to go, %d/day for %d day(s)"):format(need, math.ceil(need / quests), quests)
+end
+T.ui = {}
+local function buildUI()
+  local SAB = G.SAB
+  local U = SAB and SAB.U
+  if not (U and U.alt and U.mk and U.card) then return false end
+  if T.ui.built and T.ui.root and T.ui.root.Parent then return true end
+  if U.altNote then U.altNote.Text = "" U.altNote.Parent.Visible = false end
+  local C = U.C
+  local me = U.card(U.alt, "This account", T.role == "main" and "MAIN" or "ALT")
+  T.ui.root = me
+  T.ui.mode = U.line(me, C.accent)
+  T.ui.stats = U.line(me, C.good)
+  T.ui.pass = U.line(me, C.info)
+  if T.role == "main" then
+    local r = U.row(me, 26)
+    T.ui.feedB = U.button(r, "", C.panel2, 10, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0))
+    U.click(T.ui.feedB, function() T.feed.on = not T.feed.on note("TEAM: Sushi feeder " .. (T.feed.on and "on" or "off")) end)
+  end
+  local all = U.card(U.alt, "Accounts in this server", "from SAB/team")
+  T.ui.rows = {}
+  for i = 1, 8 do
+    local l, d = U.line(all, C.dim)
+    l.Parent.Visible = false
+    T.ui.rows[i] = { l = l, d = d }
+  end
+  local ps = U.card(U.alt, "Thanksgiving pass", "rank 20 = Pecan Pie Butter")
+  T.ui.passRows = {}
+  for i = 1, 8 do
+    local l = U.line(ps, C.accent2)
+    l.Parent.Visible = false
+    T.ui.passRows[i] = l
+  end
+  local lg = U.card(U.alt, "Team log")
+  T.ui.log = U.grow(lg, 9, C.dim)
+  T.ui.log.Visible = true
+  T.ui.built = true
+  U.altShown = function() pcall(T.paint) end
+  return true
+end
+function T.paint()
+  if not buildUI() then return end
+  local SAB = G.SAB
+  local U, C = SAB.U, SAB.U.C
+  local P = T.pass
+  U.put(T.ui.mode, "doing: " .. tostring(T.mode or "starting"))
+  U.put(T.ui.stats, ("gifts given %d | Limited to main %d | rank rewards claimed %d | friend boost +%s%%"):format(
+    T.gifts, T.toMain or 0, T.claimed or 0, tostring(LP:GetAttribute("FriendBoost") or 0)))
+  U.put(T.ui.pass, ("pass: rank %s, %s points | %s"):format(tostring(P.rank or "?"), tostring(P.points or "?"), paceText(P.points)))
+  if T.ui.feedB then
+    U.put(T.ui.feedB, T.feed.on and "SUSHI FEEDER: ON (gives Dotonbori/Picnic butters to alts with room)" or "SUSHI FEEDER: OFF")
+    T.ui.feedB.BackgroundColor3 = T.feed.on and C.good or C.panel2
+    T.ui.feedB.TextColor3 = T.feed.on and C.ink or C.dim
+  end
+  local list = { { name = T.me, role = T.role, free = nil, stations = LP:GetAttribute("WaxStations"), holding = LP:GetAttribute("SquishyEquipped"),
+    seated = tostring(seated()), rank = P.rank, points = P.points, fresh = true, mode = T.mode } }
+  for _, s in ipairs(T.peers()) do list[#list + 1] = s end
+  table.sort(list, function(a, b) if a.role ~= b.role then return a.role == "main" end return a.name < b.name end)
+  for i, r in ipairs(T.ui.rows) do
+    local s = list[i]
+    r.l.Parent.Visible = s ~= nil
+    if s then
+      local hold = (s.holding and s.holding ~= "") and (" | holding " .. tostring(s.holding):gsub("Butter$", "")) or ""
+      U.put(r.l, ("%s%s  %s%s%s"):format(s.name, s.role == "main" and " (main)" or "",
+        s.fresh and "" or "OFFLINE ", s.free and ("free " .. s.free .. "/" .. tostring(s.stations)) or ("stations " .. tostring(s.stations)),
+        hold .. (s.seated == "true" and " | at the campfire" or "")))
+      r.d.BackgroundColor3 = not s.fresh and C.bad or (s.role == "main" and C.accent or C.good)
+    end
+  end
+  for i, l in ipairs(T.ui.passRows) do
+    local s = list[i]
+    l.Parent.Visible = s ~= nil
+    if s then U.put(l, ("%s: rank %s, %s pts - %s"):format(s.name, tostring(s.rank or "?"), tostring(s.points or "?"), paceText(s.points))) end
+  end
+  local n = #T.log
+  U.put(T.ui.log, table.concat(T.log, "\n", math.max(1, n - 9), n))
+end
+
 ---------------------------------------------------------------- loop
 task.spawn(function()
   note("TEAM v" .. T.version .. ": " .. T.me .. " as " .. T.role)
@@ -334,6 +424,8 @@ task.spawn(function()
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
       if not ok then note("TEAM error: " .. tostring(err)) end
       pcall(writeMe)
+      local U = SAB.U
+      if U and U.alt and (U.alt.Visible or not T.ui.built) then pcall(T.paint) end
     end
     task.wait(T.role == "main" and 4 or 6)
   end

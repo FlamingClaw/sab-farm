@@ -4362,7 +4362,9 @@ function QX.pull()
     if not p.Enabled then QX.nextAt = now() + 1 return end
     standNear(w, p)
     QX.asked = nil
-    holdFire(p)
+    -- the executor's own trigger first: a held prompt does not register in a Roblox window that is
+    -- not in front (PC, several accounts - seen Nov 25), the trigger always does; holding is the fallback
+    if not (type(fireproximityprompt) == "function" and pcall(fireproximityprompt, p)) then holdFire(p) end
     QX.pulls = QX.pulls + 1
     QX.pullLeft = QX.pullLeft - 1 -- the next refresh corrects it
     nap(0.6)

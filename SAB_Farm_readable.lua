@@ -4422,9 +4422,11 @@ function HX.list()
     end
     return out
 end
-function HX.due() -- (not while memory is high: each help visit loads that whole base onto the phone)
-    if CFG.Help and S.running and now() >= HX.nextAt and (PF.mem or 0) > 900 then
-        HX.nextAt, HX.msg = now() + 30, ("paused - phone memory %d MB (helps load other bases)"):format(PF.mem)
+function HX.due() -- (not while memory is high: each help visit loads that whole base onto the device)
+    -- the pause sits at 72% of the rejoin limit: 900 MB with the phone's 1250, higher on a PC
+    local cap = (CFG.MemLimit or 0) > 0 and math.floor(CFG.MemLimit * 0.72) or 900
+    if CFG.Help and S.running and now() >= HX.nextAt and (PF.mem or 0) > cap then
+        HX.nextAt, HX.msg = now() + 30, ("paused - memory %d MB > %d MB (helps load other bases)"):format(PF.mem, cap)
         return false
     end
     return CFG.Help and S.running and now() >= HX.nextAt

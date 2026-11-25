@@ -1,7 +1,11 @@
---[[ SAB Bridge v1
+--[[ SAB Bridge v3
   Lets Claude run investigation code in your game and read the output.
-  Polls a PRIVATE GitHub repo for cmd.lua, runs it, uploads the output to out/<id>.txt.
-  Your token is stored only in Delta's workspace (SAB_bridge_token.txt), never in this script.
+  Polls a PRIVATE GitHub repo for cmd.lua, runs it, uploads the output.
+  Several accounts can run it at once: a command's second line "--to:name1,name2" (or "--to:all",
+  the default) says which accounts run it, and each account writes its own results:
+    out/<id>/<PlayerName>.txt  (and B.post files as out/<id>/<PlayerName>_<name>.txt)
+    out/hello/<PlayerName>.txt when it connects
+  Your token is stored only in the executor's workspace (SAB_bridge_token.txt), never in this script.
 ]]
 local OWNER, REPO, BRANCH = "FlamingClaw", "sab-bridge", "main"
 local TOKEN_FILE = "SAB_bridge_token.txt"
@@ -18,7 +22,7 @@ local twait = (task and task.wait) or wait
 local tspawn = (task and task.spawn) or function(f, ...) return coroutine.wrap(f)(...) end
 local clock = os.clock
 
-local B = { alive = true, S = {}, ran = 0, last = "starting", version = 2 }
+local B = { alive = true, S = {}, ran = 0, last = "starting", version = 3, me = LP.Name }
 G.SAB_BRIDGE = B
 
 ---------------------------------------------------------------- base64
@@ -198,10 +202,10 @@ tspawn(function()
     local job = table.remove(queue, 1)
     if job then
       local ok, code
-      for attempt = 1, 4 do
+      for attempt = 1, 6 do
         ok, code = putFile(job[1], job[2])
         if ok then break end
-        twait(1.5 * attempt)
+        twait(1.5 * attempt + math.random() * 2)
       end
       if not ok then B.last = "upload failed (" .. tostring(code) .. ") " .. job[1] end
     else
@@ -349,11 +353,12 @@ local function runCmd(id, src)
     end
     buf[#buf + 1] = table.concat(t, "\t")
   end
+  local base = "out/" .. id .. "/" .. LP.Name
   local C = setmetatable({ out = out, id = id }, { __index = B })
-  function C.post(name, text) B.upload("out/" .. id .. "_" .. name .. ".txt", tostring(text)) end
+  function C.post(name, text) B.upload(base .. "_" .. name .. ".txt", tostring(text)) end
   local fn, cerr = (loadstring or load)(src, "=cmd" .. id)
   if not fn then
-    B.upload("out/" .. id .. ".txt", "#" .. id .. " COMPILE ERROR\n" .. tostring(cerr))
+    B.upload(base .. ".txt", "#" .. id .. " " .. LP.Name .. " COMPILE ERROR\n" .. tostring(cerr))
     setStatus("#" .. id .. " compile error", RED)
     return
   end
@@ -365,10 +370,22 @@ local function runCmd(id, src)
   end
   local ok, err = xpcall(function() return fn(C) end, function(e) return tostring(e) .. "\n" .. (debug and debug.traceback and debug.traceback() or "") end)
   local secs = string.format("%.2f", clock() - t0)
-  local head = "#" .. id .. (ok and " OK" or " ERROR") .. " in " .. secs .. "s\n"
+  local head = "#" .. id .. " " .. LP.Name .. (ok and " OK" or " ERROR") .. " in " .. secs .. "s\n"
   if not ok then buf[#buf + 1] = "ERROR: " .. tostring(err) end
-  B.upload("out/" .. id .. ".txt", head .. table.concat(buf, "\n"))
+  B.upload(base .. ".txt", head .. table.concat(buf, "\n"))
   setStatus((ok and "done #" or "error #") .. id .. " (" .. B.ran .. " run)", ok and GREEN or RED)
+end
+
+-- is this command for this account? second line "--to:all" or "--to:name1,name2" (no line = all)
+local function forMe(body)
+  local to = body:match("^[^\n]*\n%-%-to:([^\n]*)")
+  if not to then return true end
+  to = to:gsub("%s", ""):lower()
+  if to == "" or to == "all" or to == "*" then return true end
+  for n in to:gmatch("[^,]+") do
+    if n == LP.Name:lower() or n == tostring(LP.UserId) then return true end
+  end
+  return false
 end
 
 ---------------------------------------------------------------- main loop
@@ -409,7 +426,9 @@ tspawn(function()
     "b64: " .. (b64 == b64lua and "lua" or "executor"),
     "time: " .. os.time(),
   }
-  local okW, wcode = putFile("out/hello.txt", table.concat(info, "\n"))
+  twait(math.random() * 3) -- several accounts starting together spread out
+  local okW, wcode = putFile("out/hello/" .. LP.Name .. ".txt", table.concat(info, "\n"))
+  if okW then B.upload("out/hello.txt", table.concat(info, "\n")) end
   if not okW then
     if wcode == 404 or wcode == 403 then
       setStatus("can't write to " .. REPO .. " (" .. tostring(wcode) .. "): check token access", RED)
@@ -418,7 +437,7 @@ tspawn(function()
     end
     return
   end
-  setStatus("connected, waiting", GREEN)
+  setStatus("connected as " .. LP.Name, GREEN)
 
   local fails = 0
   while B.alive do
@@ -433,7 +452,7 @@ tspawn(function()
       local id = tonumber(body:match("^%-%-id:(%d+)"))
       if id and id > (B.lastId or 0) then
         B.lastId = id
-        tspawn(runCmd, id, body)
+        if forMe(body) then tspawn(runCmd, id, body) end
       end
     elseif code == 304 or code == 404 then
       fails = 0

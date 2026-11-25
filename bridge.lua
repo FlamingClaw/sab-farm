@@ -181,12 +181,10 @@ local function putFile(path, text, msg)
   local code = tonumber(r.StatusCode) or 0
   if code == 422 or code == 409 then
     local g = api("GET", "/contents/" .. path .. "?ref=" .. BRANCH)
-    local sha = g and tostring(g.Body or ""):match('"sha"%s*:%s*"(%x+)"')
-    if sha then
-      r, e = api("PUT", "/contents/" .. path, body(sha))
-      if not r then return false, e end
-      code = tonumber(r.StatusCode) or 0
-    end
+    local sha = g and tonumber(g.StatusCode) == 200 and tostring(g.Body or ""):match('"sha"%s*:%s*"(%x+)"')
+    r, e = api("PUT", "/contents/" .. path, body(sha or nil))
+    if not r then return false, e end
+    code = tonumber(r.StatusCode) or 0
   end
   return code == 200 or code == 201, code
 end
@@ -427,7 +425,13 @@ tspawn(function()
     "time: " .. os.time(),
   }
   twait(math.random() * 3) -- several accounts starting together spread out
-  local okW, wcode = putFile("out/hello/" .. LP.Name .. ".txt", table.concat(info, "\n"))
+  local okW, wcode
+  for attempt = 1, 8 do
+    okW, wcode = putFile("out/hello/" .. LP.Name .. ".txt", table.concat(info, "\n"))
+    if okW or wcode == 404 or wcode == 403 or wcode == 401 then break end
+    setStatus("hello busy (" .. tostring(wcode) .. "), retry " .. attempt, AMBER)
+    twait(1 + attempt + math.random() * 3)
+  end
   if okW then B.upload("out/hello.txt", table.concat(info, "\n")) end
   if not okW then
     if wcode == 404 or wcode == 403 then

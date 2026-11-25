@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 3 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 4 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -138,7 +138,7 @@ local function altTick()
 end
 
 ---------------------------------------------------------------- main: the Sushi feeder
-T.feed = { on = true, target = nil, since = 0, standing = false }
+T.feed = { on = true, target = nil, since = 0, standing = false, wait = {} }
 local function nearTo(plr)
   local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
   local th = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
@@ -150,7 +150,7 @@ local function pickAlt()
   local best, bestFree
   for _, s in ipairs(T.peers()) do
     if s.fresh and s.player and s.role == "alt" and (s.stations or 0) >= 3 and (s.free or 0) > 0
-      and (s.holding == nil or s.holding == "") then
+      and (s.holding == nil or s.holding == "") and os.clock() >= (T.feed.wait[s.name] or 0) then
       if not best or (s.free or 0) > bestFree then best, bestFree = s, s.free end
     end
   end
@@ -173,6 +173,8 @@ local function give(s)
   local t0 = os.clock()
   repeat task.wait(0.2) until LP:GetAttribute("SquishyEquipped") == nil or os.clock() - t0 > 4
   local ok = LP:GetAttribute("SquishyEquipped") == nil
+  -- the game refuses a second gift to the same player for a while: try the others meanwhile
+  T.feed.wait[s.name] = os.clock() + (ok and 8 or 30)
   if ok then
     T.gifts = T.gifts + 1
     note(("TEAM: gave %s to %s (%d given)"):format(tostring(held), s.name, T.gifts))

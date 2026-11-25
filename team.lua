@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 1 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 2 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -46,9 +46,10 @@ local function myPlot() local SAB = G.SAB return SAB and SAB.S and SAB.S.plot en
 local function freeStations()
   local p = myPlot()
   local ws = p and p:FindFirstChild("WaxStations")
-  local n = 0
-  for _, st in ipairs(ws and ws:GetChildren() or {}) do if not st:GetAttribute("HasSquishy") then n = n + 1 end end
-  return n
+  -- the plot has a slot for every station the game sells; only WaxStations of them are owned
+  local busy = 0
+  for _, st in ipairs(ws and ws:GetChildren() or {}) do if st:GetAttribute("HasSquishy") then busy = busy + 1 end end
+  return math.max(0, (tonumber(LP:GetAttribute("WaxStations")) or 0) - busy)
 end
 local function humanoid() return LP.Character and LP.Character:FindFirstChildOfClass("Humanoid") end
 local function seated() local h = humanoid() return h ~= nil and h.Sit == true end

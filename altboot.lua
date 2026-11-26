@@ -37,7 +37,27 @@ S.rejoining = true
 CFG.Help = true
 CFG.Quests = true
 CFG.MemLimit = 3000
+-- pets: every account's four role teams under the same names (the main's saved teams are called
+-- this; the alts' are made by AUTO BUILD the first time they have pets for them). The whole pet side
+-- (plan, buying, fusing, building, switching) works only with these set.
+CFG.TeamNormal, CFG.TeamFull, CFG.TeamGlaze, CFG.TeamWax = "farm", "full", "glaze", "wax"
 CFG.Teams, CFG.AutoBuild = true, true
+CFG.PetBuy, CFG.PetWish = true, true
+CFG.Shower, CFG.SnapGlaze, CFG.Collect, CFG.SellJunk, CFG.AutoStart = true, true, true, true, true
+CFG.Ghost, CFG.GhostHelps = false, false
+if LP.Name == MAIN then
+  CFG.AutoFuse = true      -- the Fuse Pass: 3 copies a fuse
+  CFG.HelpGuild = true     -- it is in a guild: answer its calls for help
+  CFG.AutoIndex = false
+  CFG.Best = 0
+else
+  CFG.AutoFuse = false     -- 7 copies without the pass: the copies wait for the main to fuse them
+  CFG.HelpGuild = false
+  CFG.AutoIndex = true     -- every index row is +1% income; quest pulls and gifts fill it
+  CFG.Best = 0
+  CFG.BestCrate = false
+  CFG.AutoRoll = false     -- no Auto Roll pass on the alts
+end
 -- six game clients on one PC: everything that saves CPU / GPU / memory (each is a switch in SETUP)
 CFG.Lite, CFG.Calm, CFG.NoRender, CFG.HideHud = true, true, true, true
 CFG.HideBases, CFG.HideMine = true, true

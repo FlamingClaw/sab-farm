@@ -43,14 +43,19 @@ CFG.MemLimit = 3000
 CFG.TeamNormal, CFG.TeamFull, CFG.TeamGlaze, CFG.TeamWax = "farm", "full", "glaze", "wax"
 CFG.Teams, CFG.AutoBuild = true, true
 CFG.PetBuy, CFG.PetWish = true, true
-CFG.Shower, CFG.SnapGlaze, CFG.Collect, CFG.SellJunk, CFG.AutoStart = true, true, true, true, true
+CFG.SnapGlaze, CFG.Collect, CFG.SellJunk, CFG.AutoStart = true, true, true, true
 CFG.Ghost, CFG.GhostHelps = false, false
+CFG.Shower = false         -- as on the phone: no running off after falling butters
 if LP.Name == MAIN then
+  -- as the phone's "dotonbori sushi" config had it
+  CFG.Every = 600          -- collect every 10 min (stays at the campfire longer)
+  CFG.GhostHelps = true    -- hidden helps
   CFG.AutoFuse = true      -- the Fuse Pass: 3 copies a fuse
-  CFG.HelpGuild = true     -- it is in a guild: answer its calls for help
+  CFG.HelpGuild = false
   CFG.AutoIndex = false
   CFG.Best = 0
 else
+  CFG.Every = 120          -- the alts need their cash for upgrades sooner
   CFG.AutoFuse = false     -- 7 copies without the pass: the copies wait for the main to fuse them
   CFG.HelpGuild = false
   CFG.AutoIndex = true     -- every index row is +1% income; quest pulls and gifts fill it

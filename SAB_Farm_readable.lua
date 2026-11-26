@@ -2321,6 +2321,8 @@ function TM.aboutToPlace() -- a ticked butter in hand and somewhere to put it: p
     if not S.running then return false end
     local held = carriedName()
     if not (held and isTarget(held)) then return false end
+    -- held to be given away (NoWax) or held for the main (a Limited off it): nothing is placed here
+    if (CFG.NoWax and not IX.isLimited(held)) or (IX.isLimited(held) and not IX.limitedHere()) then return false end
     local free = freeCount()
     return free > 0
 end

@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 18 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 19 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -115,7 +115,8 @@ function T.peers()
   local ok, fs = pcall(listfiles, DIR)
   for _, f in ipairs(ok and fs or {}) do
     local name = tostring(f):match("([^/\\]+)%.txt$")
-    if name and name ~= T.me then
+    -- (the folder also holds trade orders and the owed list: only account names count)
+    if name and name ~= T.me and not name:find("^trade_") and name ~= "owed" then
       local okr, body = pcall(readfile, DIR .. "/" .. name .. ".txt")
       if okr and type(body) == "string" then
         local s = { name = name }

@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 26 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 27 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -41,6 +41,26 @@ for n, v in pairs(SI) do
 end
 T.GOOD = GOOD
 local function isGood(n) return n ~= nil and GOOD[key(n)] == true end
+-- Sushi focus (the user, Nov 26: alts should build a base of Sushi like the main's). A wax station is
+-- the scarce thing and every Dotonbori butter waxes the same 6 h: a Sushi earns 2x a Ramen, 4x a Soup
+-- Dumpling, 8x a Lychee, 16x a Starfruit and 50x an Apple Pie. So an alt waxes a Sushi always, a butter
+-- earning at least a quarter of one only with more than RES_HI stations free, at least a sixteenth only
+-- with more than RES_LO free, and anything less never (Picnic is sold) - the index (once each) and the
+-- quests aside. RES_HI stations stay free for the Sushis the main brings.
+local INC, TOPINC = {}, 0
+for n, v in pairs(SI) do
+  if type(v) == "table" and GOOD_RAR[v.rarity] and tonumber(v.income) then
+    INC[key(n)] = tonumber(v.income)
+    TOPINC = math.max(TOPINC, tonumber(v.income))
+  end
+end
+T.RES_HI, T.RES_LO = 3, 8
+local function altTakes(k, free)
+  if k == "sushi" then return true end
+  local r = TOPINC > 0 and (INC[k] or 0) / TOPINC or 0
+  return (r >= 0.25 and free > T.RES_HI) or (r >= 1 / 16 and free > T.RES_LO)
+end
+T.altTakes = altTakes
 -- Limited butters (the pass's Pecan Pie, the paid Turkey): never sold anywhere, never given to an
 -- alt; an alt hands them straight to the main
 local LIMITED = { pecanpie = true, turkey = true } -- (known by heart too, should the catalogue not say)
@@ -110,6 +130,7 @@ local function writeMe()
     -- (these two are defined further down: reached through T)
     "cash=" .. tostring(T.money()), "upmax=" .. tostring(T.up.max == true),
     "want=" .. (T.role == "alt" and table.concat(T.wantIdx(), ",") or ""),
+    "takes=" .. tostring(T.role == "alt" and T.takes or ""),
     "guild=" .. (T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none"),
     "gname=" .. tostring(T.clan.inClan and T.clan.name or ""),
     "gpts=" .. tostring(T.clan.points or 0),
@@ -356,6 +377,9 @@ local function wantIdx()
   local disc, waxing = indexNow()
   local w = {}
   for k in pairs(GOOD) do if not disc[k] and not waxing[k] then w[#w + 1] = k end end
+  -- (and whatever else CHURN's AUTO INDEX still misses: the main brings those it rolls, too)
+  local IX = G.SAB and G.SAB.IX
+  for k in pairs(IX and IX.need or {}) do if not GOOD[k] and not waxing[k] then w[#w + 1] = k end end
   table.sort(w)
   return w
 end
@@ -381,15 +405,18 @@ local function altTick()
   local guildLate = Cn.inClan and Cn.need and Cn.resetsAt > 0 and Cn.resetsAt - os.time() < 3 * 3600
   -- an alt in a guild answers guildmates' "help my wax" calls (helps count for its quests and the guild)
   C.HelpGuild = Cn.inClan == true
-  if P.need or guildLate then for k in pairs(ALL) do Tg[k] = true end end
+  -- a pass / guild quest that needs waxing: anything, while the Sushi stations stay free
+  if (P.need or guildLate) and free > T.RES_HI then for k in pairs(ALL) do Tg[k] = true end end
+  local takes = {}
   for k in pairs(GOOD) do
-    -- Sushi always; another good butter for the index, or - once every upgrade is bought - for the
-    -- stack (a full stack drops its weakest earner, so it is an upgrade); else it is sold for cash
-    if k == "sushi" or ((need[k] or T.up.max) and free > 0) then Tg[k] = true elseif not P.need then Tg[k] = nil end
+    -- Sushi always; the others by what they earn against a Sushi and how many stations are free (above);
+    -- one missing from the index once; else it is sold for cash
+    if altTakes(k, free) or (need[k] and free > 0) then Tg[k] = true takes[#takes + 1] = k elseif not (P.need or guildLate) then Tg[k] = nil end
   end
-  -- once every upgrade is bought: UPGRADES - anything earning more than the weakest in the stack is
-  -- kept and waxed (the alt rolls its own lever below)
-  C.Best = T.up.max and 4 or 0
+  table.sort(takes)
+  T.takes = table.concat(takes, ",")
+  -- (the stack's own "anything better than your weakest butter" would wax every Picnic: off on the alts)
+  C.Best = 0
   for k in pairs(LIMITED) do Tg[k] = true end
   C.NoWax = false
   -- holding something with no station free (a gift to wax, an index butter): after 60 s it is sold
@@ -436,6 +463,17 @@ end
 -- butter -> an alt that still needs it for its index and has a station, else the poorest alt that is
 -- still buying upgrades (it sells it); nil = nobody right now. k = nil asks "would anybody take
 -- something" (the main then stands up to roll).
+-- this alt takes this butter now (the list it publishes), or misses it in its index
+local function takesIt(s, k)
+  return ("," .. tostring(s.takes) .. ","):find("," .. k .. ",", 1, true) ~= nil
+    or ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil
+end
+T.takesIt = takesIt
+-- a butter the main carries to an alt: a good one, or one an alt misses in its index
+function T.isFeed(n)
+  if n == nil or n == "" or isLimited(n) then return false end
+  return isGood(n) or (T.feed.idx and T.feed.idx[key(n)] == true)
+end
 local function pickAlt(k)
   k = k and key(k) or nil
   local all = {}
@@ -453,13 +491,15 @@ local function pickAlt(k)
       if a or k == "sushi" then return a end
     end
     if k then
+      -- one missing it in its index first, then one that takes it now (by what it earns: see altTakes)
       local a = most(function(s) return (s.free or 0) > 0 and ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil end)
       if a then return a end
+      a = most(function(s) return (s.free or 0) > 0 and takesIt(s, k) end)
+      if a then return a end
     end
-    local p = poorest(function(s) return tostring(s.upmax) ~= "true" end)
-    if p then return p end
-    -- everybody has bought everything: the one with most free stations waxes it (a stack upgrade)
-    return most(function(s) return (s.free or 0) > 0 end)
+    -- else the poorest alt still buying upgrades (it sells it for the cash); nobody else (a station
+    -- waxing a weak butter for 6 h is a station without a Sushi)
+    return poorest(function(s) return tostring(s.upmax) ~= "true" end)
   end
   -- a guild quest "give butters to N different players" is open: the alts not given to since the
   -- quests reset come first
@@ -534,7 +574,7 @@ local function mainTick()
     T.mode = bringing.name .. " is bringing " .. tostring(bringing.holding) .. " - hands kept free"
     if held and held ~= "" then
       SAB.S.running = true
-      if isGood(held) then
+      if T.isFeed(held) then
         local a = os.clock() >= (T.feed.globalWait or 0) and pickAlt(held) or nil
         if a then give(a) return end
         T.feed.limHeld = T.feed.limHeld or os.clock()
@@ -561,19 +601,37 @@ local function mainTick()
   local P, Cn = T.pass, clanState()
   local questWax = (P.live and P.need) or Cn.need
   C.NoWax = not (isLimited(held) or questWax)
-  -- its Auto Roll stops on Sushi only while some alt has a free station for one
+  -- its Auto Roll stops on Sushi only while some alt has a free station for one, on another butter
+  -- only while an alt takes it now (or misses it in its index, or still buys upgrades and sells it)
   local sushiRoom = T.feed.on and pickAlt("sushi") ~= nil
   local changed = false
+  local takers, poor = {}, false
+  for _, s in ipairs(T.peers()) do
+    if s.fresh and s.role == "alt" and T.feed.on then
+      if tostring(s.upmax) ~= "true" then poor = true end
+      if (s.free or 0) > 0 then
+        for x in (tostring(s.takes) .. "," .. tostring(s.want)):gmatch("[^,]+") do takers[x] = true end
+      end
+    end
+  end
   for k in pairs(GOOD) do
-    local want = ((k ~= "sushi") or sushiRoom) and not (T.feed.soldNote and held and key(held) == k)
+    local want = ((k == "sushi" and sushiRoom) or (k ~= "sushi" and (takers[k] or poor))) and not (T.feed.soldNote and held and key(held) == k)
     if (C.Targets[k] == true) ~= want then C.Targets[k] = want or nil changed = true end
   end
+  -- index butters an alt misses (not the good ones): kept and brought too
+  T.feed.idx = T.feed.idx or {}
+  for k in pairs(T.feed.idx) do if not takers[k] and not (held and key(held) == k) then T.feed.idx[k] = nil C.Targets[k] = nil changed = true end end
+  for k in pairs(takers) do
+    if ALL[k] and not GOOD[k] and not LIMITED[k] and not T.feed.idx[k] and not (T.feed.soldNote and held and key(held) == k) then
+      T.feed.idx[k] = true C.Targets[k] = true changed = true
+    end
+  end
   if changed and os.clock() - (T.feed.syncAt or 0) > 20 then T.feed.syncAt = os.clock() pcall(SAB.IX.compute) pcall(SAB.IX.sync, true) end
-  if isGood(held) and os.clock() >= (T.feed.globalWait or 0) then
+  if T.isFeed(held) and os.clock() >= (T.feed.globalWait or 0) then
     local to = T.feed.on and pickAlt(held) or nil
     if to then give(to) T.feed.heldSince = nil return end
   end
-  if isGood(held) then
+  if T.isFeed(held) then
     T.feed.heldSince = T.feed.heldSince or os.clock()
     if os.clock() - T.feed.heldSince > 90 then
       -- nobody can take it: let CHURN sell it rather than block the crate and Auto Roll
@@ -589,8 +647,8 @@ local function mainTick()
   -- a good butter on the pad while every station of mine is busy: CHURN will not buy it (nowhere to
   -- wax), so the feeder buys it and carries it to the alt
   local pn = padName()
-  if not held and isGood(pn) then alt = T.feed.on and pickAlt(pn) or nil end
-  if alt and not held and isGood(pn) then
+  if not held and T.isFeed(pn) then alt = T.feed.on and pickAlt(pn) or nil end
+  if alt and not held and T.isFeed(pn) then
     local b = buyPrompt()
     -- never without the money: a short buy makes the server offer the butter for Robux
     local price = SI[pn] and tonumber(SI[pn].price)
@@ -634,7 +692,7 @@ local function mainTick()
       return
     end
     if not C.Campfire then C.Campfire = true SAB.CF.nextAt = 0 end
-    T.mode = isGood(held) and ("holding " .. tostring(held) .. ", no alt has room") or "campfire"
+    T.mode = T.isFeed(held) and ("holding " .. tostring(held) .. ", no alt has room") or "campfire"
   end
 end
 
@@ -1599,8 +1657,11 @@ local function selfRoll()
   -- beats the weakest butter in its stack. 6 stations stay free for the main's Sushis.
   if T.role ~= "alt" or not T.up.max or os.clock() < T.self.at then return false end
   local held = LP:GetAttribute("SquishyEquipped")
-  if (held and held ~= "") or freeStations() <= 6 then return false end
+  if (held and held ~= "") or freeStations() <= T.RES_HI then return false end
   local SAB = G.SAB
+  -- a butter this account wants is on its pad: CHURN buys it first (another pull would roll it away)
+  local pn = padName()
+  if pn and (isLimited(pn) or (SAB.IX.want and SAB.IX.want(key(pn))) or SAB.CFG.Targets[key(pn)]) then T.self.at = os.clock() + 2 return false end
   if SAB.S.reason and tostring(SAB.S.reason):find("cash short") then T.self.at = os.clock() + 30 return false end
   T.self.at = os.clock() + 5
   local lp, w = SAB.QX.lever()

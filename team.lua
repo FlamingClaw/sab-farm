@@ -672,10 +672,15 @@ local function mainFuse()
       if #e.spare.Big >= needB then
         local forAlt = owedFor(owed, name) > 0 and #e.spare.Huge < owedFor(owed, name)
         local forMe = e.all.Huge < (g.Huge or 0)
-        if forAlt or forMe then
+        -- a pet no alt's plan uses: its Bigs go on to Huges (the Huge stock; also frees pet slots)
+        local altWants = false
+        for _, s in ipairs(T.peers()) do
+          if s.role == "alt" and parseGoal(s.goal)[name] then altWants = true end
+        end
+        if forAlt or forMe or not altWants then
           local ids = {}
           for i = 1, needB do ids[i] = e.spare.Big[i] end
-          return fuse(ids, name, "Big", "Huge", forAlt and "owed to an alt" or "for the main's plan")
+          return fuse(ids, name, "Big", "Huge", forAlt and "owed to an alt" or (forMe and "for the main's plan" or "Huge stock"))
         end
       end
       -- Big from spare copies: always (that is what the copies come for)

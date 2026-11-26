@@ -7,7 +7,8 @@
     out/hello/<PlayerName>.txt when it connects
   v4: a command for several accounts gets ONE combined result. Every account writes its part to the
   executor workspace (SAB/bridge/<id>/, one folder for every Roblox window on this PC); the first to
-  claim SAB/bridge/<id>/.collector uploads out/<id>/ALL.txt (posts: out/<id>/ALL.<name>.txt). GitHub
+  claim SAB/bridge/<id>/.collector uploads out/<id>/ALL_<itsName>.txt (posts ALL_<itsName>.<post>.txt; one
+  per PC when the accounts are spread over several). GitHub
   limits how many files a token may create per hour, and this cuts them by the number of accounts.
   When GitHub says "slow down" (403/429) uploads wait and keep their place instead of being dropped.
   Your token is stored only in the executor's workspace (SAB_bridge_token.txt), never in this script.
@@ -397,8 +398,9 @@ local function collect(id)
       main[#main + 1] = body
     end
   end
-  B.upload("out/" .. id .. "/ALL.txt", table.concat(main, "\n\n"))
-  for post, parts in pairs(posts) do B.upload("out/" .. id .. "/ALL." .. post .. ".txt", table.concat(parts, "\n\n")) end
+  -- one combined file per PC (accounts on another PC share another workspace and collect there)
+  B.upload("out/" .. id .. "/ALL_" .. LP.Name .. ".txt", table.concat(main, "\n\n"))
+  for post, parts in pairs(posts) do B.upload("out/" .. id .. "/ALL_" .. LP.Name .. "." .. post .. ".txt", table.concat(parts, "\n\n")) end
   end
   pack()
   -- a slow account can finish after that: keep watching for 90 s and send the whole set again

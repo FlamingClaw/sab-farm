@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 15 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 16 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -217,9 +217,29 @@ T.upgrades, T.freebies, T.money = upgrades, freebies, money
 
 ---------------------------------------------------------------- rank rewards (every account)
 T.claimed = 0
+-- The pass's rank 20 reward (Pecan Pie, a Limited) goes straight into the claiming account's STACK
+-- (seen on the main Nov 26) - a stacked butter cannot be given or traded. The user's rule is that
+-- Limiteds belong to the main, so an alt leaves rank 20 unclaimed (until Dec 1, 01:00 UTC) unless
+-- T.claimAltPecan is switched on; every other rank reward is claimed one by one.
+T.claimAltPecan = false
 local function claimRanks()
   local n = tonumber(LP:GetAttribute("ThanksgivingReady")) or 0
   if n <= 0 then return end
+  if T.role == "alt" and not T.claimAltPecan then
+    local r = RS.Remotes:FindFirstChild("ThanksgivingAction")
+    local ok, st = pcall(function() return r:InvokeServer("state") end)
+    if not (ok and type(st) == "table") then return end
+    local claimed = st.claimed and st.claimed.free or {}
+    local got = 0
+    for rank = 1, math.min(tonumber(st.rank) or 0, 30) do
+      if rank ~= 20 and not claimed[rank] and not claimed[tostring(rank)] then
+        local okc, res = pcall(function() return r:InvokeServer("claim", rank, "free") end)
+        if okc and type(res) == "table" and res.ok then got = got + 1 end
+      end
+    end
+    if got > 0 then T.claimed = T.claimed + got note("TEAM: claimed " .. got .. " pass rank reward(s) (rank 20 left for you to decide)") T.refreshPass() end
+    return
+  end
   local r = RS.Remotes:FindFirstChild("ThanksgivingAction")
   local ok, res = pcall(function() return r:InvokeServer("claimAll") end)
   if ok and type(res) == "table" and res.ok then

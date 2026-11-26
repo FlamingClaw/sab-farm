@@ -510,7 +510,10 @@ local function targetNames()
 end
 
 ---------------------------------------------------------------- files, configs, autoexec, rejoin
-local F = { dir = "SAB", cfg = "SAB/configs", auto = "SAB/autoload.txt", exec = "autoexec/SAB_autoload.lua" }
+-- autoload is per account (several accounts on one PC share one executor workspace); the old shared
+-- SAB/autoload.txt is still read when an account has none of its own
+local F = { dir = "SAB", cfg = "SAB/configs", auto = "SAB/autoload_" .. plr.Name .. ".txt", autoOld = "SAB/autoload.txt",
+    exec = "autoexec/SAB_autoload.lua" }
 local function canWrite() return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function" end
 local function ensureDir(d)
     if type(makefolder) ~= "function" then return end
@@ -653,14 +656,9 @@ local function loadConfig(name)
     return true, name
 end
 local function setAutoload(name)
-    if name then
-        ensureDir(F.dir)
-        writeTo(F.auto, name)
-    elseif type(delfile) == "function" then
-        pcall(delfile, F.auto)
-    else
-        writeTo(F.auto, "")
-    end
+    ensureDir(F.dir)
+    -- off = an empty file of its own (not deleted: the old shared file must not take over again)
+    writeTo(F.auto, name or "")
     S.autoload = name
 end
 -- where this script is saved, so it can be started again after a rejoin
@@ -4637,6 +4635,7 @@ end
 -- a config marked "load on launch" is applied before the window is built, so it opens where you left it
 do
     local nm = readIf(F.auto)
+    if nm == nil then nm = readIf(F.autoOld) end
     if type(nm) == "string" then
         nm = nm:gsub("%s+$", "")
         if nm ~= "" then
@@ -6127,7 +6126,8 @@ local function refresh()
 end
 genv.SAB = { S = S, CFG = CFG, EV = EV, U = U, sg = sg, CAT = CAT, LEARN = LEARN, buildList = buildList,
     logAll = logAll, evAll = evAll, AR = AR, CR = CR, PF = PF,
-    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF, QX = QX, IX = IX, SH = SH }
+    PX = PX, TM = TM, CRATE = CRATE, FU = FU, HX = HX, CF = CF, QX = QX, IX = IX, SH = SH,
+    saveConfig = saveConfig, loadConfig = loadConfig, setAutoload = setAutoload } -- (the last three: for altboot)
 note(VERSION .. " loaded")
 if S.uiErrs > 0 then note("UI: " .. S.uiErrs .. " properties skipped") end
 showTab("farm")

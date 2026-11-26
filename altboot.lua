@@ -37,7 +37,12 @@ S.rejoining = true
 CFG.Help = true
 CFG.Quests = true
 CFG.MemLimit = 3000
-CFG.Teams, CFG.AutoBuild, CFG.Lite, CFG.Calm = true, true, true, true
+CFG.Teams, CFG.AutoBuild = true, true
+-- six game clients on one PC: everything that saves CPU / GPU / memory (each is a switch in SETUP)
+CFG.Lite, CFG.Calm, CFG.NoRender, CFG.HideHud = true, true, true, true
+CFG.HideBases, CFG.HideMine = true, true
+CFG.FpsCap = 15
+CFG.MainAccount = MAIN
 if LP.Name == MAIN then CFG.AutoFuse, CFG.PetBuy, CFG.PetWish = true, true, true end
 local SI = require(game:GetService("ReplicatedStorage").Modules.SquishyInfo)
 local function k(n) return (n:lower():gsub("butter$", "")) end
@@ -57,6 +62,14 @@ HX.due = function()
   return ok and r or false
 end
 pcall(SAB.IX.compute); pcall(SAB.IX.sync, true)
+pcall(SAB.PF.applyAll)
+-- saved as this account's own config, loaded on launch (CHURN starts with all of this even before
+-- altboot runs; the autoload choice is per account)
+if SAB.saveConfig then
+  local name = "acct_" .. LP.Name
+  pcall(SAB.saveConfig, name)
+  pcall(SAB.setAutoload, name)
+end
 -- the team module: shared status between the accounts, the main's Sushi feeder, the alts' rules
 pcall(function() loadstring(game:HttpGet(TEAM))() end)
 G.SAB_ALT_BOOT = os.time()

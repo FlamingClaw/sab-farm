@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 16 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 17 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -101,7 +101,8 @@ local function writeMe()
     "cash=" .. tostring(T.money()), "upmax=" .. tostring(T.up.max == true),
     "want=" .. (T.role == "alt" and table.concat(T.wantIdx(), ",") or ""),
     "guild=" .. (T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none"),
-    "plan=" .. (T.role == "main" and table.concat(T.planList and T.planList() or {}, ",") or ""),
+    "plan=" .. table.concat(T.planList and T.planList() or {}, ","),
+    "goal=" .. (T.goalText and T.goalText() or ""),
     "pets=" .. tostring(#((G.SAB and G.SAB.PX.data() or {}).pets or {})),
     "petMax=" .. tostring((G.SAB and G.SAB.PX.data() or {}).maxOwned or 60),
     "petScore=" .. tostring(T.petScore and T.petScore() or 0),
@@ -498,14 +499,22 @@ local function mainTick()
 end
 
 
----------------------------------------------------------------- pets: ticks and trades between the accounts
--- Every account ticks (adopt + wish) its own plan pets and the main's plan pets: the pen marks each
--- spawn per player, so six accounts adopt six times as many. The alts send everything outside their
--- own teams that the main's plan can use to the main (the Fuse Pass fuses 3 copies, the alts need 7).
--- The main sends Huges / Bigs it has beyond its own teams and plan to the alt with the weakest pets.
--- Trades: only with these accounts; a receiver readies only while it offers nothing itself.
-T.pet = { tickAt = -1e9, msg = "", sent = 0, got = 0, trades = 0, nextAt = 0, auto = true }
-T.tr = { active = false, state = nil, closed = nil, conns = {} }
+---------------------------------------------------------------- pets: the factory on the main
+-- The user's plan (Nov 26):
+--  * every account adopts (and wishes) the target pets = every account's plan pets together;
+--  * the alts' spare copies go to the main, which fuses each 3 into a Big (Fuse Pass);
+--  * a Big stays on the main only while its own plan wants one; otherwise it goes to the alt with
+--    the fewest of that pet (then the one with the weakest pets);
+--  * an alt with 3 spare Bigs of a pet sends them; the main fuses the Huge and sends it back to it
+--    (owed, remembered in SAB/team/owed.txt);
+--  * "spare" = not in any saved team, not worn, not named: a team is never weakened by a trade;
+--    a saved team left pointing at a pet that is gone is re-saved by CHURN's AUTO BUILD.
+-- The main is the only one that starts trades: it reads every account's pets (each Player's
+-- PetsData is visible to every client), writes the order to SAB/team/trade_<alt>.txt, invites,
+-- and both sides add exactly what the order says. An alt adds only spare pets, only for the main.
+T.pet = { tickAt = -1e9, msg = "", sent = 0, got = 0, trades = 0, fused = 0, nextAt = 0, auto = true }
+T.tr = { active = false, state = nil, closed = nil }
+local HS = game:GetService("HttpService")
 local function SABx() return G.SAB end
 local function petD() local S0 = SABx() return S0 and S0.PX and S0.PX.data() end
 local function trRemote(n) return RS:FindFirstChild(n, true) end
@@ -515,19 +524,43 @@ local function trReq(...)
   local ok, v = pcall(r.InvokeServer, r, ...)
   return ok and v or nil
 end
-local function teamIds() -- ids in a saved team or worn right now: never traded away
-  local d = petD()
+local function decodePets(pl) -- any player's pets (the attribute replicates to every client)
+  local raw = pl and pl:GetAttribute("PetsData")
+  if type(raw) ~= "string" then return nil end
+  local ok, d = pcall(function() return HS:JSONDecode(raw) end)
+  return ok and type(d) == "table" and d or nil
+end
+local function teamSet(d) -- ids in a saved team or worn: never traded or fused away by the factory
   local s = {}
   for _, tm in ipairs(d and d.teams or {}) do for _, id in ipairs(tm.pets or {}) do s[tostring(id)] = true end end
   for _, id in ipairs(d and d.equipped or {}) do s[tostring(id)] = true end
-  return s, d
+  return s
 end
+-- this account's pets by name and size: all ids, and the spare ones
+local function inventory(d)
+  local keep = teamSet(d)
+  local arriving = {}
+  for _, id in ipairs(d and d.arriving or {}) do arriving[tostring(id)] = true end
+  local inv = {}
+  for _, p in ipairs(d and d.pets or {}) do
+    local id = tostring(p.id)
+    if not arriving[id] then
+      local v = p.variant or ""
+      local e = inv[p.name] or { all = { [""] = 0, Big = 0, Huge = 0 }, spare = { [""] = {}, Big = {}, Huge = {} } }
+      inv[p.name] = e
+      e.all[v] = (e.all[v] or 0) + 1
+      if not keep[id] and not (p.nickname and p.nickname ~= "") and not p.named and e.spare[v] then table.insert(e.spare[v], id) end
+    end
+  end
+  return inv
+end
+T.inventory = inventory
 local function isOurs(userId)
   local pl = Players:GetPlayerByUserId(tonumber(userId) or -1)
   if not pl then return false end
   if pl.Name == MAIN then return true end
   local ok = pcall(readfile, DIR .. "/" .. pl.Name .. ".txt")
-  return ok -- a status file of its own in this PC's team folder
+  return ok
 end
 local function planList()
   local S0 = SABx()
@@ -538,8 +571,23 @@ local function planList()
   return t
 end
 T.planList = planList
+local function goalText() -- this account's plan as pet:regular/Big/Huge counts (read by the main)
+  local S0 = SABx()
+  local out = {}
+  for _, n in ipairs(planList()) do
+    local g = S0.FU.goal(n)
+    if g then out[#out + 1] = ("%s:%d/%d/%d"):format(n, g[""] or 0, g.Big or 0, g.Huge or 0) end
+  end
+  return table.concat(out, ";")
+end
+T.goalText = goalText
+local function parseGoal(txt)
+  local g = {}
+  for n, r, b, h in tostring(txt or ""):gmatch("([%w_]+):(%d+)/(%d+)/(%d+)") do g[n] = { [""] = tonumber(r), Big = tonumber(b), Huge = tonumber(h) } end
+  return g
+end
 local VW = { [""] = 1, Big = 3, Huge = 9 }
-local function petScore() -- how strong this account's pets are (the main gives to the weakest)
+local function petScore()
   local d = petD()
   local I = SABx() and SABx().PX.info()
   local sc = 0
@@ -550,161 +598,339 @@ local function petScore() -- how strong this account's pets are (the main gives 
   return math.floor(sc)
 end
 T.petScore = petScore
+-- the target pets: every account's plan pets together
+local function targets()
+  local names = {}
+  for _, n in ipairs(planList()) do names[n] = true end
+  for _, s in ipairs(T.peers()) do
+    for n in tostring(s.plan or ""):gmatch("[^,]+") do names[n] = true end
+  end
+  return names
+end
+T.targets = targets
 local function petTicks()
   if os.clock() - T.pet.tickAt < 60 then return end
   T.pet.tickAt = os.clock()
-  local S0 = SABx()
-  local P = S0.CFG.Pets
-  local names = {}
-  for _, n in ipairs(planList()) do names[n] = true end
-  if T.role == "alt" then
-    for _, s in ipairs(T.peers()) do
-      if s.role == "main" and type(s.plan) == "string" then for n in s.plan:gmatch("[^,]+") do names[n] = true end end
-    end
-  end
+  local P = SABx().CFG.Pets
   local added = 0
-  for n in pairs(names) do
+  for n in pairs(targets()) do
     local w = P[n] or {}
     if not w.b or not w.w then added = added + 1 end
     w.b, w.w = true, true
     P[n] = w
   end
-  if added > 0 then note("TEAM PETS: adopt + wish ticked on " .. added .. " plan pet(s)") end
+  if added > 0 then note("TEAM PETS: adopt + wish ticked on " .. added .. " target pet(s)") end
 end
 
--- the game's trade events
+-- what the main owes an alt (Huges for the Bigs it sent): SAB/team/owed.txt  "alt|pet|count"
+local OWED = DIR .. "/owed.txt"
+local function owedRead()
+  local o = {}
+  local ok, body = pcall(readfile, OWED)
+  for a, n, c in tostring(ok and body or ""):gmatch("([%w_]+)|([%w_]+)|(%d+)") do
+    o[a] = o[a] or {}
+    o[a][n] = tonumber(c)
+  end
+  return o
+end
+local function owedWrite(o)
+  local L = {}
+  for a, t in pairs(o) do for n, c in pairs(t) do if c > 0 then L[#L + 1] = a .. "|" .. n .. "|" .. c end end end
+  pcall(writefile, OWED, table.concat(L, "\n"))
+end
+T.owedRead = owedRead
+local function owedFor(o, name) local c = 0 for _, t in pairs(o) do c = c + (t[name] or 0) end return c end
+
+-- the main's fusing: one fuse a tick, spare pets only (so no team is ever weakened)
+local function mainFuse()
+  local S0 = SABx()
+  local FU, PX, TM = S0.FU, S0.PX, S0.TM
+  if TM.editing then return false end
+  local d = PX.data()
+  if not d then return false end
+  local inv = inventory(d)
+  local needR, needB = FU.needFor(""), FU.needFor("Big")
+  local owed = owedRead()
+  local function fuse(ids, name, v, nv, why)
+    TM.editing, TM.editingSince = true, os.clock()
+    local r = PX.call("fuse", { ids = ids })
+    TM.editing, TM.nextTry = false, 0
+    if type(r) == "table" and r.ok then
+      T.pet.fused = T.pet.fused + 1
+      note(("TEAM FUSE: %d %s -> %s (%s)"):format(#ids, PX.nice(name, v), PX.nice(name, nv), why))
+      return true
+    end
+    note(("TEAM FUSE: %s failed: %s"):format(PX.nice(name, v), type(r) == "table" and tostring(r.reason) or "no answer"))
+    T.pet.nextAt = os.clock() + 30
+    return false
+  end
+  for name in pairs(targets()) do
+    local e = inv[name]
+    if e then
+      local g = FU.goal(name) or { [""] = 0, Big = 0, Huge = 0 }
+      -- Huge: one owed to an alt first, then one the main's own plan wants
+      if #e.spare.Big >= needB then
+        local forAlt = owedFor(owed, name) > 0 and #e.spare.Huge < owedFor(owed, name)
+        local forMe = e.all.Huge < (g.Huge or 0)
+        if forAlt or forMe then
+          local ids = {}
+          for i = 1, needB do ids[i] = e.spare.Big[i] end
+          return fuse(ids, name, "Big", "Huge", forAlt and "owed to an alt" or "for the main's plan")
+        end
+      end
+      -- Big from spare copies: always (that is what the copies come for)
+      if #e.spare[""] >= needR then
+        local ids = {}
+        for i = 1, needR do ids[i] = e.spare[""][i] end
+        return fuse(ids, name, "", "Big", "copies from the team")
+      end
+    end
+  end
+  return false
+end
+T.mainFuse = mainFuse
+
+-- the trade with one alt: what it gives (spare copies, 3 spare Bigs for a Huge) and what it gets
+-- (the Huge it is owed, Bigs / Huges the main can spare that its plan wants)
+local function planTrade(s, mainInv, owed, designated)
+  local S0 = SABx()
+  local needB = S0.FU.needFor("Big")
+  local d = decodePets(s.player)
+  if not d then return nil end
+  local inv = inventory(d)
+  local tg = targets()
+  local give, get, hugeFor = {}, {}, nil
+  -- 1. its spare copies of target pets
+  for name in pairs(tg) do
+    local e = inv[name]
+    if e then for _, id in ipairs(e.spare[""]) do if #give < 6 then give[#give + 1] = id end end end
+  end
+  -- 2. three spare Bigs of one pet -> a Huge for it
+  if #give <= 6 - needB then
+    for name in pairs(tg) do
+      local e = inv[name]
+      if not hugeFor and e and #e.spare.Big >= needB then
+        for i = 1, needB do give[#give + 1] = e.spare.Big[i] end
+        hugeFor = name
+      end
+    end
+  end
+  -- 3. what the main hands back: owed Huges, then pets the main can spare that this alt's plan wants
+  local mine = owed[s.name] or {}
+  for name, c in pairs(mine) do
+    local e = mainInv[name]
+    for i = 1, math.min(c, e and #e.spare.Huge or 0) do if #get < 6 then get[#get + 1] = e.spare.Huge[i] end end
+  end
+  for name, who in pairs(designated) do
+    if who.alt == s.name and #get < 6 then get[#get + 1] = who.id end
+  end
+  return { alt = s, give = give, get = get, hugeFor = hugeFor, size = #give + #get }
+end
+-- which spare Big / Huge of the main goes to which alt: the alt with the fewest of that pet whose
+-- plan wants more of it (ties: the weakest pets)
+local function designate(mainInv, owed)
+  local S0 = SABx()
+  local FU = S0.FU
+  local d = petD()
+  local needB = FU.needFor("Big")
+  local out = {}
+  local alts = {}
+  for _, s in ipairs(T.peers()) do
+    if s.role == "alt" and s.fresh and s.player then
+      local dd = decodePets(s.player)
+      alts[#alts + 1] = { s = s, inv = dd and inventory(dd) or {}, goal = parseGoal(s.goal), n = dd and #(dd.pets or {}) or 0, max = dd and dd.maxOwned or 60 }
+    end
+  end
+  for name, e in pairs(mainInv) do
+    local g = FU.goal(name) or { [""] = 0, Big = 0, Huge = 0 }
+    local o = owedFor(owed, name)
+    -- the main keeps what its own plan still wants, and Bigs for Huges it owes
+    local keepH = math.max(0, (g.Huge or 0) - (e.all.Huge - #e.spare.Huge)) + o
+    local keepB = math.max(0, (g.Big or 0) + needB * math.max(0, (g.Huge or 0) - e.all.Huge) - (e.all.Big - #e.spare.Big)) + needB * math.max(0, o - #e.spare.Huge)
+    for _, v in ipairs({ "Huge", "Big" }) do
+      local free = #e.spare[v] - (v == "Huge" and keepH or keepB)
+      for i = 1, math.max(0, free) do
+        local best, bestHave
+        for _, a in ipairs(alts) do
+          local ga = a.goal[name]
+          local ai = a.inv[name] or { all = { [""] = 0, Big = 0, Huge = 0 } }
+          local units = ai.all.Big + needB * ai.all.Huge
+          local wantUnits = ga and ((ga.Big or 0) + needB * (ga.Huge or 0)) or 0
+          if ga and units < wantUnits and a.n < a.max - 1 then
+            if not best or units < bestHave or (units == bestHave and (tonumber(a.s.petScore) or 0) < (tonumber(best.s.petScore) or 0)) then best, bestHave = a, units end
+          end
+        end
+        if best then
+          out[#out + 1] = { alt = best.s.name, id = e.spare[v][i], name = name, v = v }
+          local ai = best.inv[name] or { all = { [""] = 0, Big = 0, Huge = 0 } }
+          best.inv[name] = ai
+          ai.all[v] = ai.all[v] + 1 -- counted, so the next one goes to whoever is lowest then
+        end
+      end
+    end
+  end
+  return out
+end
+T.designate = designate
+
+-- the game's trade events (both sides)
 local function trListen()
   local ev = trRemote("TradeEvent")
   if not ev then return end
   T.conns[#T.conns + 1] = ev.OnClientEvent:Connect(function(a1, a2, a3, a4)
     if not T.alive then return end
     if a1 == "invite" then
-      if isOurs(a2) and not T.tr.active then
-        T.tr.active, T.tr.state, T.tr.closed, T.tr.role = true, nil, nil, "receiver"
-        T.tr.since = os.clock()
-        task.spawn(function() trReq("answer", a2, true) end)
-        note("TEAM TRADE: accepted an invite from " .. tostring(a3))
+      -- an alt answers only the main, and only with an order of its own waiting
+      local pl = Players:GetPlayerByUserId(tonumber(a2) or -1)
+      if T.role == "alt" and pl and pl.Name == MAIN and not T.tr.active then
+        local ok, body = pcall(readfile, DIR .. "/trade_" .. T.me .. ".txt")
+        local o = {}
+        for k, v in tostring(ok and body or ""):gmatch("(%w+)=([^\n]*)") do o[k] = v end
+        if tonumber(o.t) and os.time() - tonumber(o.t) < 90 then
+          o.giveL, o.getL = {}, {}
+          for id in tostring(o.give or ""):gmatch("[^,]+") do o.giveL[#o.giveL + 1] = id end
+          for id in tostring(o.get or ""):gmatch("[^,]+") do o.getL[#o.getL + 1] = id end
+          T.tr.active, T.tr.role, T.tr.order, T.tr.state, T.tr.closed, T.tr.since, T.tr.added = true, "alt", o, nil, nil, os.clock(), {}
+          task.spawn(function() trReq("answer", a2, true) end)
+        end
       end
     elseif a1 == "state" and type(a2) == "table" then
       T.tr.state = a2
-      if T.tr.role == "receiver" and isOurs(a2.partnerId) and #(a2.mine or {}) == 0 and a2.theirReady and not a2.myReady
-        and (a2.lockedUntil or 0) <= workspace:GetServerTimeNow() then
-        task.spawn(function() trReq("ready", true, a2.revision) end)
+      if T.tr.role == "alt" and T.tr.order then
+        local o = T.tr.order
+        local d = petD()
+        local keep = teamSet(d)
+        local owned = {}
+        for _, p in ipairs(d and d.pets or {}) do owned[tostring(p.id)] = true end
+        local inMine = {}
+        for _, it in ipairs(a2.mine or {}) do inMine[tostring(type(it) == "table" and it.id or it)] = true end
+        -- add what the order asks of us (spare pets only)
+        for _, id in ipairs(o.giveL) do
+          if owned[id] and not keep[id] and not inMine[id] and not T.tr.added[id] then
+            T.tr.added[id] = true
+            task.spawn(function() trReq("add", id) end)
+          end
+        end
+        -- ready when what we expect from the main is in, nothing of ours from a team is offered
+        local inTheirs = {}
+        for _, it in ipairs(a2.theirs or {}) do inTheirs[tostring(type(it) == "table" and it.id or it)] = true end
+        local allIn = true
+        for _, id in ipairs(o.getL) do if not inTheirs[id] then allIn = false end end
+        local teamOffered = false
+        for id in pairs(inMine) do if keep[id] then teamOffered = true end end
+        if allIn and not teamOffered and not a2.myReady and (a2.lockedUntil or 0) <= workspace:GetServerTimeNow() then
+          task.spawn(function() trReq("ready", true, a2.revision) end)
+        end
       end
     elseif a1 == "closed" then
       T.tr.closed = { text = a2, ok = a3 == true, items = a4 }
-      if T.tr.role == "receiver" then
-        if a3 == true then T.pet.got = T.pet.got + 1 note("TEAM TRADE: received - " .. tostring(a2)) end
-        T.tr.active, T.tr.role = false, nil
+      if T.tr.role == "alt" then
+        if a3 == true then T.pet.got = T.pet.got + 1 note("TEAM TRADE with the main: " .. tostring(a2)) end
+        T.tr.active, T.tr.role, T.tr.order = false, nil, nil
       end
     end
   end)
 end
 
--- send these pets (up to 6) to a team account; true when the game says the trade went through
-local function tradeTo(plr, ids)
-  if T.tr.active or #ids == 0 then return false end
-  local S0 = SABx()
-  T.tr.active, T.tr.role, T.tr.state, T.tr.closed, T.tr.since = true, "sender", nil, nil, os.clock()
+-- the main runs one trade: order file, invite, its own side, ready, done
+local function runTrade(plan)
+  local s = plan.alt
+  T.tr.active, T.tr.role, T.tr.state, T.tr.closed, T.tr.since = true, "main", nil, nil, os.clock()
+  local path = DIR .. "/trade_" .. s.name .. ".txt"
+  pcall(writefile, path, ("t=%d\ngive=%s\nget=%s\n"):format(os.time(), table.concat(plan.give, ","), table.concat(plan.get, ",")))
   local function finish(ok, why)
-    if not ok then trReq("cancel") note("TEAM TRADE to " .. plr.Name .. " stopped: " .. tostring(why)) end
+    if not ok then trReq("cancel") note("TEAM TRADE with " .. s.name .. " stopped: " .. tostring(why)) end
+    pcall(writefile, path, "")
     T.tr.active, T.tr.role = false, nil
     return ok
   end
-  trReq("invite", plr)
+  trReq("invite", s.player)
   local t0 = os.clock()
   while not T.tr.state and os.clock() - t0 < 25 do task.wait(0.3) end
   if not T.tr.state then return finish(false, "no answer to the invite") end
-  for i = 1, math.min(6, #ids) do trReq("add", ids[i]) task.wait(0.35) end
+  for _, id in ipairs(plan.get) do trReq("add", id) task.wait(0.35) end
+  -- wait for the alt's side (up to 25 s), then ready with whatever is in
   t0 = os.clock()
   local st
-  repeat task.wait(0.3) st = T.tr.state until (st and #(st.mine or {}) >= math.min(6, #ids)) or os.clock() - t0 > 10
-  if not st or #(st.mine or {}) == 0 then return finish(false, "the pets did not go in") end
-  -- ready once the lock is over; the receiver readies when it sees us ready
+  repeat
+    task.wait(0.5)
+    st = T.tr.state
+    local n = #(st and st.theirs or {})
+  until (n >= #plan.give and #(st.mine or {}) >= #plan.get) or os.clock() - t0 > 25
+  st = T.tr.state
+  if #(st.theirs or {}) + #(st.mine or {}) == 0 then return finish(false, "nothing went in") end
+  local cameBigs = 0
+  if plan.hugeFor then
+    for _, it in ipairs(st.theirs or {}) do
+      local nm = type(it) == "table" and it.name
+      local v = type(it) == "table" and it.variant
+      if nm == plan.hugeFor and v == "Big" then cameBigs = cameBigs + 1 end
+    end
+  end
   t0 = os.clock()
-  while os.clock() - t0 < 40 and not T.tr.closed do
+  while os.clock() - t0 < 45 and not T.tr.closed do
     st = T.tr.state
     if st and not st.myReady and (st.lockedUntil or 0) <= workspace:GetServerTimeNow() then trReq("ready", true, st.revision) end
     task.wait(0.8)
   end
   local c = T.tr.closed
-  if c and c.ok then
-    T.pet.sent, T.pet.trades = T.pet.sent + math.min(6, #ids), T.pet.trades + 1
-    note(("TEAM TRADE: sent %d pet(s) to %s"):format(math.min(6, #ids), plr.Name))
-    return finish(true)
+  if not (c and c.ok) then return finish(false, c and c.text or "it did not complete") end
+  -- book-keeping: Huges handed over, Huges now owed for the Bigs that came
+  local o = owedRead()
+  local mainInvNow = {}
+  for _, id in ipairs(plan.get) do mainInvNow[id] = true end
+  for name, cnt in pairs(o[s.name] or {}) do
+    local given = 0
+    for _, it in ipairs(st.mine or {}) do
+      if type(it) == "table" and it.name == name and it.variant == "Huge" then given = given + 1 end
+    end
+    o[s.name][name] = math.max(0, cnt - given)
   end
-  return finish(false, c and c.text or "it did not complete")
+  if plan.hugeFor and cameBigs >= SABx().FU.needFor("Big") then
+    o[s.name] = o[s.name] or {}
+    o[s.name][plan.hugeFor] = (o[s.name][plan.hugeFor] or 0) + 1
+    note(("TEAM PETS: owe %s a Huge %s for its Bigs"):format(s.name, plan.hugeFor))
+  end
+  owedWrite(o)
+  T.pet.trades = T.pet.trades + 1
+  T.pet.got = T.pet.got + #(st.theirs or {})
+  T.pet.sent = T.pet.sent + #(st.mine or {})
+  note(("TEAM TRADE with %s: got %d, gave %d"):format(s.name, #(st.theirs or {}), #(st.mine or {})))
+  return finish(true)
 end
-T.tradeTo = tradeTo
+T.runTrade = runTrade
 
--- what this account sends, and to whom
-local function petsToSend()
-  local S0 = SABx()
-  local keep, d = teamIds()
-  local FU = S0.FU
-  if T.role == "alt" then
-    -- everything outside this alt's teams that the main's plan has, to the main
-    local main
-    for _, s in ipairs(T.peers()) do if s.role == "main" and s.fresh and s.player then main = s end end
-    if not main or tostring(main.trading) == "true" then return nil end
-    if (tonumber(main.pets) or 0) >= (tonumber(main.petMax) or 0) - 6 then return nil end
-    local plan = {}
-    for n in tostring(main.plan or ""):gmatch("[^,]+") do plan[n] = true end
-    local ids = {}
-    for _, p in ipairs(FU.owned(d)) do
-      if not keep[p.id] and plan[p.name] and not p.named then ids[#ids + 1] = p.id end
-      if #ids >= 6 then break end
-    end
-    return main, ids
-  end
-  -- the main: Huges / Bigs beyond its plan (a Big only once no more Huges of it are planned)
-  local weakest
-  for _, s in ipairs(T.peers()) do
-    if s.role == "alt" and s.fresh and s.player and tostring(s.trading) ~= "true"
-      and (tonumber(s.pets) or 0) < (tonumber(s.petMax) or 60) - 3 then
-      if not weakest or (tonumber(s.petScore) or 0) < (tonumber(weakest.petScore) or 0) then weakest = s end
-    end
-  end
-  if not weakest then return nil end
-  local ids, spare = {}, {}
-  local byName = {}
-  for _, p in ipairs(FU.owned(d)) do
-    if not keep[p.id] and not p.named and (p.variant == "Huge" or p.variant == "Big") then
-      byName[p.name] = byName[p.name] or { Huge = {}, Big = {} }
-      table.insert(byName[p.name][p.variant], p.id)
-    end
-  end
-  for name, v in pairs(byName) do
-    local g = FU.goal(name)
-    local h = FU.have(name, d)
-    local hugeSpare = #v.Huge - math.max(0, (g and g.Huge or 0) - (h.Huge - #v.Huge))
-    for i = 1, math.max(0, hugeSpare) do spare[#spare + 1] = { id = v.Huge[i], w = 9 } end
-    if not g or (g.Huge or 0) <= h.Huge then
-      local bigSpare = #v.Big - math.max(0, (g and g.Big or 0) - (h.Big - #v.Big))
-      for i = 1, math.max(0, bigSpare) do spare[#spare + 1] = { id = v.Big[i], w = 3 } end
-    end
-  end
-  table.sort(spare, function(a, b) return a.w > b.w end)
-  for i = 1, math.min(3, #spare) do ids[i] = spare[i].id end
-  return weakest, ids
-end
-T.petsToSend = petsToSend
+-- the main's pet tick: a fuse if one is due, else the biggest trade waiting
 local function petTick()
   local S0 = SABx()
   if not (S0 and S0.FU and S0.PX) then return end
   pcall(petTicks)
   if T.tr.active then
-    if os.clock() - (T.tr.since or 0) > 90 then trReq("cancel") T.tr.active, T.tr.role = false, nil note("TEAM TRADE: gave up a stuck trade") end
+    if os.clock() - (T.tr.since or 0) > 120 then trReq("cancel") T.tr.active, T.tr.role = false, nil note("TEAM TRADE: gave up a stuck trade") end
     return
   end
-  if not T.pet.auto or os.clock() < T.pet.nextAt then return end
-  T.pet.nextAt = os.clock() + (T.role == "alt" and 45 or 60)
-  local to, ids = petsToSend()
-  if not to or not ids or #ids == 0 then return end
-  -- an alt waits until it has a full trade's worth (or a few for a while)
-  if T.role == "alt" and #ids < 6 and os.clock() - (T.pet.lastSent or 0) < 600 then return end
-  T.pet.lastSent = os.clock()
-  task.spawn(tradeTo, to.player, ids)
+  if T.role ~= "main" or not T.pet.auto or os.clock() < T.pet.nextAt then return end
+  T.pet.nextAt = os.clock() + 12
+  if mainFuse() then T.pet.nextAt = os.clock() + 6 return end
+  local d = petD()
+  if not d or #(d.pets or {}) >= (d.maxOwned or 210) - 6 then T.pet.msg = "the main's pets are full" return end
+  local mainInv = inventory(d)
+  local owed = owedRead()
+  local des = designate(mainInv, owed)
+  local byAlt = {}
+  for _, x in ipairs(des) do byAlt[x.alt] = byAlt[x.alt] or {} table.insert(byAlt[x.alt], x) end
+  local best
+  for _, s in ipairs(T.peers()) do
+    if s.role == "alt" and s.fresh and s.player and tostring(s.trading) ~= "true" then
+      local dmap = {}
+      for i, x in ipairs(byAlt[s.name] or {}) do dmap[i] = { alt = s.name, id = x.id } end
+      local pl = planTrade(s, mainInv, owed, dmap)
+      if pl and pl.size > 0 and (not best or pl.size > best.size) then best = pl end
+    end
+  end
+  if not best then T.pet.msg = "nothing to trade" return end
+  T.pet.msg = ("trading with %s (gets %d, gives %d)"):format(best.alt.name, #best.get, #best.give)
+  task.spawn(runTrade, best)
 end
 T.petTick = petTick
 trListen()

@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 20 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 21 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -101,6 +101,8 @@ local function writeMe()
     "cash=" .. tostring(T.money()), "upmax=" .. tostring(T.up.max == true),
     "want=" .. (T.role == "alt" and table.concat(T.wantIdx(), ",") or ""),
     "guild=" .. (T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none"),
+    "gname=" .. tostring(T.clan.inClan and T.clan.name or ""),
+    "gpts=" .. tostring(T.clan.points or 0),
     "plan=" .. table.concat(T.planList and T.planList() or {}, ","),
     "goal=" .. (T.goalText and T.goalText() or ""),
     "pets=" .. tostring(#((G.SAB and G.SAB.PX.data() or {}).pets or {})),
@@ -254,27 +256,59 @@ local function claimRanks()
 end
 
 ---------------------------------------------------------------- guild (clan) quests
-T.clan = { at = -1e9, need = false, open = 0, done = 0, n = 0 }
+-- Read Nov 26 (ClanHandler + ClanConfig): ClanRequest("state") -> { ok, data = { inClan, clan = { name,
+-- tag, level, perks }, points (this player's guild points), tasks = { list, done, bonus, resetsAt },
+-- shop = { daily, list } } }. Six quests a day; they count by themselves (no claim), the guild perks
+-- (income, offline, luck) apply by themselves. The kinds and who does them here:
+--   minutes / together  time in the server / with a guildmate (all our accounts share one server)
+--   help                CHURN's Help (alts in a guild also answer guildmates' calls: HelpGuild)
+--   stack / rare        waxing (the farm; in the last 3 h before the reset an alt waxes anything)
+--   pull                CHURN's quest pulls (the account stays off the campfire meanwhile)
+--   buy                 an alt buys whatever its pad shows (cash checked) and sells it again
+--   give / giveTo       "give a butter" / "to N different players": the team passes butters on (below)
+-- The quests' "Refresh" button costs Robux: CHURN's Robux guard drops it. Points buy shop items
+-- (points only, never Robux): an alt spends them on Speedy Wax while it waxes, and Guild XP above that.
+T.clan = { at = -1e9, need = false, open = 0, done = 0, n = 0, inClan = false, left = {}, name = "", points = 0, resetsAt = 0, texts = {} }
+T.g = { given = {}, at = 0, gives = 0, buys = 0, pulls = 0, shopAt = 0, bought = 0, idleSince = nil, msg = "" }
+-- rarities from weakest up (the game's order; Dotonbori is the newest and best)
+local RANKS = { "Common", "Rare", "Epic", "Legendary", "Mythic", "Celestial", "Divine", "Dream", "Sugar Rush", "Picnic", "Dotonbori" }
+local RANK = {} for i, r in ipairs(RANKS) do RANK[r] = i end
+T.RANK = RANK
 local function clanState()
   local Cn = T.clan
   if os.clock() - Cn.at < 60 then return Cn end
   Cn.at = os.clock()
   local r = RS.Remotes:FindFirstChild("ClanRequest")
   local ok, v = pcall(function() return r:InvokeServer("state") end)
-  local t = ok and type(v) == "table" and type(v.data) == "table" and v.data.tasks
-  Cn.need, Cn.open, Cn.done, Cn.n = false, 0, 0, 0
-  if type(t) == "table" then
+  local d = ok and type(v) == "table" and type(v.data) == "table" and v.data or nil
+  if not d then return Cn end -- a failed call keeps what was known
+  local t = d.tasks
+  Cn.need, Cn.open, Cn.done, Cn.n, Cn.left, Cn.texts, Cn.giveRar = false, 0, 0, 0, {}, {}, nil
+  local clan = type(d.clan) == "table" and d.clan or nil
+  Cn.inClan = d.inClan == true or (clan ~= nil and clan.name ~= nil)
+  Cn.name = clan and (tostring(clan.name or "") .. (clan.tag and (" [" .. tostring(clan.tag) .. "]") or "") .. (clan.level and (" lv" .. tostring(clan.level)) or "")) or ""
+  Cn.points = tonumber(d.points) or 0
+  Cn.shop = d.shop
+  if Cn.inClan and type(t) == "table" then
+    Cn.resetsAt = tonumber(t.resetsAt) or 0
     for _, x in ipairs(t.list or {}) do
       Cn.n = Cn.n + 1
       if x.done then Cn.done = Cn.done + 1 else
         Cn.open = Cn.open + 1
-        if x.kind == "stack" or x.kind == "rare" then Cn.need = true end
+        local kind = tostring(x.kind)
+        if kind == "stack" or kind == "rare" then Cn.need = true end
+        -- "Give someone a Sugar Rush butter or rarer": only a butter that rare counts (kept apart as giveRare)
+        local rr = kind == "give" and tostring(x.desc or ""):match("a (.-) butter or rarer")
+        if rr and RANK[rr] then Cn.giveRar, kind = rr, "giveRare" end
+        Cn.left[kind] = math.max(Cn.left[kind] or 0, math.max(1, (tonumber(x.goal) or 1) - (tonumber(x.progress) or 0)))
+        Cn.texts[#Cn.texts + 1] = ("%s %d/%d"):format(tostring(x.desc or x.text or kind), tonumber(x.progress) or 0, tonumber(x.goal) or 0)
       end
     end
   end
   return Cn
 end
 T.clanState = clanState
+function T.refreshClan() T.clan.at = -1e9 return clanState() end
 
 ---------------------------------------------------------------- index (what this account has discovered)
 T.idx = { at = -1e9 }
@@ -311,7 +345,12 @@ local function altTick()
   local need = {}
   for _, k in ipairs(wantIdx()) do need[k] = true end
   for k in pairs(Tg) do Tg[k] = nil end
-  if P.need then for k in pairs(ALL) do Tg[k] = true end end
+  -- a guild stack / rare quest still open in the last 3 h before the reset: wax whatever comes
+  local Cn = clanState()
+  local guildLate = Cn.inClan and Cn.need and Cn.resetsAt > 0 and Cn.resetsAt - os.time() < 3 * 3600
+  -- an alt in a guild answers guildmates' "help my wax" calls (helps count for its quests and the guild)
+  C.HelpGuild = Cn.inClan == true
+  if P.need or guildLate then for k in pairs(ALL) do Tg[k] = true end end
   for k in pairs(GOOD) do
     -- Sushi always; another good butter for the index, or - once every upgrade is bought - for the
     -- stack (a full stack drops its weakest earner, so it is an upgrade); else it is sold for cash
@@ -338,7 +377,8 @@ local function altTick()
   end
   -- the campfire seat holds every walking job: up while quests are open or a gift waits for a station
   -- anything in hand (a gift to wax or to sell) needs the account on its feet
-  local wantUp = (P.live and P.open > 0) or (held ~= nil and held ~= "")
+  local gWalk = Cn.inClan and ((Cn.left.pull or 0) + (Cn.left.give or 0) + (Cn.left.giveTo or 0) + (Cn.left.buy or 0)) > 0
+  local wantUp = (P.live and P.open > 0) or (held ~= nil and held ~= "") or gWalk
   if wantUp then
     if C.Campfire then C.Campfire = false end
     if seated() then standUp() end
@@ -346,9 +386,11 @@ local function altTick()
     C.Campfire = true
     SAB.CF.nextAt = 0
   end
-  T.mode = (P.need and "keep+wax (quest)" or "sell (pulls go on)") .. (giftWaiting and (C.Targets[key(held)] and ", gift to wax" or ", gift to sell") or "")
+  T.mode = ((P.need or guildLate) and "keep+wax (quest)" or "sell (pulls go on)") .. (giftWaiting and (C.Targets[key(held)] and ", gift to wax" or ", gift to sell") or "")
     .. (wantUp and ", campfire waits" or ", campfire on")
 end
+
+T.altTick = altTick
 
 ---------------------------------------------------------------- main: the Sushi feeder
 T.feed = { on = true, target = nil, since = 0, standing = false, wait = {} }
@@ -365,27 +407,38 @@ end
 -- something" (the main then stands up to roll).
 local function pickAlt(k)
   k = k and key(k) or nil
-  local ready = {}
+  local all = {}
   for _, s in ipairs(T.peers()) do
     if s.fresh and s.player and s.role == "alt" and (s.stations or 0) >= 3
       and (s.holding == nil or s.holding == "") and os.clock() >= (T.feed.wait[s.name] or 0) then
-      ready[#ready + 1] = s
+      all[#all + 1] = s
     end
   end
-  local function most(f) local b for _, s in ipairs(ready) do if f(s) and (not b or (s.free or 0) > (b.free or 0)) then b = s end end return b end
-  local function poorest(f) local b for _, s in ipairs(ready) do if f(s) and (not b or (tonumber(s.cash) or 0) < (tonumber(b.cash) or 0)) then b = s end end return b end
-  if k == "sushi" or k == nil then
-    local a = most(function(s) return (s.free or 0) > 0 end)
-    if a or k == "sushi" then return a end
+  local function choose(ready)
+    local function most(f) local b for _, s in ipairs(ready) do if f(s) and (not b or (s.free or 0) > (b.free or 0)) then b = s end end return b end
+    local function poorest(f) local b for _, s in ipairs(ready) do if f(s) and (not b or (tonumber(s.cash) or 0) < (tonumber(b.cash) or 0)) then b = s end end return b end
+    if k == "sushi" or k == nil then
+      local a = most(function(s) return (s.free or 0) > 0 end)
+      if a or k == "sushi" then return a end
+    end
+    if k then
+      local a = most(function(s) return (s.free or 0) > 0 and ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil end)
+      if a then return a end
+    end
+    local p = poorest(function(s) return tostring(s.upmax) ~= "true" end)
+    if p then return p end
+    -- everybody has bought everything: the one with most free stations waxes it (a stack upgrade)
+    return most(function(s) return (s.free or 0) > 0 end)
   end
-  if k then
-    local a = most(function(s) return (s.free or 0) > 0 and ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil end)
+  -- a guild quest "give butters to N different players" is open: the alts not given to since the
+  -- quests reset come first
+  if T.clan.inClan and (T.clan.left.giveTo or 0) > 0 then
+    local new = {}
+    for _, s in ipairs(all) do if T.g.given[s.name] ~= T.clan.resetsAt then new[#new + 1] = s end end
+    local a = #new > 0 and choose(new) or nil
     if a then return a end
   end
-  local p = poorest(function(s) return tostring(s.upmax) ~= "true" end)
-  if p then return p end
-  -- everybody has bought everything: the one with most free stations waxes it (a stack upgrade)
-  return most(function(s) return (s.free or 0) > 0 end)
+  return choose(all)
 end
 local function give(s)
   local SAB = G.SAB
@@ -409,6 +462,8 @@ local function give(s)
   if not ok then T.feed.globalWait = os.clock() + 12 end -- the game's gift cooldown: hold it a moment
   if ok then
     T.gifts = T.gifts + 1
+    T.g.given[s.name] = T.clan.resetsAt
+    if T.clan.inClan and ((T.clan.left.give or 0) + (T.clan.left.giveTo or 0) + (T.clan.left.giveRare or 0)) > 0 then T.clan.at = math.min(T.clan.at, os.clock() - 50) end
     note(("TEAM: gave %s to %s (%d given)"):format(tostring(held), s.name, T.gifts))
   else
     note(("TEAM: could not give %s to %s"):format(tostring(held), s.name))
@@ -514,10 +569,20 @@ local function mainTick()
       T.feed.standing = false
       note("TEAM: no alt has room - back to the campfire")
     end
+    if Cn.inClan and (Cn.left.pull or 0) > 0 then
+      -- a guild "pull the lever" quest: CHURN pulls it itself, which the campfire seat would hold up
+      if C.Campfire then C.Campfire = false end
+      if seated() then standUp() end
+      T.mode = "guild quest: pulling the lever"
+      return
+    end
     if not C.Campfire then C.Campfire = true SAB.CF.nextAt = 0 end
     T.mode = isGood(held) and ("holding " .. tostring(held) .. ", no alt has room") or "campfire"
   end
 end
+
+
+T.mainTick = mainTick
 
 
 ---------------------------------------------------------------- pets: the factory on the main
@@ -741,6 +806,15 @@ local function planTrade(s, mainInv, owed, designated)
       end
     end
   end
+  -- 2b. spare Bigs / Huges of pets this alt's plan does not use: to the main (its Huge stock)
+  local myGoal = parseGoal(s.goal)
+  for name, e in pairs(inv) do
+    if tg[name] and not myGoal[name] and name ~= hugeFor then
+      for _, v in ipairs({ "Big", "Huge" }) do
+        for _, id in ipairs(e.spare[v]) do if #give < 6 then give[#give + 1] = id end end
+      end
+    end
+  end
   -- 3. what the main hands back: owed Huges, then pets the main can spare that this alt's plan wants
   local mine = owed[s.name] or {}
   for name, c in pairs(mine) do
@@ -951,7 +1025,13 @@ local function petTick()
       local dmap = {}
       for i, x in ipairs(byAlt[s.name] or {}) do dmap[i] = { alt = s.name, id = x.id } end
       local pl = planTrade(s, mainInv, owed, dmap)
-      if pl and pl.size > 0 and (not best or pl.size > best.size) then best = pl end
+      -- an alt at its pet limit first (it cannot adopt until some go), then the biggest trade, then
+      -- the alt with the most pets
+      if pl and pl.size > 0 then
+        local n, mx = tonumber(s.pets) or 0, tonumber(s.petMax) or 60
+        pl.rank = (n >= mx - 2 and 1000 or 0) + pl.size * 10 + n / 100
+        if not best or pl.rank > best.rank then best = pl end
+      end
     end
   end
   if not best then T.pet.msg = "nothing to trade" return end
@@ -1034,6 +1114,7 @@ local function buildUI()
   T.ui.mode = U.line(me, C.accent)
   T.ui.stats = U.line(me, C.good)
   T.ui.pass = U.line(me, C.info)
+  T.ui.guild = U.line(me, C.info)
   if T.role == "main" then
     local r = U.row(me, 26)
     T.ui.feedB = U.button(r, "", C.panel2, 10, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0))
@@ -1072,13 +1153,22 @@ function T.paint()
   U.put(T.ui.stats, ("gifts given %d | Limited to main %d | rank rewards %d | upgrades %d (%s) | boost +%s%%"):format(
     T.gifts, T.toMain or 0, T.claimed or 0, T.up.bought, T.up.msg, tostring(LP:GetAttribute("FriendBoost") or 0)))
   U.put(T.ui.pass, ("pass: rank %s, %s points | %s"):format(tostring(P.rank or "?"), tostring(P.points or "?"), paceText(P.points, P.open)))
+  local Cn = T.clan
+  if Cn.inClan then
+    U.put(T.ui.guild, ("guild %s: quests %d/%d, %d pts%s%s%s"):format(Cn.name, Cn.done, Cn.n, Cn.points,
+      T.g.gives > 0 and (" | passed on " .. T.g.gives) or "", T.g.bought > 0 and (" | shop " .. T.g.bought) or "",
+      Cn.open > 0 and (" | open: " .. table.concat(Cn.texts, "; ")) or " | all done today"))
+  else
+    U.put(T.ui.guild, "guild: not in one (joining is picked up by itself)")
+  end
   if T.ui.feedB then
     U.put(T.ui.feedB, T.feed.on and "SUSHI FEEDER: ON (gives Dotonbori/Picnic butters to alts with room)" or "SUSHI FEEDER: OFF")
     T.ui.feedB.BackgroundColor3 = T.feed.on and C.good or C.panel2
     T.ui.feedB.TextColor3 = T.feed.on and C.ink or C.dim
   end
   local list = { { name = T.me, role = T.role, free = nil, stations = LP:GetAttribute("WaxStations"), holding = LP:GetAttribute("SquishyEquipped"),
-    seated = tostring(seated()), rank = P.rank, points = P.points, open = P.open, fresh = true, mode = T.mode } }
+    seated = tostring(seated()), rank = P.rank, points = P.points, open = P.open, fresh = true, mode = T.mode,
+    guild = T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none" } }
   for _, s in ipairs(T.peers()) do list[#list + 1] = s end
   table.sort(list, function(a, b) if a.role ~= b.role then return a.role == "main" end return a.name < b.name end)
   for i, r in ipairs(T.ui.rows) do
@@ -1088,7 +1178,7 @@ function T.paint()
       local hold = (s.holding and s.holding ~= "") and (" | holding " .. tostring(s.holding):gsub("Butter$", "")) or ""
       U.put(r.l, ("%s%s  %s%s%s"):format(s.name, s.role == "main" and " (main)" or "",
         s.fresh and "" or "OFFLINE ", s.free and ("free " .. s.free .. "/" .. tostring(s.stations)) or ("stations " .. tostring(s.stations)),
-        hold .. (s.seated == "true" and " | at the campfire" or "")))
+        hold .. (s.seated == "true" and " | at the campfire" or "") .. ((s.guild and s.guild ~= "none") and (" | guild " .. tostring(s.guild)) or "")))
       r.d.BackgroundColor3 = not s.fresh and C.bad or (s.role == "main" and C.accent or C.good)
     end
   end
@@ -1207,6 +1297,146 @@ end
 T.cascadeTick = cascadeTick
 
 
+---------------------------------------------------------------- guild quests an alt does on purpose
+-- give / giveTo: a butter in hand is passed on to one of ours that has not had one from this account
+-- since the reset - a Sushi or another good butter only to an alt with a free station (it waxes it, so
+-- nothing is lost), anything else to the poorest (it sells it). With nothing to pass for 5 min, and for
+-- a buy quest, the alt buys what its pad shows (never without the money) and rolls its lever for more.
+local function rarityOf(n) local v = n and SI[n] return type(v) == "table" and v.rarity or nil end
+local function guildTo(held)
+  local Cn = T.clan
+  local good = isGood(held)
+  local best
+  for _, s in ipairs(T.peers()) do
+    if s.fresh and s.player and (s.holding == nil or s.holding == "") and tostring(s.trading) ~= "true"
+      and os.clock() >= (T.feed.wait[s.name] or 0) and T.g.given[s.name] ~= Cn.resetsAt then
+      if good then
+        -- an alt that waxes it
+        if s.role == "alt" and (s.free or 0) > 0 and (s.stations or 0) >= 3 and (not best or (s.free or 0) > (best.free or 0)) then best = s end
+      elseif s.role == "alt" or not best then
+        -- anything else: the poorest alt sells it (the main only when no alt is there)
+        if not best or best.role == "main" or (tonumber(s.cash) or 0) < (tonumber(best.cash) or 0) then best = s end
+      end
+    end
+  end
+  return best
+end
+local function guildTick()
+  if T.role ~= "alt" or T.tr.active then return false end
+  local Cn = clanState()
+  if not Cn.inClan or Cn.open == 0 then T.g.msg = Cn.inClan and "all guild quests done" or "" return false end
+  local SAB = G.SAB
+  local plainLeft = (Cn.left.give or 0) + (Cn.left.giveTo or 0)
+  local giveLeft = plainLeft + (Cn.left.giveRare or 0)
+  local buyLeft = Cn.left.buy or 0
+  if giveLeft <= 0 and buyLeft <= 0 then T.g.idleSince = nil return false end
+  if os.clock() < T.g.at or os.clock() < (T.feed.globalWait or 0) then return false end
+  local held = LP:GetAttribute("SquishyEquipped")
+  if held and held ~= "" then
+    T.g.idleSince = nil
+    if isLimited(held) or giveLeft <= 0 then return false end
+    -- only the "give a <rarity> butter or rarer" quest left: only a butter that rare counts
+    if plainLeft <= 0 then
+      local r = RANK[rarityOf(held) or ""]
+      if not (Cn.giveRar and r and r >= RANK[Cn.giveRar]) then return false end
+    end
+    local s = guildTo(held)
+    if not s then T.g.msg = "guild give: nobody to pass the " .. tostring(held) .. " to yet" return false end
+    T.g.at = os.clock() + 3
+    if give(s) then
+      T.g.gives = T.g.gives + 1
+      note(("TEAM GUILD: passed %s to %s for the guild quest"):format(tostring(held), s.name))
+    end
+    return true
+  end
+  -- nothing in hand: wait a while for a butter to pass on (the main's Sushis), then make one
+  T.g.idleSince = T.g.idleSince or os.clock()
+  -- (a bought butter is almost never rare enough for the rare one: that one waits for a Sushi)
+  if buyLeft <= 0 and (plainLeft <= 0 or os.clock() - T.g.idleSince < 300) then
+    T.g.msg = "guild give: waiting for a butter to pass on"
+    return false
+  end
+  T.g.at = os.clock() + 4
+  local pn = padName()
+  if pn and not isLimited(pn) then
+    local price = SI[pn] and tonumber(SI[pn].price)
+    local b = buyPrompt()
+    -- never without the money (a short buy opens a Robux offer): twice the price at least
+    if b and b.Enabled and price and money() >= price * 2 then
+      SAB.S.running = false
+      standUp()
+      local part = b.Parent:IsA("Attachment") and b.Parent.Parent or b.Parent
+      local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+      if hrp and part:IsA("BasePart") then hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 2, 3)) end
+      task.wait(0.6)
+      pcall(fireproximityprompt, b)
+      local t0 = os.clock()
+      repeat task.wait(0.2) until LP:GetAttribute("SquishyEquipped") or os.clock() - t0 > 5
+      SAB.S.running = true
+      if LP:GetAttribute("SquishyEquipped") then
+        T.g.buys = T.g.buys + 1
+        T.g.msg = ("guild quest: bought %s (%d bought)"):format(tostring(pn), T.g.buys)
+        if buyLeft > 0 then T.clan.at = math.min(T.clan.at, os.clock() - 50) end
+      end
+      return true
+    end
+  end
+  local lp, w = SAB.QX.lever()
+  if lp and w then
+    SAB.S.running = false
+    standUp()
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = w.CFrame * CFrame.new(0, 0, -4) end
+    task.wait(0.4)
+    pcall(fireproximityprompt, lp)
+    T.g.pulls = T.g.pulls + 1
+    task.wait(1.2)
+    SAB.S.running = true
+    T.g.msg = "guild quest: rolling for a butter to " .. (buyLeft > 0 and "buy" or "give")
+    return true
+  end
+  return false
+end
+T.guildTick = guildTick
+-- points: shop items cost guild points only. An alt (never the main: its points are the user's) buys
+-- Speedy Wax while 3+ of its waxes run, and Guild XP with what is over 300 points.
+local SHOP_ORDER = { "d_wax15", "wax10", "d_xp600", "xp300", "xp1000" }
+local function guildShop()
+  local Cn = T.clan
+  if T.role ~= "alt" or not Cn.inClan or T.shopOff or os.clock() < T.g.shopAt then return end
+  T.g.shopAt = os.clock() + 90
+  local shop = Cn.shop
+  if type(shop) ~= "table" then return end
+  local items = {}
+  for _, it in ipairs(type(shop.daily) == "table" and shop.daily or {}) do if type(it) == "table" and it.id then items[it.id] = it end end
+  for _, it in ipairs(type(shop.list) == "table" and shop.list or {}) do if type(it) == "table" and it.id then items[it.id] = it end end
+  local waxing = tonumber(LP:GetAttribute("WaxingCount")) or 0
+  for _, id in ipairs(SHOP_ORDER) do
+    local it = items[id]
+    local price = it and tonumber(it.price)
+    if it and price and not it.bought and not it.locked and not it.party and not it.exclusive and price <= Cn.points then
+      local useful
+      if it.kind == "perk" and it.perk == "wax" then useful = waxing >= 3 and os.time() >= (T.g.waxUntil or 0)
+      elseif it.kind == "xp" then useful = Cn.points - price >= 300 end
+      if useful then
+        local ok, v = pcall(function() return RS.Remotes.ClanRequest:InvokeServer("buy", id) end)
+        if ok and type(v) == "table" and v.ok then
+          T.g.bought = T.g.bought + 1
+          if it.kind == "perk" then T.g.waxUntil = os.time() + (tonumber(it.minutes) or 10) * 60 end
+          note(("TEAM GUILD: bought %s for %d points"):format(tostring(it.text or id), price))
+        else
+          note(("TEAM GUILD: shop said no to %s: %s"):format(tostring(it.text or id), tostring(type(v) == "table" and (v.reason or v.text) or v)))
+          T.g.shopAt = os.clock() + 600
+        end
+        T.refreshClan()
+        return
+      end
+    end
+  end
+end
+T.guildShop = guildShop
+
+
 ---------------------------------------------------------------- the game's pop-ups between our own accounts
 -- (all these accounts are ours: nothing to read) - "Trade Complete!" -> OK, a gift's reveal -> Close
 -- (not "Say Thanks": that would put a thank-you pop-up on the giver's screen), a thank-you -> hidden
@@ -1231,7 +1461,15 @@ local POPS = {
   { name = "GiftThanksGui" },
 }
 local function popupTick()
-  local mg = LP:FindFirstChild("PlayerGui") and LP.PlayerGui:FindFirstChild("MainGui")
+  local pg = LP:FindFirstChild("PlayerGui")
+  -- "<name> helped your wax!" (a guild member, or anyone): the card's own "Thank" button
+  local hn = pg and pg:FindFirstChild("HelpNoteGui")
+  local card = hn and hn:FindFirstChild("Card")
+  if card and card.Visible and card:FindFirstChild("ThanksButton") then
+    press(card.ThanksButton)
+    T.pops.thanks = (T.pops.thanks or 0) + 1
+  end
+  local mg = pg and pg:FindFirstChild("MainGui")
   if not mg then return end
   for _, pp in ipairs(POPS) do
     local g = mg:FindFirstChild(pp.name)
@@ -1262,7 +1500,13 @@ task.spawn(function()
       local okP, errP = pcall(T.petTick)
       if not okP then note("TEAM PETS error: " .. tostring(errP)) end
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
+      pcall(guildShop)
+      local okG, didG = true, false
       if ok and T.role == "alt" and not T.tr.active then
+        okG, didG = pcall(guildTick)
+        if not okG then note("TEAM GUILD error: " .. tostring(didG)) didG = false end
+      end
+      if ok and T.role == "alt" and not T.tr.active and not didG then
         local okC, errC = pcall(cascadeTick)
         if not okC then note("TEAM GIVE error: " .. tostring(errC)) end
         if okC and not errC then

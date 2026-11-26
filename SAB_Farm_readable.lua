@@ -4313,7 +4313,7 @@ function CF.sit()
 end
 
 -- ---- quests: guild tasks and the event's season pass quests
--- Read Nov 19. Guild tasks (ClanRequest "state" -> tasks.list) count by themselves and need no claim.
+-- Read Nov 19. Guild tasks (ClanRequest "state" -> data.tasks.list) count by themselves and need no claim.
 -- Event quests (<Event>Action "state" -> quests, while live) are claimed one by one ("claimQuest", id)
 -- plus the day's bonus ("claimBonus"); the pass's own rank rewards are never touched. The farm's own
 -- work already covers buy / wax / stack / help / rare quests. What it does extra:
@@ -4329,6 +4329,8 @@ function QX.refresh()
     if not R then return end
     local pull, coll, open = 0, 0, {}
     local ok, st = pcall(function() return R.ClanRequest:InvokeServer("state") end)
+    -- the reply is { ok, data = { tasks = ... } } (seen Nov 26; the bare { tasks } form is read too)
+    if ok and type(st) == "table" and type(st.data) == "table" then st = st.data end
     local tk = ok and type(st) == "table" and st.tasks
     for _, q in ipairs(tk and tk.list or {}) do
         if not q.done and q.kind == "pull" then pull = math.max(pull, (q.goal or 0) - (q.progress or 0)) end
@@ -6318,7 +6320,8 @@ end
 -- (installed after the hook above, so the KILL that puts that one back removes this one too):
 --  * every MarketplaceService "Prompt..." call is dropped, whoever makes it (the game's own buttons too:
 --    the Auto Roll pass on an account without it, an empty golden pull, the shop...);
---  * the remotes that ask the server to open one (Prompt*, FinishWaxOffer) are not sent;
+--  * the remotes that ask the server to open one (Prompt*, FinishWaxOffer, the guild's paid quest Refresh
+--    and Robux guild making) are not sent;
 --  * a prompt the server opens anyway is closed at once.
 -- S.robuxBlocked counts them (shown in the log). (A function of its own: its locals stay out of the main chunk.)
 pcall(function()
@@ -6342,7 +6345,10 @@ pcall(function()
                 end
                 if m == "FireServer" or m == "InvokeServer" then
                     local ok, nm = pcall(function() return self.Name end)
-                    if ok and BLOCK[nm] and S.alive then
+                    -- the guild's paid buttons: "Refresh" quests and making a guild with Robux (read Nov 26)
+                    local a1, _, a3 = ...
+                    if ok and nm == "ClanRequest" and (a1 == "refresh" or (a1 == "create" and a3 == "robux")) then nm = "ClanRequest " .. a1 end
+                    if ok and (BLOCK[nm] or nm == "ClanRequest refresh" or nm == "ClanRequest create") and S.alive then
                         NR.n, NR.last = NR.n + 1, nm
                         return nil
                     end

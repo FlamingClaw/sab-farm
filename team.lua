@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 25 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 26 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -1239,6 +1239,7 @@ local function runTrade(plan)
   pcall(writefile, path, ("t=%d\ngive=%s\nget=%s\n"):format(os.time(), table.concat(plan.give, ","), table.concat(plan.get, ",")))
   local function finish(ok, why)
     if not ok then trReq("cancel") note("TEAM TRADE with " .. s.name .. " stopped: " .. tostring(why)) end
+    if T.econ then T.econ.dirty = true end -- (pets moved, or what was planned is stale: work it out again)
     pcall(writefile, path, "")
     T.tr.active, T.tr.role = false, nil
     return ok

@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 13 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 14 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -470,7 +470,7 @@ end
 -- own teams that the main's plan can use to the main (the Fuse Pass fuses 3 copies, the alts need 7).
 -- The main sends Huges / Bigs it has beyond its own teams and plan to the alt with the weakest pets.
 -- Trades: only with these accounts; a receiver readies only while it offers nothing itself.
-T.pet = { tickAt = -1e9, msg = "", sent = 0, got = 0, trades = 0, nextAt = 0, auto = false } -- auto: on after the dry run
+T.pet = { tickAt = -1e9, msg = "", sent = 0, got = 0, trades = 0, nextAt = 0, auto = true }
 T.tr = { active = false, state = nil, closed = nil, conns = {} }
 local function SABx() return G.SAB end
 local function petD() local S0 = SABx() return S0 and S0.PX and S0.PX.data() end
@@ -809,6 +809,87 @@ function T.paint()
   U.put(T.ui.log, table.concat(T.log, "\n", math.max(1, n - 9), n))
 end
 
+
+---------------------------------------------------------------- an alt that has bought everything gives too
+-- (several givers = several gift cooldowns at once). It pulls its own lever (no Auto Roll pass) and
+-- hands a butter to a poorer alt that still buys upgrades when that alt needs it for its index, or
+-- when it at least doubles that alt's cash (the alt sells it). Never a Limited, never to the main.
+T.cas = { at = 0, gifts = 0, pulls = 0 }
+local function poorerFor(k, price)
+  local mine = money()
+  local best
+  for _, s in ipairs(T.peers()) do
+    if s.role == "alt" and s.fresh and s.player and tostring(s.upmax) ~= "true" and (s.stations or 0) >= 3
+      and (s.holding == nil or s.holding == "") and (tonumber(s.cash) or 0) * 10 < mine
+      and os.clock() >= (T.feed.wait[s.name] or 0) and tostring(s.trading) ~= "true" then
+      local wants = ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil and (s.free or 0) > 0
+      local doubles = price and price >= (tonumber(s.cash) or 0)
+      if wants or doubles then
+        if not best or (tonumber(s.cash) or 0) < (tonumber(best.cash) or 0) then best = s end
+      end
+    end
+  end
+  return best
+end
+local function cascadeTick()
+  if T.role ~= "alt" or not T.up.max then return false end
+  local SAB = G.SAB
+  local held = LP:GetAttribute("SquishyEquipped")
+  if held and held ~= "" then
+    if isLimited(held) then return false end
+    local s = poorerFor(key(held), SI[held] and tonumber(SI[held].price))
+    if s and os.clock() >= (T.feed.globalWait or 0) then give(s) T.cas.gifts = T.cas.gifts + 1 return true end
+    return false
+  end
+  -- anyone to give to at all?
+  local any = false
+  for _, s in ipairs(T.peers()) do
+    if s.role == "alt" and s.fresh and tostring(s.upmax) ~= "true" and (tonumber(s.cash) or 0) * 10 < money() then any = true end
+  end
+  if not any or os.clock() < T.cas.at then return false end
+  T.cas.at = os.clock() + 4
+  local pn = padName()
+  if pn and not isLimited(pn) then
+    local price = SI[pn] and tonumber(SI[pn].price)
+    local s = poorerFor(key(pn), price)
+    local b = buyPrompt()
+    if s and b and b.Enabled and price and money() >= price then
+      SAB.S.running = false
+      standUp()
+      local part = b.Parent:IsA("Attachment") and b.Parent.Parent or b.Parent
+      local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+      if hrp and part:IsA("BasePart") then hrp.CFrame = CFrame.new(part.Position + Vector3.new(0, 2, 3)) end
+      task.wait(0.6)
+      pcall(fireproximityprompt, b)
+      local t0 = os.clock()
+      repeat task.wait(0.2) until LP:GetAttribute("SquishyEquipped") or os.clock() - t0 > 5
+      SAB.S.running = true
+      if LP:GetAttribute("SquishyEquipped") then
+        note("TEAM GIVE: bought " .. tostring(pn) .. " for " .. s.name)
+        give(s)
+        T.cas.gifts = T.cas.gifts + 1
+      end
+      return true
+    end
+  end
+  -- roll: the lever (the same direct trigger CHURN's quest pulls use)
+  local lp, w = SAB.QX.lever()
+  if lp and w then
+    SAB.S.running = false
+    standUp()
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = w.CFrame * CFrame.new(0, 0, -4) end
+    task.wait(0.4)
+    pcall(fireproximityprompt, lp)
+    T.cas.pulls = T.cas.pulls + 1
+    task.wait(1.5)
+    SAB.S.running = true
+  end
+  T.mode = "giving to poorer alts (" .. T.cas.gifts .. " given)"
+  return true
+end
+T.cascadeTick = cascadeTick
+
 ---------------------------------------------------------------- loop
 task.spawn(function()
   note("TEAM v" .. T.version .. ": " .. T.me .. " as " .. T.role)
@@ -824,6 +905,10 @@ task.spawn(function()
       local okP, errP = pcall(T.petTick)
       if not okP then note("TEAM PETS error: " .. tostring(errP)) end
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
+      if ok and T.role == "alt" and not T.tr.active then
+        local okC, errC = pcall(cascadeTick)
+        if not okC then note("TEAM GIVE error: " .. tostring(errC)) end
+      end
       if not ok then note("TEAM error: " .. tostring(err)) end
       local okW, errW = pcall(writeMe)
       if not okW and T.lastWriteErr ~= tostring(errW) then T.lastWriteErr = tostring(errW) note("TEAM status write error: " .. T.lastWriteErr) end

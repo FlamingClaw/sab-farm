@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 10 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 11 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -98,6 +98,7 @@ local function writeMe()
     "mode=" .. tostring(T.mode or ""), "ready=" .. tostring(LP:GetAttribute("ThanksgivingReady") or 0),
     "cash=" .. tostring(money()), "upmax=" .. tostring(T.up.max == true),
     "want=" .. (T.role == "alt" and table.concat(wantIdx(), ",") or ""),
+    "guild=" .. (T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none"),
   }
   pcall(writefile, DIR .. "/" .. T.me .. ".txt", table.concat(L, "\n"))
 end
@@ -222,6 +223,29 @@ local function claimRanks()
     note("TEAM: rank reward claim failed: " .. tostring(type(res) == "table" and (res.reason or res.text) or res))
   end
 end
+
+---------------------------------------------------------------- guild (clan) quests
+T.clan = { at = -1e9, need = false, open = 0, done = 0, n = 0 }
+local function clanState()
+  local Cn = T.clan
+  if os.clock() - Cn.at < 60 then return Cn end
+  Cn.at = os.clock()
+  local r = RS.Remotes:FindFirstChild("ClanRequest")
+  local ok, v = pcall(function() return r:InvokeServer("state") end)
+  local t = ok and type(v) == "table" and type(v.data) == "table" and v.data.tasks
+  Cn.need, Cn.open, Cn.done, Cn.n = false, 0, 0, 0
+  if type(t) == "table" then
+    for _, x in ipairs(t.list or {}) do
+      Cn.n = Cn.n + 1
+      if x.done then Cn.done = Cn.done + 1 else
+        Cn.open = Cn.open + 1
+        if x.kind == "stack" or x.kind == "rare" then Cn.need = true end
+      end
+    end
+  end
+  return Cn
+end
+T.clanState = clanState
 
 ---------------------------------------------------------------- index (what this account has discovered)
 T.idx = { at = -1e9 }
@@ -369,8 +393,11 @@ local function mainTick()
       return
     end
   end
-  -- the main never waxes what it buys (it all goes to the alts) - except a Limited (Pecan Pie)
-  C.NoWax = not isLimited(held)
+  -- the main waxes nothing of its own (it all goes to the alts) - except while a battle pass or guild
+  -- quest asks for waxing, and a Limited (Pecan Pie) for its own stack
+  local P, Cn = T.pass, clanState()
+  local questWax = (P.live and P.need) or Cn.need
+  C.NoWax = not (isLimited(held) or questWax)
   -- its Auto Roll stops on Sushi only while some alt has a free station for one
   local sushiRoom = T.feed.on and pickAlt("sushi") ~= nil
   local changed = false
@@ -570,6 +597,7 @@ task.spawn(function()
     local SAB = G.SAB
     if SAB and SAB.S and SAB.S.alive then
       pcall(passState)
+      pcall(clanState)
       pcall(claimRanks)
       local okU, errU = pcall(upgrades)
       if not okU then note("TEAM UP error: " .. tostring(errU)) end

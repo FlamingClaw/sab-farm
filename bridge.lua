@@ -383,6 +383,7 @@ local function collect(id)
     if clock() - lastAt >= 6 then break end
     twait(1)
   end
+  local function pack()
   table.sort(files)
   local main, posts = {}, {}
   for _, n in ipairs(files) do
@@ -398,6 +399,20 @@ local function collect(id)
   end
   B.upload("out/" .. id .. "/ALL.txt", table.concat(main, "\n\n"))
   for post, parts in pairs(posts) do B.upload("out/" .. id .. "/ALL." .. post .. ".txt", table.concat(parts, "\n\n")) end
+  end
+  pack()
+  -- a slow account can finish after that: keep watching for 90 s and send the whole set again
+  local t1, n0 = clock(), #files
+  while clock() - t1 < 90 and B.alive do
+    twait(3)
+    local okL, fs = pcall(listfiles, dir)
+    local now = {}
+    for _, f in ipairs(okL and fs or {}) do
+      local n = tostring(f):match("([^/\\]+)$")
+      if n and n:sub(1, 1) ~= "." then now[#now + 1] = n end
+    end
+    if #now > n0 then twait(3) files, n0 = now, #now pack() end
+  end
 end
 
 local function runCmd(id, src, many)

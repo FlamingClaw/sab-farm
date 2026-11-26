@@ -25,6 +25,8 @@ local CFG = {
     Collect = true, Every = 60,
     SellJunk = true,               -- anything else in hand gets sold, never waxed
     NoWax = false,                 -- never wax on this account: hold what it buys (the team module gives it away)
+    MainAccount = "o_oFlame3",     -- Limited butters (Pecan Pie...) are waxed on this account only; any other
+                                   -- account holds one (never waxed, never sold) for the team module to hand over
     Crates = true,                 -- master switch: open the crates ticked in the CRATES tab
     CrateTicks = { picniccrate = true }, -- set of crate keys; anything not ticked is left alone
     Rejoin = true,                 -- come back by myself after a disconnect or a restart
@@ -111,6 +113,8 @@ local function isTarget(s)
     if type(s) ~= "string" then return false end
     local k = key(s)
     if k == "" then return false end
+    -- a Limited is a target on the main account only (anywhere else it is held for the main)
+    if IX.isLimited and IX.isLimited(s) then return IX.limitedHere() end
     if IX.want then return IX.want(k) end
     return CFG.Targets[k] == true
 end
@@ -3514,6 +3518,7 @@ local function doSell()
     local held = carriedName()
     if not held then S.holding = false return false end
     if isTarget(held) then return false end -- never sell something you ticked
+    if IX.isLimited(held) then return false end -- nor a Limited (it goes to the main account)
     local nice = prettyOf(key(held))
     if sellRemoteCall() then
         S.sold, S.holding, S.sellFails = S.sold + 1, false, 0
@@ -3651,6 +3656,21 @@ end
 IX.disc, IX.need, IX.best, IX.waxing, IX.order, IX.placedAt = nil, {}, {}, {}, {}, {}
 IX.discAt, IX.modAt, IX.sentAt, IX.msg, IX.nNeed, IX.nWax, IX.fails = -100, -100, -100, "", 0, 0, 0
 function IX.on() return CFG.AutoIndex or (CFG.Best or 0) > 0 or CFG.BestCrate end
+-- Limited (Robux / event / pass reward): by the game's own catalogue, or CHURN's
+function IX.isLimited(name)
+    if type(name) ~= "string" then return false end
+    local k = key(name)
+    if CAT.rar[k] == "Limited" then return true end
+    pcall(IX.mods)
+    for n, e in pairs(IX.si or {}) do
+        if type(e) == "table" and e.rarity == "Limited" and key(n) == k then return true end
+    end
+    return false
+end
+function IX.limitedHere() -- this is the account Limited butters belong to
+    local m = CFG.MainAccount
+    return type(m) ~= "string" or m == "" or m:lower() == plr.Name:lower()
+end
 function IX.mods()
     if IX.si and now() - IX.modAt < 120 then return true end
     local M = RS:FindFirstChild("Modules")
@@ -3961,7 +3981,12 @@ local function decide()
     local held = carriedName()
     if held then
         local nice = prettyOf(key(held))
-        if not isTarget(held) then -- bought by someone else, gifted, or left over: never wax it
+        -- a Limited off the main account: held as it is (the team module takes it to the main)
+        if IX.isLimited(held) and not IX.limitedHere() then
+            return nil, ("holding %s - Limited butters go to %s, never waxed or sold here"):format(nice, CFG.MainAccount), "wait"
+        end
+        -- on the main a Limited is always kept and waxed, ticked or not
+        if not isTarget(held) and not IX.isLimited(held) then -- bought by someone else, gifted, or left over: never wax it
             local why = (EV.gift and key(EV.gift) == key(held) and now() - EV.giftAt < 600) and "gift" or "not ticked"
             if not CFG.SellJunk then return nil, ("holding %s (%s) - selling is off"):format(nice, why), "bad" end
             if S.sellFails >= 3 then

@@ -12,7 +12,8 @@ local MAIN = "o_oFlame3"
 local BRANCH = "dev" -- dev while the team build is tested
 local REF = BRANCH
 pcall(function()
-  local body = game:HttpGet("https://api.github.com/repos/FlamingClaw/sab-farm/commits/" .. BRANCH)
+  -- (a cache-buster: the executor's HttpGet answers a repeated URL from its cache for the whole session)
+  local body = game:HttpGet("https://api.github.com/repos/FlamingClaw/sab-farm/commits/" .. BRANCH .. "?t=" .. math.floor(tick()))
   REF = body:match('"sha"%s*:%s*"(%x+)"') or BRANCH
 end)
 local function url(file) return "https://raw.githubusercontent.com/FlamingClaw/sab-farm/" .. REF .. "/" .. file .. (REF == BRANCH and ("?t=" .. tick()) or "") end

@@ -6336,22 +6336,24 @@ pcall(function()
         closer("PromptBundlePurchaseRequested", function(a, b) MPS:SignalPromptBundlePurchaseFinished(a, b, false) end)
         closer("PromptPremiumPurchaseRequested", function() MPS:SignalPromptPremiumPurchaseFinished(false) end)
     end
-    -- last line: Roblox's own purchase window stays hidden while the farm runs (back on at KILL)
-    pcall(function()
-        local cg = game:GetService("CoreGui")
-        local function hide(g)
-            if g and g.Name == "PurchasePromptApp" and g:IsA("ScreenGui") and g.Enabled then
-                g.Enabled = false
+    -- last line: Roblox's own purchase window stays hidden while the farm runs (back on at KILL);
+    -- checked again every 5 s (Roblox can switch it back on)
+    local function hidePurchaseApp()
+        local ok, err = pcall(function()
+            local g = game:GetService("CoreGui"):FindFirstChild("PurchasePromptApp")
+            if g and g:IsA("ScreenGui") then
                 S.hidPurchaseApp = g
+                if g.Enabled then g.Enabled = false end
             end
-        end
-        hide(cg:FindFirstChild("PurchasePromptApp"))
-        track(cg.ChildAdded:Connect(hide))
-    end)
+        end)
+        if not ok then S.hideErr = tostring(err) end
+    end
+    hidePurchaseApp()
     task.spawn(function() -- the log says when one was stopped
         local seen = G.SAB_NOROBUX.n
         while S.alive do
             task.wait(5)
+            hidePurchaseApp()
             local NR = G.SAB_NOROBUX
             if NR and NR.n > seen then
                 S.robuxBlocked, seen = NR.n, NR.n

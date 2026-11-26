@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 7 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 8 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -117,6 +117,89 @@ function T.peers()
   end
   return out
 end
+
+
+---------------------------------------------------------------- upgrades (every account; cash only)
+-- next wax station (6 per floor; a new floor first when the next station is on it), stack packs once
+-- their floor is open, the daily reward, offline earnings. All with in-game cash: nothing here can
+-- reach Robux (and CHURN drops any Robux prompt anyway).
+local WaxPrices = require(RS.Modules.WaxPrices)
+local PlotInfo = require(RS.Modules.PlotInfo)
+local okSS, StackSlots = pcall(require, RS.Modules.StackSlots)
+T.up = { at = 0, bought = 0, dailyAt = 0, offline = false, msg = "" }
+local function money()
+  local v = LP:FindFirstChild("MoneyValue")
+  return v and tonumber(v.Value) or 0
+end
+local function inv(remote, ...)
+  local r = RS.Remotes:FindFirstChild(remote)
+  if not r then return false, "no " .. remote end
+  local res = table.pack(pcall(r.InvokeServer, r, ...))
+  if not res[1] then return false, tostring(res[2]) end
+  return res[2] ~= false, tostring(res[3] or res[2] or "")
+end
+local function upgrades()
+  local U = T.up
+  if os.clock() < U.at then return end
+  U.at = os.clock() + 12
+  local plot = myPlot()
+  if not plot then return end
+  local cash = money()
+  local stations = tonumber(LP:GetAttribute("WaxStations")) or 0
+  local floors = tonumber(plot:GetAttribute("FloorsUnlocked")) or 1
+  local per = PlotInfo.stationsPerFloor or 6
+  -- 1. the next station (or the floor it stands on)
+  local n = stations + 1
+  if n <= (PlotInfo.totalWaxStationCount or 24) then
+    local needFloor = math.ceil(n / per)
+    if needFloor > floors then
+      local f = PlotInfo.floors[floors + 1]
+      if f and cash >= f.price then
+        local ok, m = inv("BuyFloor")
+        note(("TEAM UP: floor %d for $%s - %s"):format(floors + 1, tostring(f.price), ok and "bought" or ("no: " .. m)))
+        if ok then U.bought = U.bought + 1 end
+        return
+      end
+      U.msg = ("saving for floor %d ($%.3g)"):format(floors + 1, f and f.price or 0)
+    else
+      local price = WaxPrices[n]
+      if price and cash >= price then
+        local ok, m = inv("BuyWax", n)
+        note(("TEAM UP: wax station %d for $%.3g - %s"):format(n, price, ok and "bought" or ("no: " .. m)))
+        if ok then U.bought = U.bought + 1 end
+        U.at = os.clock() + 2 -- quickly on to the next one
+        return
+      end
+      U.msg = ("saving for station %d ($%.3g)"):format(n, price or 0)
+    end
+  else
+    U.msg = "all 24 stations"
+  end
+  -- 2. stack packs (bigger stack) once their floor is open
+  if okSS and StackSlots.getNextPack then
+    local pk = StackSlots.getNextPack(tonumber(LP:GetAttribute("StackPacks")) or 0)
+    if pk and floors >= (pk.floor or 99) and cash >= pk.price then
+      local ok, m = inv("BuyStackSlots")
+      note(("TEAM UP: stack pack for $%.3g - %s"):format(pk.price, ok and "bought" or ("no: " .. m)))
+      if ok then U.bought = U.bought + 1 end
+      return
+    end
+  end
+end
+local function freebies()
+  local U = T.up
+  if os.clock() >= U.dailyAt then
+    U.dailyAt = os.clock() + 900
+    local ok, m = inv("ClaimDaily")
+    if ok and m ~= "" and not m:lower():find("already") and not m:lower():find("wait") then note("TEAM: daily reward - " .. m) end
+  end
+  if not U.offline then
+    U.offline = true
+    local r = RS.Remotes:FindFirstChild("ClaimOfflineEarnings")
+    if r then pcall(function() r:FireServer() end) end
+  end
+end
+T.upgrades, T.freebies = upgrades, freebies
 
 ---------------------------------------------------------------- rank rewards (every account)
 T.claimed = 0
@@ -383,8 +466,8 @@ function T.paint()
   local U, C = SAB.U, SAB.U.C
   local P = T.pass
   U.put(T.ui.mode, "doing: " .. tostring(T.mode or "starting"))
-  U.put(T.ui.stats, ("gifts given %d | Limited to main %d | rank rewards claimed %d | friend boost +%s%%"):format(
-    T.gifts, T.toMain or 0, T.claimed or 0, tostring(LP:GetAttribute("FriendBoost") or 0)))
+  U.put(T.ui.stats, ("gifts given %d | Limited to main %d | rank rewards %d | upgrades %d (%s) | boost +%s%%"):format(
+    T.gifts, T.toMain or 0, T.claimed or 0, T.up.bought, T.up.msg, tostring(LP:GetAttribute("FriendBoost") or 0)))
   U.put(T.ui.pass, ("pass: rank %s, %s points | %s"):format(tostring(P.rank or "?"), tostring(P.points or "?"), paceText(P.points, P.open)))
   if T.ui.feedB then
     U.put(T.ui.feedB, T.feed.on and "SUSHI FEEDER: ON (gives Dotonbori/Picnic butters to alts with room)" or "SUSHI FEEDER: OFF")
@@ -423,6 +506,9 @@ task.spawn(function()
     if SAB and SAB.S and SAB.S.alive then
       pcall(passState)
       pcall(claimRanks)
+      local okU, errU = pcall(upgrades)
+      if not okU then note("TEAM UP error: " .. tostring(errU)) end
+      pcall(freebies)
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
       if not ok then note("TEAM error: " .. tostring(err)) end
       pcall(writeMe)

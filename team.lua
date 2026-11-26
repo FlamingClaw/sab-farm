@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 19 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 20 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -1025,8 +1025,11 @@ local function buildUI()
   if not (U and U.alt and U.mk and U.card) then return false end
   if T.ui.built and T.ui.root and T.ui.root.Parent then return true end
   if U.altNote then U.altNote.Text = "" U.altNote.Parent.Parent.Visible = false end
+  -- a reload of this module leaves the old cards behind: clear them first
+  for _, c in ipairs(U.alt:GetChildren()) do if c:GetAttribute("SABTeam") then c:Destroy() end end
   local C = U.C
   local me = U.card(U.alt, "This account", T.role == "main" and "MAIN" or "ALT")
+  me:SetAttribute("SABTeam", true)
   T.ui.root = me
   T.ui.mode = U.line(me, C.accent)
   T.ui.stats = U.line(me, C.good)
@@ -1037,6 +1040,7 @@ local function buildUI()
     U.click(T.ui.feedB, function() T.feed.on = not T.feed.on note("TEAM: Sushi feeder " .. (T.feed.on and "on" or "off")) end)
   end
   local all = U.card(U.alt, "Accounts in this server", "from SAB/team")
+  all:SetAttribute("SABTeam", true)
   T.ui.rows = {}
   for i = 1, 8 do
     local l, d = U.line(all, C.dim)
@@ -1044,6 +1048,7 @@ local function buildUI()
     T.ui.rows[i] = { l = l, d = d }
   end
   local ps = U.card(U.alt, "Thanksgiving pass", "rank 20 = Pecan Pie Butter")
+  ps:SetAttribute("SABTeam", true)
   T.ui.passRows = {}
   for i = 1, 8 do
     local l = U.line(ps, C.accent2)
@@ -1051,6 +1056,7 @@ local function buildUI()
     T.ui.passRows[i] = l
   end
   local lg = U.card(U.alt, "Team log")
+  lg:SetAttribute("SABTeam", true)
   T.ui.log = U.grow(lg, 9, C.dim)
   T.ui.log.Visible = true
   T.ui.built = true
@@ -1200,6 +1206,46 @@ local function cascadeTick()
 end
 T.cascadeTick = cascadeTick
 
+
+---------------------------------------------------------------- the game's pop-ups between our own accounts
+-- (all these accounts are ours: nothing to read) - "Trade Complete!" -> OK, a gift's reveal -> Close
+-- (not "Say Thanks": that would put a thank-you pop-up on the giver's screen), a thank-you -> hidden
+T.pops = { n = 0 }
+local function press(btn)
+  if not btn then return false end
+  local done = false
+  for _, sig in ipairs({ "Activated", "MouseButton1Click" }) do
+    pcall(function()
+      if type(firesignal) == "function" then firesignal(btn[sig]) done = true
+      elseif type(getconnections) == "function" then
+        for _, c in ipairs(getconnections(btn[sig])) do pcall(function() c:Fire() end) done = true end
+      end
+    end)
+    if done then break end
+  end
+  return done
+end
+local POPS = {
+  { name = "TradeResultGui", button = { "Well", "OkButton" } },
+  { name = "GiftRevealGui", button = { "Stage", "CloseButton" } },
+  { name = "GiftThanksGui" },
+}
+local function popupTick()
+  local mg = LP:FindFirstChild("PlayerGui") and LP.PlayerGui:FindFirstChild("MainGui")
+  if not mg then return end
+  for _, pp in ipairs(POPS) do
+    local g = mg:FindFirstChild(pp.name)
+    if g and g:IsA("GuiObject") and g.Visible then
+      local btn = g
+      for _, part in ipairs(pp.button or {}) do btn = btn and btn:FindFirstChild(part) end
+      if pp.button and btn ~= g then press(btn) end
+      task.delay(0.8, function() if g.Visible then g.Visible = false end end) -- in case the press did nothing
+      T.pops.n = T.pops.n + 1
+    end
+  end
+end
+T.popupTick = popupTick
+
 ---------------------------------------------------------------- loop
 task.spawn(function()
   note("TEAM v" .. T.version .. ": " .. T.me .. " as " .. T.role)
@@ -1212,6 +1258,7 @@ task.spawn(function()
       local okU, errU = pcall(upgrades)
       if not okU then note("TEAM UP error: " .. tostring(errU)) end
       pcall(freebies)
+      pcall(popupTick)
       local okP, errP = pcall(T.petTick)
       if not okP then note("TEAM PETS error: " .. tostring(errP)) end
       local ok, err = pcall(T.role == "main" and mainTick or altTick)

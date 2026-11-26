@@ -65,7 +65,8 @@ else
   CFG.AutoRoll = false     -- no Auto Roll pass on the alts
 end
 -- six game clients on one PC: everything that saves CPU / GPU / memory (each is a switch in SETUP)
-CFG.Lite, CFG.Calm, CFG.NoRender, CFG.HideHud = true, true, true, true
+CFG.Lite, CFG.Calm, CFG.NoRender = true, true, true
+CFG.HideHud = false        -- the game's own screens stay visible (the user's choice, Nov 26)
 CFG.HideBases, CFG.HideMine = true, true
 CFG.FpsCap = 15
 CFG.MainAccount = MAIN

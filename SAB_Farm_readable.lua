@@ -6259,6 +6259,72 @@ if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" 
         CRATE.oldNC = old
     end)
 end
+-- NO ROBUX PROMPTS. The farm never buys with Robux, and on a PC executor every Robux prompt opens a
+-- confirmation window outside the game (it can stall the client). So, for as long as the farm runs
+-- (installed after the hook above, so the KILL that puts that one back removes this one too):
+--  * every MarketplaceService "Prompt..." call is dropped, whoever makes it (the game's own buttons too:
+--    the Auto Roll pass on an account without it, an empty golden pull, the shop...);
+--  * the remotes that ask the server to open one (Prompt*, FinishWaxOffer) are not sent;
+--  * a prompt the server opens anyway is closed at once.
+-- S.robuxBlocked counts them (shown in the log). (A function of its own: its locals stay out of the main chunk.)
+pcall(function()
+    local G = getgenv and getgenv() or _G
+    S.robuxBlocked = 0
+    G.SAB_NOROBUX = G.SAB_NOROBUX or { n = 0, last = "" }
+    if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
+        local NR = G.SAB_NOROBUX
+        local MPS = game:GetService("MarketplaceService")
+        local BLOCK = { PromptGift = true, PromptLimitedSquishy = true, PromptMultMoneyGamepass = true, PromptServerLuck = true,
+            PromptShopCrate = true, PromptTimeSkip = true, PromptDoubleOfflineEarnings = true, FinishWaxOffer = true }
+        pcall(function()
+            local wrap = (type(newcclosure) == "function") and newcclosure or function(f) return f end
+            local old
+            -- same rule as the hook above: no method calls in here before the call is passed on
+            old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
+                local m = getnamecallmethod()
+                if S.alive and self == MPS and type(m) == "string" and m:sub(1, 6) == "Prompt" then
+                    NR.n, NR.last = NR.n + 1, m
+                    return nil
+                end
+                if m == "FireServer" or m == "InvokeServer" then
+                    local ok, nm = pcall(function() return self.Name end)
+                    if ok and BLOCK[nm] and S.alive then
+                        NR.n, NR.last = NR.n + 1, nm
+                        return nil
+                    end
+                end
+                return old(self, ...)
+            end))
+        end)
+        -- opened by the server anyway: close it before the store window comes up
+        local function closer(ev, finish)
+            pcall(function()
+                track(MPS[ev]:Connect(function(a, b)
+                    NR.n, NR.last = NR.n + 1, ev
+                    pcall(finish, a, b)
+                end))
+            end)
+        end
+        closer("PromptProductPurchaseRequested", function(a, b)
+            MPS:SignalPromptProductPurchaseFinished(typeof(a) == "Instance" and a.UserId or a, b, false)
+        end)
+        closer("PromptGamePassPurchaseRequested", function(a, b) MPS:SignalPromptGamePassPurchaseFinished(a, b, false) end)
+        closer("PromptPurchaseRequested", function(a, b) MPS:SignalPromptPurchaseFinished(a, b, false) end)
+        closer("PromptBundlePurchaseRequested", function(a, b) MPS:SignalPromptBundlePurchaseFinished(a, b, false) end)
+        closer("PromptPremiumPurchaseRequested", function() MPS:SignalPromptPremiumPurchaseFinished(false) end)
+    end
+    task.spawn(function() -- the log says when one was stopped
+        local seen = G.SAB_NOROBUX.n
+        while S.alive do
+            task.wait(5)
+            local NR = G.SAB_NOROBUX
+            if NR and NR.n > seen then
+                S.robuxBlocked, seen = NR.n, NR.n
+                note(("ROBUX PROMPT BLOCKED (%s) - %d so far"):format(NR.last, NR.n))
+            end
+        end
+    end)
+end)
 if VU then
     track(plr.Idled:Connect(function() pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end))
 end

@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 22 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 23 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -120,7 +120,7 @@ function T.peers()
   for _, f in ipairs(ok and fs or {}) do
     local name = tostring(f):match("([^/\\]+)%.txt$")
     -- (the folder also holds trade orders and the owed list: only account names count)
-    if name and name ~= T.me and not name:find("^trade_") and name ~= "owed" then
+    if name and name ~= T.me and not name:find("^trade_") and not name:find("^given_") and name ~= "owed" then
       local okr, body = pcall(readfile, DIR .. "/" .. name .. ".txt")
       if okr and type(body) == "string" then
         local s = { name = name }
@@ -272,6 +272,16 @@ end
 -- (points only, never Robux): an alt spends them on Speedy Wax while it waxes, and Guild XP above that.
 T.clan = { at = -1e9, need = false, open = 0, done = 0, n = 0, inClan = false, left = {}, name = "", points = 0, resetsAt = 0, texts = {} }
 T.g = { given = {}, at = 0, gives = 0, buys = 0, pulls = 0, shopAt = 0, bought = 0, idleSince = nil, msg = "" }
+-- who got a butter from this account since the guild quests reset outlives a reload: SAB/team/given_<Name>.txt
+local GIVEN = DIR .. "/given_" .. T.me .. ".txt"
+pcall(function()
+  for n, r in tostring(readfile(GIVEN)):gmatch("([%w_]+)=(%d+)") do T.g.given[n] = tonumber(r) end
+end)
+function T.saveGiven()
+  local t = {}
+  for n, r in pairs(T.g.given) do if r and r > 0 then t[#t + 1] = n .. "=" .. ("%d"):format(r) end end
+  pcall(writefile, GIVEN, table.concat(t, "\n"))
+end
 -- rarities from weakest up (the game's order; Dotonbori is the newest and best)
 local RANKS = { "Common", "Rare", "Epic", "Legendary", "Mythic", "Celestial", "Divine", "Dream", "Sugar Rush", "Picnic", "Dotonbori" }
 local RANK = {} for i, r in ipairs(RANKS) do RANK[r] = i end
@@ -467,6 +477,7 @@ local function give(s)
   if ok then
     T.gifts = T.gifts + 1
     T.g.given[s.name] = T.clan.resetsAt
+    T.saveGiven()
     if T.clan.inClan and ((T.clan.left.give or 0) + (T.clan.left.giveTo or 0) + (T.clan.left.giveRare or 0)) > 0 then T.clan.at = math.min(T.clan.at, os.clock() - 50) end
     note(("TEAM: gave %s to %s (%d given)"):format(tostring(held), s.name, T.gifts))
   else

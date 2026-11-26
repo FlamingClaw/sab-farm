@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 21 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 22 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -103,6 +103,8 @@ local function writeMe()
     "guild=" .. (T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none"),
     "gname=" .. tostring(T.clan.inClan and T.clan.name or ""),
     "gpts=" .. tostring(T.clan.points or 0),
+    "gid=" .. tostring(T.clan.inClan and T.clan.id or ""),
+    "graw=" .. tostring(T.clan.inClan and T.clan.raw or ""),
     "plan=" .. table.concat(T.planList and T.planList() or {}, ","),
     "goal=" .. (T.goalText and T.goalText() or ""),
     "pets=" .. tostring(#((G.SAB and G.SAB.PX.data() or {}).pets or {})),
@@ -289,6 +291,8 @@ local function clanState()
   Cn.name = clan and (tostring(clan.name or "") .. (clan.tag and (" [" .. tostring(clan.tag) .. "]") or "") .. (clan.level and (" lv" .. tostring(clan.level)) or "")) or ""
   Cn.points = tonumber(d.points) or 0
   Cn.shop = d.shop
+  Cn.id, Cn.raw = clan and clan.id and tostring(clan.id) or "", clan and tostring(clan.name or "") or ""
+  Cn.invites = type(d.invites) == "table" and d.invites or {}
   if Cn.inClan and type(t) == "table" then
     Cn.resetsAt = tonumber(t.resetsAt) or 0
     for _, x in ipairs(t.list or {}) do
@@ -1074,10 +1078,21 @@ local function limitedToMain()
 end
 T.conns = T.conns or {}
 T.conns[#T.conns + 1] = LP:GetAttributeChangedSignal("SquishyEquipped"):Connect(function()
-  if T.alive and isLimited(LP:GetAttribute("SquishyEquipped")) and T.role == "alt" then
+  local held = LP:GetAttribute("SquishyEquipped")
+  if T.alive and isLimited(held) and T.role == "alt" then
     local SAB = G.SAB
     if SAB then SAB.S.running = false end -- at once, before CHURN carries it to a station
     task.spawn(limitedToMain)
+  elseif T.alive and held and held ~= "" and T.role == "alt" and T.guildPass and T.guildPass(held) then
+    -- a butter came in while a guild give quest is open and one of ours can take it: passed on at
+    -- once (CHURN would have it on a station within seconds)
+    local SAB = G.SAB
+    if SAB then SAB.S.running = false end
+    task.spawn(function()
+      task.wait(0.3)
+      local ok, did = pcall(T.guildTick, true)
+      if not (ok and did) and SAB then SAB.S.running = true end
+    end)
   end
 end)
 local stop0 = T.stop
@@ -1321,7 +1336,7 @@ local function guildTo(held)
   end
   return best
 end
-local function guildTick()
+local function guildTick(now)
   if T.role ~= "alt" or T.tr.active then return false end
   local Cn = clanState()
   if not Cn.inClan or Cn.open == 0 then T.g.msg = Cn.inClan and "all guild quests done" or "" return false end
@@ -1330,11 +1345,13 @@ local function guildTick()
   local giveLeft = plainLeft + (Cn.left.giveRare or 0)
   local buyLeft = Cn.left.buy or 0
   if giveLeft <= 0 and buyLeft <= 0 then T.g.idleSince = nil return false end
-  if os.clock() < T.g.at or os.clock() < (T.feed.globalWait or 0) then return false end
+  if (not now and os.clock() < T.g.at) or os.clock() < (T.feed.globalWait or 0) then return false end
   local held = LP:GetAttribute("SquishyEquipped")
   if held and held ~= "" then
     T.g.idleSince = nil
     if isLimited(held) or giveLeft <= 0 then return false end
+    -- a butter this account keeps for its battle pass quests (waxing) stays, unless bought for this
+    if T.pass.live and T.pass.need and not isGood(held) and held ~= T.g.mine then return false end
     -- only the "give a <rarity> butter or rarer" quest left: only a butter that rare counts
     if plainLeft <= 0 then
       local r = RANK[rarityOf(held) or ""]
@@ -1375,6 +1392,7 @@ local function guildTick()
       SAB.S.running = true
       if LP:GetAttribute("SquishyEquipped") then
         T.g.buys = T.g.buys + 1
+        T.g.mine = LP:GetAttribute("SquishyEquipped")
         T.g.msg = ("guild quest: bought %s (%d bought)"):format(tostring(pn), T.g.buys)
         if buyLeft > 0 then T.clan.at = math.min(T.clan.at, os.clock() - 50) end
       end
@@ -1398,6 +1416,20 @@ local function guildTick()
   return false
 end
 T.guildTick = guildTick
+-- would a butter that just came in be passed on for an open guild give quest? (no server calls)
+function T.guildPass(held)
+  local Cn = T.clan
+  if T.role ~= "alt" or T.tr.active or not Cn.inClan or isLimited(held) then return false end
+  if T.pass.live and T.pass.need and not isGood(held) and held ~= T.g.mine then return false end
+  local plain = (Cn.left.give or 0) + (Cn.left.giveTo or 0)
+  if plain + (Cn.left.giveRare or 0) <= 0 then return false end
+  if plain <= 0 then
+    local r = RANK[rarityOf(held) or ""]
+    if not (Cn.giveRar and r and r >= RANK[Cn.giveRar]) then return false end
+  end
+  if os.clock() < (T.feed.globalWait or 0) then return false end
+  return guildTo(held) ~= nil
+end
 -- points: shop items cost guild points only. An alt (never the main: its points are the user's) buys
 -- Speedy Wax while 3+ of its waxes run, and Guild XP with what is over 300 points.
 local SHOP_ORDER = { "d_wax15", "wax10", "d_xp600", "xp300", "xp1000" }
@@ -1435,6 +1467,27 @@ local function guildShop()
   end
 end
 T.guildShop = guildShop
+-- an invite from the main's own guild is taken (the user invites the alts there; nothing else is joined)
+local function guildJoin()
+  local Cn = T.clan
+  if T.role ~= "alt" or Cn.inClan or #Cn.invites == 0 or os.clock() < (T.g.joinAt or 0) then return end
+  T.g.joinAt = os.clock() + 60
+  local main
+  for _, s in ipairs(T.peers()) do if s.role == "main" and s.fresh then main = s end end
+  local gid, graw = main and tostring(main.gid or "") or "", main and tostring(main.graw or "") or ""
+  if gid == "" then return end
+  for _, iv in ipairs(Cn.invites) do
+    local id = iv.id or iv.c
+    if type(iv) == "table" and id and (tostring(id) == gid or (graw ~= "" and tostring(iv.name or iv.nm or "") == graw)) then
+      local ok, v = pcall(function() return RS.Remotes.ClanRequest:InvokeServer("respond", id, true) end)
+      note(("TEAM GUILD: invited to the main's guild %s by %s - %s"):format(tostring(iv.name or graw), tostring(iv.from or iv.f or "?"),
+        (ok and type(v) == "table" and v.ok) and "joined" or ("not joined: " .. tostring(type(v) == "table" and (v.reason or v.text) or v))))
+      T.refreshClan()
+      return
+    end
+  end
+end
+T.guildJoin = guildJoin
 
 
 ---------------------------------------------------------------- the game's pop-ups between our own accounts
@@ -1471,6 +1524,17 @@ local function popupTick()
   end
   local mg = pg and pg:FindFirstChild("MainGui")
   if not mg then return end
+  -- the guild's own cards: one with a single button ("Yay!", "Got it!", "Yes" on a welcome) is only news
+  -- and is closed with it; one with a choice (an invite, "join a guild", a friend's guild) is left alone
+  local cp = mg:FindFirstChild("ClanPopupGui")
+  if cp and cp.Visible then
+    local pb, sb = cp:FindFirstChild("PrimaryButton", true), cp:FindFirstChild("SecondaryButton", true)
+    if pb and not (sb and sb.Visible) and os.clock() >= (T.pops.clanAt or 0) then
+      T.pops.clanAt = os.clock() + 2
+      press(pb)
+      T.pops.clan = (T.pops.clan or 0) + 1
+    end
+  end
   for _, pp in ipairs(POPS) do
     local g = mg:FindFirstChild(pp.name)
     if g and g:IsA("GuiObject") and g.Visible then
@@ -1501,6 +1565,7 @@ task.spawn(function()
       if not okP then note("TEAM PETS error: " .. tostring(errP)) end
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
       pcall(guildShop)
+      pcall(guildJoin)
       local okG, didG = true, false
       if ok and T.role == "alt" and not T.tr.active then
         okG, didG = pcall(guildTick)

@@ -6360,7 +6360,7 @@ pcall(function()
         local function closer(ev, finish)
             pcall(function()
                 track(MPS[ev]:Connect(function(a, b)
-                    NR.n, NR.last = NR.n + 1, ev
+                    NR.n, NR.last = NR.n + 1, ev .. (b ~= nil and (" #" .. tostring(b)) or "") -- (which product, for the log)
                     pcall(finish, a, b)
                 end))
             end)

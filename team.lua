@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 9 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 10 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -96,6 +96,8 @@ local function writeMe()
     "rank=" .. tostring(P.rank or ""), "points=" .. tostring(P.points or ""),
     "boost=" .. tostring(LP:GetAttribute("FriendBoost") or 0), "gifts=" .. T.gifts,
     "mode=" .. tostring(T.mode or ""), "ready=" .. tostring(LP:GetAttribute("ThanksgivingReady") or 0),
+    "cash=" .. tostring(money()), "upmax=" .. tostring(T.up.max == true),
+    "want=" .. (T.role == "alt" and table.concat(wantIdx(), ",") or ""),
   }
   pcall(writefile, DIR .. "/" .. T.me .. ".txt", table.concat(L, "\n"))
 end
@@ -175,6 +177,10 @@ local function upgrades()
   else
     U.msg = "all 24 stations"
   end
+  do
+    local pk = okSS and StackSlots.getNextPack and StackSlots.getNextPack(tonumber(LP:GetAttribute("StackPacks")) or 0)
+    U.max = n > (PlotInfo.totalWaxStationCount or 24) and floors >= 4 and pk == nil
+  end
   -- 2. stack packs (bigger stack) once their floor is open
   if okSS and StackSlots.getNextPack then
     local pk = StackSlots.getNextPack(tonumber(LP:GetAttribute("StackPacks")) or 0)
@@ -217,6 +223,26 @@ local function claimRanks()
   end
 end
 
+---------------------------------------------------------------- index (what this account has discovered)
+T.idx = { at = -1e9 }
+local function indexNow()
+  local SAB = G.SAB
+  local IX = SAB and SAB.IX
+  if not IX then return {}, {} end
+  if os.clock() - T.idx.at > 60 or not IX.disc then T.idx.at = os.clock() pcall(IX.fetch) end
+  pcall(IX.scanWax)
+  return IX.disc or {}, IX.waxing or {}
+end
+-- the good butters this account still needs for its index and is not already waxing
+local function wantIdx()
+  local disc, waxing = indexNow()
+  local w = {}
+  for k in pairs(GOOD) do if not disc[k] and not waxing[k] then w[#w + 1] = k end end
+  table.sort(w)
+  return w
+end
+T.wantIdx = wantIdx
+
 ---------------------------------------------------------------- alt rules
 local function altTick()
   local SAB = G.SAB
@@ -225,13 +251,22 @@ local function altTick()
   local held = LP:GetAttribute("SquishyEquipped")
   local giftWaiting = isGood(held)
   -- targets: always keep good butters; everything else only while a quest needs waxing/buying
+  -- gifts from the main: Sushi is always waxed; another good butter only while this account still
+  -- needs it for its index (and has a station for it) - otherwise it is sold for the cash
   local Tg = C.Targets
-  for k in pairs(Tg) do if not GOOD[k] and not (P.need and ALL[k]) then Tg[k] = nil end end
-  for k in pairs(GOOD) do Tg[k] = true end
-  for k in pairs(LIMITED) do Tg[k] = true end
+  local free = freeStations()
+  local need = {}
+  for _, k in ipairs(wantIdx()) do need[k] = true end
+  for k in pairs(Tg) do Tg[k] = nil end
   if P.need then for k in pairs(ALL) do Tg[k] = true end end
+  for k in pairs(GOOD) do
+    if k == "sushi" or (need[k] and free > 0) then Tg[k] = true elseif not P.need then Tg[k] = nil end
+  end
+  for k in pairs(LIMITED) do Tg[k] = true end
+  C.NoWax = false
   -- the campfire seat holds every walking job: up while quests are open or a gift waits for a station
-  local wantUp = (P.live and P.open > 0) or (giftWaiting and freeStations() > 0)
+  -- anything in hand (a gift to wax or to sell) needs the account on its feet
+  local wantUp = (P.live and P.open > 0) or (held ~= nil and held ~= "")
   if wantUp then
     if C.Campfire then C.Campfire = false end
     if seated() then standUp() end
@@ -239,7 +274,7 @@ local function altTick()
     C.Campfire = true
     SAB.CF.nextAt = 0
   end
-  T.mode = (P.need and "keep+wax (quest)" or "sell (pulls go on)") .. (giftWaiting and ", gift to wax" or "")
+  T.mode = (P.need and "keep+wax (quest)" or "sell (pulls go on)") .. (giftWaiting and (C.Targets[key(held)] and ", gift to wax" or ", gift to sell") or "")
     .. (wantUp and ", campfire waits" or ", campfire on")
 end
 
@@ -252,15 +287,30 @@ local function nearTo(plr)
   hrp.CFrame = th.CFrame * CFrame.new(0, 0, -3)
   return th
 end
-local function pickAlt()
-  local best, bestFree
+-- who should get this butter: Sushi -> the alt with most free stations (it waxes it); another good
+-- butter -> an alt that still needs it for its index and has a station, else the poorest alt that is
+-- still buying upgrades (it sells it); nil = nobody right now. k = nil asks "would anybody take
+-- something" (the main then stands up to roll).
+local function pickAlt(k)
+  k = k and key(k) or nil
+  local ready = {}
   for _, s in ipairs(T.peers()) do
-    if s.fresh and s.player and s.role == "alt" and (s.stations or 0) >= 3 and (s.free or 0) > 0
+    if s.fresh and s.player and s.role == "alt" and (s.stations or 0) >= 3
       and (s.holding == nil or s.holding == "") and os.clock() >= (T.feed.wait[s.name] or 0) then
-      if not best or (s.free or 0) > bestFree then best, bestFree = s, s.free end
+      ready[#ready + 1] = s
     end
   end
-  return best
+  local function most(f) local b for _, s in ipairs(ready) do if f(s) and (not b or (s.free or 0) > (b.free or 0)) then b = s end end return b end
+  local function poorest(f) local b for _, s in ipairs(ready) do if f(s) and (not b or (tonumber(s.cash) or 0) < (tonumber(b.cash) or 0)) then b = s end end return b end
+  if k == "sushi" or k == nil then
+    local a = most(function(s) return (s.free or 0) > 0 end)
+    if a or k == "sushi" then return a end
+  end
+  if k then
+    local a = most(function(s) return (s.free or 0) > 0 and ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil end)
+    if a then return a end
+  end
+  return poorest(function(s) return tostring(s.upmax) ~= "true" end)
 end
 local function give(s)
   local SAB = G.SAB
@@ -281,6 +331,7 @@ local function give(s)
   local ok = LP:GetAttribute("SquishyEquipped") == nil
   -- the game refuses a second gift to the same player for a while: try the others meanwhile
   T.feed.wait[s.name] = os.clock() + (ok and 8 or 30)
+  if not ok then T.feed.globalWait = os.clock() + 12 end -- the game's gift cooldown: hold it a moment
   if ok then
     T.gifts = T.gifts + 1
     note(("TEAM: gave %s to %s (%d given)"):format(tostring(held), s.name, T.gifts))
@@ -318,14 +369,25 @@ local function mainTick()
       return
     end
   end
-  local alt = T.feed.on and pickAlt() or nil
-  if isGood(held) and alt then
-    give(alt)
-    return
+  -- the main never waxes what it buys (it all goes to the alts) - except a Limited (Pecan Pie)
+  C.NoWax = not isLimited(held)
+  -- its Auto Roll stops on Sushi only while some alt has a free station for one
+  local sushiRoom = T.feed.on and pickAlt("sushi") ~= nil
+  local changed = false
+  for k in pairs(GOOD) do
+    local want = (k ~= "sushi") or sushiRoom
+    if (C.Targets[k] == true) ~= want then C.Targets[k] = want or nil changed = true end
   end
+  if changed and os.clock() - (T.feed.syncAt or 0) > 20 then T.feed.syncAt = os.clock() pcall(SAB.IX.compute) pcall(SAB.IX.sync, true) end
+  if isGood(held) and os.clock() >= (T.feed.globalWait or 0) then
+    local to = T.feed.on and pickAlt(held) or nil
+    if to then give(to) return end
+  end
+  local alt = T.feed.on and pickAlt() or nil
   -- a good butter on the pad while every station of mine is busy: CHURN will not buy it (nowhere to
   -- wax), so the feeder buys it and carries it to the alt
   local pn = padName()
+  if not held and isGood(pn) then alt = T.feed.on and pickAlt(pn) or nil end
   if alt and not held and isGood(pn) then
     local b = buyPrompt()
     -- never without the money: a short buy makes the server offer the butter for Robux
@@ -348,11 +410,11 @@ local function mainTick()
       note("TEAM: could not buy the " .. tostring(pn) .. " on the pad")
     end
   end
-  if alt and not isGood(held) then
-    -- an alt has room: stand up so the crate opens and Auto Roll rolls; CHURN buys the next good one
+  if alt and not held then
+    -- an alt can use one: stand up so the crate opens and Auto Roll rolls; the next good one is bought
     if not T.feed.standing then
       T.feed.standing, T.feed.since = true, os.clock()
-      note(("TEAM: %s has %d free station(s) - rolling a Sushi for it"):format(alt.name, alt.free))
+      note(("TEAM: rolling for %s (%d free station(s), $%.3g)"):format(alt.name, alt.free or 0, tonumber(alt.cash) or 0))
     end
     if C.Campfire then C.Campfire = false end
     if seated() then standUp() end

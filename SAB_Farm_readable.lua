@@ -24,6 +24,7 @@ local CFG = {
     Targets = { applepie = true }, -- set of key(name) -> true. Only these are bought and waxed.
     Collect = true, Every = 60,
     SellJunk = true,               -- anything else in hand gets sold, never waxed
+    NoWax = false,                 -- never wax on this account: hold what it buys (the team module gives it away)
     Crates = true,                 -- master switch: open the crates ticked in the CRATES tab
     CrateTicks = { picniccrate = true }, -- set of crate keys; anything not ticked is left alone
     Rejoin = true,                 -- come back by myself after a disconnect or a restart
@@ -3968,6 +3969,9 @@ local function decide()
             end
             return "sell", ("selling %s (%s)"):format(nice, why), "warn"
         end
+        -- NoWax (set by the team module on the main): what it buys goes to the other accounts, so it
+        -- is held, never put on this account's own stations (a gift cooldown can be in the way)
+        if CFG.NoWax then return nil, ("holding %s - no waxing on this account (it is given away)"):format(nice), "wait" end
         if free < 1 then return nil, ("holding %s - 0 free stations"):format(nice), "wait" end
         if TM.glazeSoon() then return nil, ("holding %s - glaze team is on for a wax that is finishing, placing right after"):format(nice), "wait" end
         return "place", ("waxing %s (%d free)"):format(nice, free), "ok"

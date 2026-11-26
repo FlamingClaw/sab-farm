@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 14 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 15 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -295,6 +295,20 @@ local function altTick()
   end
   for k in pairs(LIMITED) do Tg[k] = true end
   C.NoWax = false
+  -- holding something with no station free (a gift to wax, an index butter): after 60 s it is sold
+  -- rather than blocking everything else (never a Sushi or a Limited - those wait for a station)
+  local hk = held and held ~= "" and key(held) or nil
+  if hk and free == 0 and hk ~= "sushi" and not isLimited(held) then
+    T.stuckSince = T.stuckSince or os.clock()
+    if os.clock() - T.stuckSince > 60 then
+      Tg[hk] = nil
+      C.AutoIndex = false -- (auto index would keep it as a missing butter)
+      if not T.stuckNoted then T.stuckNoted = true note("TEAM: no free station for " .. tostring(held) .. " - selling it") end
+    end
+  else
+    T.stuckSince, T.stuckNoted = nil, nil
+    C.AutoIndex = true
+  end
   -- the campfire seat holds every walking job: up while quests are open or a gift waits for a station
   -- anything in hand (a gift to wax or to sell) needs the account on its feet
   local wantUp = (P.live and P.open > 0) or (held ~= nil and held ~= "")

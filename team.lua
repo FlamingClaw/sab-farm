@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 28 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 29 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -604,6 +604,11 @@ local function mainTick()
   -- its Auto Roll stops on Sushi only while some alt has a free station for one, on another butter
   -- only while an alt takes it now (or misses it in its index, or still buys upgrades and sells it)
   local sushiRoom = T.feed.on and pickAlt("sushi") ~= nil
+  -- every alt station busy: the main waxes its Sushis itself (the user, Nov 26) - its stack is full
+  -- of Sushi, so each finish is a glaze ticket (a glazed one replaces a plain one; the old one goes to
+  -- storage), with CHURN's own team switching (wax team to place, glaze team before a finish)
+  C.WaxOk = (not sushiRoom) and { sushi = true } or nil
+  local myFree = freeStations()
   local changed = false
   local takers, poor = {}, false
   for _, s in ipairs(T.peers()) do
@@ -633,8 +638,15 @@ local function mainTick()
     if to then give(to) T.feed.heldSince = nil return end
   end
   if T.isFeed(held) and key(held) == "sushi" then
-    -- a Sushi is never sold: it waits in hand for the next free station (alts free one every few minutes)
+    -- a Sushi is never sold: no alt has room, so it is waxed here, or (every station of the main busy
+    -- too) it waits in hand for the next free one
     T.feed.heldSince = T.feed.heldSince or os.clock()
+    if myFree > 0 then
+      if C.Campfire then C.Campfire = false end
+      if seated() then standUp() end
+      T.mode = "waxing a Sushi here (every alt station is busy)"
+      return
+    end
     T.mode = ("holding a Sushi for the next free station (%d s)"):format(math.floor(os.clock() - T.feed.heldSince))
   elseif T.isFeed(held) then
     T.feed.heldSince = T.feed.heldSince or os.clock()
@@ -675,6 +687,7 @@ local function mainTick()
       note("TEAM: could not buy the " .. tostring(pn) .. " on the pad")
     end
   end
+  if alt then T.feed.selfFarm = nil end
   if alt and not held then
     -- an alt can use one: stand up so the crate opens and Auto Roll rolls; the next good one is bought
     if not T.feed.standing then
@@ -687,13 +700,21 @@ local function mainTick()
   else
     if T.feed.standing then
       T.feed.standing = false
-      note("TEAM: no alt has room - back to the campfire")
+      note("TEAM: no alt has room" .. (myFree > 0 and " - farming here" or " - back to the campfire"))
     end
     if Cn.inClan and (Cn.left.pull or 0) > 0 then
       -- a guild "pull the lever" quest: CHURN pulls it itself, which the campfire seat would hold up
       if C.Campfire then C.Campfire = false end
       if seated() then standUp() end
       T.mode = "guild quest: pulling the lever"
+      return
+    end
+    if myFree > 0 then
+      -- every alt is full: the main farms for itself (rolls, buys and waxes Sushi with its teams)
+      if C.Campfire then C.Campfire = false end
+      if seated() then standUp() end
+      if not T.feed.selfFarm then T.feed.selfFarm = true note(("TEAM: every alt station is busy - farming Sushi here (%d station(s) free)"):format(myFree)) end
+      T.mode = ("farming here: rolling and waxing Sushi (%d of my stations free, every alt busy)"):format(myFree)
       return
     end
     if not C.Campfire then C.Campfire = true SAB.CF.nextAt = 0 end

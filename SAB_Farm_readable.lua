@@ -26,6 +26,7 @@ local CFG = {
     Collect = true, Every = 60,
     SellJunk = true,               -- anything else in hand gets sold, never waxed
     NoWax = false,                 -- never wax on this account: hold what it buys (the team module gives it away)
+    WaxOk = nil,                   -- with NoWax: these butters (keys) may still be waxed here (the team module: Sushi while the alts are full)
     MainAccount = "o_oFlame3",     -- Limited butters (Pecan Pie...) are waxed on this account only; any other
                                    -- account holds one (never waxed, never sold) for the team module to hand over
     Crates = true,                 -- master switch: open the crates ticked in the CRATES tab
@@ -2323,7 +2324,7 @@ function TM.aboutToPlace() -- a ticked butter in hand and somewhere to put it: p
     local held = carriedName()
     if not (held and isTarget(held)) then return false end
     -- held to be given away (NoWax) or held for the main (a Limited off it): nothing is placed here
-    if (CFG.NoWax and not IX.isLimited(held)) or (IX.isLimited(held) and not IX.limitedHere()) then return false end
+    if (CFG.NoWax and not IX.isLimited(held) and not (type(CFG.WaxOk) == "table" and CFG.WaxOk[key(held)])) or (IX.isLimited(held) and not IX.limitedHere()) then return false end
     local free = freeCount()
     return free > 0
 end
@@ -4011,7 +4012,7 @@ local function decide()
         end
         -- NoWax (set by the team module on the main): what it buys goes to the other accounts, so it
         -- is held, never put on this account's own stations (a gift cooldown can be in the way)
-        if CFG.NoWax then return nil, ("holding %s - no waxing on this account (it is given away)"):format(nice), "wait" end
+        if CFG.NoWax and not (type(CFG.WaxOk) == "table" and CFG.WaxOk[key(held)]) then return nil, ("holding %s - no waxing on this account (it is given away)"):format(nice), "wait" end
         if free < 1 then return nil, ("holding %s - 0 free stations"):format(nice), "wait" end
         if TM.glazeSoon() then return nil, ("holding %s - glaze team is on for a wax that is finishing, placing right after"):format(nice), "wait" end
         return "place", ("waxing %s (%d free)"):format(nice, free), "ok"

@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 24 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 25 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -120,6 +120,7 @@ local function writeMe()
     "pets=" .. tostring(#((G.SAB and G.SAB.PX.data() or {}).pets or {})),
     "petMax=" .. tostring((G.SAB and G.SAB.PX.data() or {}).maxOwned or 60),
     "petScore=" .. tostring(T.petScore and T.petScore() or 0),
+    "slots=" .. tostring(G.SAB and G.SAB.FU and G.SAB.FU.slots() or 3),
     "trading=" .. tostring(T.tr and T.tr.active == true),
   }
   pcall(writefile, DIR .. "/" .. T.me .. ".txt", table.concat(L, "\n"))
@@ -740,29 +741,78 @@ local function petScore()
   return math.floor(sc)
 end
 T.petScore = petScore
--- the target pets: every account's plan pets together
+-- Rarity: Common < Rare < Epic < Legendary < Mythic < Exotic < Cosmic (PetInfo.Rarities).
+-- The user's rule (Nov 26): of the low ones (below Exotic) the team keeps only what the accounts' best
+-- teams need - their plans' Huges, and the copies / Bigs still on the way to those Huges; the rest is
+-- sold (it only takes room). Exotic and Cosmic are never sold: every account adopts and wishes them
+-- for good and the main fuses them on to Huges (the Huge stock).
+local function rarityRank(n)
+  local S0 = SABx()
+  local I = S0 and S0.PX.info()
+  local p = I and I.Pets and I.Pets[n]
+  if not p then return nil end
+  for i, r in ipairs(I.Rarities or {}) do if r == p.rarity then return i, I.Rarities end end
+  return nil
+end
+local function isHigh(n)
+  local i, list = rarityRank(n)
+  if not i then return false end
+  local ex = 6
+  for j, r in ipairs(list) do if r == "Exotic" then ex = j end end
+  return i >= ex
+end
+T.isHigh = isHigh
+-- what the main worked out (SAB/team/econ.txt): the pets wanted, what each account sells, which spare
+-- pets would better another account's teams
+local ECON = DIR .. "/econ.txt"
+local function econRead()
+  local ok, body = pcall(readfile, ECON)
+  if not ok or type(body) ~= "string" then return nil end
+  local e = { wanted = {}, sell = {}, useful = {}, short = {} }
+  for k, v in body:gmatch("([%w_]+)=([^\n]*)") do
+    if k == "t" then e.t = tonumber(v)
+    elseif k == "wanted" then for n in v:gmatch("[^,]+") do e.wanted[n] = true end
+    elseif k == "useful" then for id, who in v:gmatch("([^,:]+):([^,]+)") do e.useful[id] = who end
+    elseif k == "short" then for n, a, h, b in v:gmatch("([%w_]+):([%w_]+):(%d+):(%d+)") do e.short[n] = e.short[n] or {} e.short[n][a] = { H = tonumber(h), B = tonumber(b) } end
+    elseif k:find("^sell_") then local l = {} for id in v:gmatch("[^,]+") do l[#l + 1] = id end e.sell[k:sub(6)] = l end
+  end
+  e.fresh = e.t ~= nil and os.time() - e.t < 600
+  return e
+end
+T.econRead = econRead
+-- the pets the team adopts / trades / fuses: what the main says (else Exotic+Cosmic and this account's plan)
 local function targets()
+  local e = T.role == "main" and T.econ or econRead()
+  if e and e.t and os.time() - e.t < 600 then return e.wanted end
   local names = {}
   for _, n in ipairs(planList()) do names[n] = true end
-  for _, s in ipairs(T.peers()) do
-    for n in tostring(s.plan or ""):gmatch("[^,]+") do names[n] = true end
-  end
+  local S0 = SABx()
+  local I = S0 and S0.PX.info()
+  for n in pairs(I and I.Pets or {}) do if isHigh(n) then names[n] = true end end
   return names
 end
 T.targets = targets
 local function petTicks()
   if os.clock() - T.pet.tickAt < 60 then return end
   T.pet.tickAt = os.clock()
-  local P = SABx().CFG.Pets
-  local added = 0
-  for n in pairs(targets()) do
+  local S0 = SABx()
+  local P, I = S0.CFG.Pets, S0.PX.info()
+  if not (I and I.Pets) then return end
+  local want = targets()
+  local on, off = 0, 0
+  for n in pairs(I.Pets) do
     local w = P[n] or {}
-    if not w.b or not w.w then added = added + 1 end
-    w.b, w.w = true, true
-    P[n] = w
+    if tonumber(w.f) ~= -1 then -- (a pet the user marked KEEP is left as it is)
+      local yes = want[n] == true
+      if yes and not (w.b and w.w) then on = on + 1 elseif not yes and (w.b or w.w) then off = off + 1 end
+      w.b, w.w = yes or nil, yes or nil
+      w.s = (yes and isHigh(n)) or nil -- Exotic / Cosmic: adopted for good, not only up to the plan
+      P[n] = (w.b or w.w or w.g or w.f or w.s) and w or nil
+    end
   end
-  if added > 0 then note("TEAM PETS: adopt + wish ticked on " .. added .. " target pet(s)") end
+  if on + off > 0 then note(("TEAM PETS: adopt + wish on %d pet(s), off on %d (not needed)"):format(on, off)) end
 end
+T.petTicks = petTicks
 
 -- what the main owes an alt (Huges for the Bigs it sent): SAB/team/owed.txt  "alt|pet|count"
 local OWED = DIR .. "/owed.txt"
@@ -783,16 +833,223 @@ end
 T.owedRead = owedRead
 local function owedFor(o, name) local c = 0 for _, t in pairs(o) do c = c + (t[name] or 0) end return c end
 
--- the main's fusing: one fuse a tick, spare pets only (so no team is ever weakened)
+---------------------------------------------------------------- the team's pets as one store (worked out on the main)
+-- Every 90 s the main reads every account's pets (PetsData replicates), saved teams, plan (its goal:
+-- regular/Big/Huge per pet) and team slots, and works out, per pet:
+--   shortfall  each account's plan Huges / Bigs it does not have yet;
+--   spare      not in a saved team or worn, not named, beyond its own plan, and not in a team its own
+--              pets would make right now (a pet that just came, not saved in a team yet);
+--   wanted     Exotic / Cosmic always; a lower pet only while the shortfalls need more than is spare;
+--   reserved   spare lower pets kept as the material for the shortfalls (the main's own first);
+--   useful     a spare lower pet past that which would better another account's teams goes there;
+--   sold       every other spare lower pet (the user's rule: they only take room).
+-- Exotic / Cosmic are never sold: spare ones go to the main, which fuses them on (the Huge stock) and
+-- hands Huges to the alts whose plans want them. SAB/team/econ.txt tells the alts the outcome.
+local function petList(d)
+  local arriving, out = {}, {}
+  for _, id in ipairs(d and d.arriving or {}) do arriving[tostring(id)] = true end
+  for _, p in ipairs(d and d.pets or {}) do
+    if not arriving[tostring(p.id)] then out[#out + 1] = { id = tostring(p.id), name = p.name, variant = p.variant or "" } end
+  end
+  return out
+end
+local function bestIds(list, slots)
+  local FU = SABx().FU
+  local chosen = {}
+  for _, r in ipairs({ "farm", "full", "glaze", "wax" }) do
+    local ok, ids = pcall(FU.best, r, list, slots)
+    for _, id in ipairs(ok and ids or {}) do chosen[tostring(id)] = true end
+  end
+  return chosen
+end
+T.bestIds = bestIds
+local function accounts()
+  local S0 = SABx()
+  local out = {}
+  local d = petD()
+  if d then out[#out + 1] = { name = T.me, role = T.role, d = d, goal = parseGoal(goalText()), slots = S0.FU.slots(), score = petScore() } end
+  for _, s in ipairs(T.peers()) do
+    if s.fresh and s.player then
+      local dd = decodePets(s.player)
+      if dd then out[#out + 1] = { name = s.name, role = s.role, d = dd, goal = parseGoal(s.goal), slots = tonumber(s.slots) or 3, score = tonumber(s.petScore) or 0, s = s } end
+    end
+  end
+  for _, a in ipairs(out) do
+    a.inv, a.keep, a.list = inventory(a.d), teamSet(a.d), petList(a.d)
+    a.n, a.max = #(a.d.pets or {}), tonumber(a.d.maxOwned) or 60
+  end
+  return out
+end
+local UNIT = { [""] = 1, Big = 3, Huge = 9 } -- in copies (the main fuses with the Fuse Pass: 3 a step)
+local ZERO = { [""] = 0, Big = 0, Huge = 0 }
+T.sellOn = not G.SAB_TEAM_SELL_OFF -- (a dry run: set getgenv().SAB_TEAM_SELL_OFF before loading)
+local function econCompute()
+  local acc = accounts()
+  if #acc == 0 then return nil end
+  local I = SABx().PX.info()
+  local e = { t = os.time(), wanted = {}, sell = {}, useful = {}, short = {}, move = {}, reserved = 0, mainBest = {} }
+  for _, a in ipairs(acc) do
+    a.best = bestIds(a.list, a.slots)
+    if a.role == "main" then e.mainBest = a.best end
+  end
+  local names = {}
+  for _, a in ipairs(acc) do for n in pairs(a.inv) do names[n] = true end for n in pairs(a.goal) do names[n] = true end end
+  local surplus = {}
+  local function moveTo(a, id) if a.role == "alt" then e.move[a.name] = e.move[a.name] or {} table.insert(e.move[a.name], id) end end
+  for n in pairs(names) do
+    if I and I.Pets and I.Pets[n] then
+      local high = isHigh(n)
+      local needU, short = 0, {}
+      for _, a in ipairs(acc) do
+        local g = a.goal[n] or ZERO
+        local al = (a.inv[n] and a.inv[n].all) or ZERO
+        local sH = math.max(0, (g.Huge or 0) - al.Huge)
+        local xH = math.max(0, al.Huge - (g.Huge or 0))
+        local sB = math.max(0, (g.Big or 0) - al.Big - xH)
+        local xB = math.max(0, al.Big + xH - (g.Big or 0))
+        local sP = math.max(0, (g[""] or 0) - al[""] - xB)
+        if sH + sB > 0 then short[a.name] = { H = sH, B = sB } end
+        needU = needU + sH * UNIT.Huge + sB * UNIT.Big + sP
+      end
+      if next(short) then e.short[n] = short end
+      local pool = {}
+      for _, a in ipairs(acc) do
+        local inv = a.inv[n]
+        if inv then
+          local g = a.goal[n] or ZERO
+          for _, v in ipairs({ "Huge", "Big", "" }) do
+            local keepMore = math.max(0, (g[v] or 0) - (inv.all[v] - #inv.spare[v]))
+            for i, id in ipairs(inv.spare[v]) do
+              if i > keepMore and not a.best[id] then pool[#pool + 1] = { a = a, id = id, v = v, u = UNIT[v] } end
+            end
+          end
+        end
+      end
+      table.sort(pool, function(x, y) if (x.a.role == "main") ~= (y.a.role == "main") then return x.a.role == "main" end return x.u > y.u end)
+      local have = 0
+      for _, x in ipairs(pool) do have = have + x.u end
+      if high or needU > have then e.wanted[n] = true end
+      local res = 0
+      for _, x in ipairs(pool) do
+        if high then moveTo(x.a, x.id) -- Exotic / Cosmic: to the main (fused on, the Huge stock)
+        elseif res < needU then res = res + x.u e.reserved = e.reserved + 1 moveTo(x.a, x.id)
+        else surplus[x.id] = { a = x.a, name = n, v = x.v } end
+      end
+    end
+  end
+  -- a spare lower pet that would better an alt's teams goes there (the weakest accounts first)
+  table.sort(acc, function(x, y) return (x.score or 0) < (y.score or 0) end)
+  for _, a in ipairs(acc) do
+    if a.role == "alt" and a.n < a.max - 2 then
+      local list, from = {}, {}
+      for _, p in ipairs(a.list) do list[#list + 1] = p end
+      for id, x in pairs(surplus) do
+        if x.a ~= a then list[#list + 1] = { id = "x" .. id, name = x.name, variant = x.v } from["x" .. id] = id end
+      end
+      for cid in pairs(bestIds(list, a.slots)) do
+        local id = from[cid]
+        local x = id and surplus[id]
+        if x then
+          surplus[id] = nil
+          if x.a.role == "main" then e.useful[id] = a.name else moveTo(x.a, id) end
+        end
+      end
+    end
+  end
+  for id, x in pairs(surplus) do
+    e.sell[x.a.name] = e.sell[x.a.name] or {}
+    table.insert(e.sell[x.a.name], id)
+    e.sellNames = e.sellNames or {}
+    local k = x.a.name .. ": " .. SABx().PX.nice(x.name, x.v)
+    e.sellNames[k] = (e.sellNames[k] or 0) + 1
+  end
+  -- Huges owed for Bigs an alt sent: only while that alt still lacks one
+  local o = owedRead()
+  local changed = false
+  for who, t in pairs(o) do
+    for n, c in pairs(t) do
+      local sh = e.short[n] and e.short[n][who]
+      if c > 0 and not (sh and sh.H > 0) then t[n] = 0 changed = true end
+    end
+  end
+  if changed then owedWrite(o) end
+  local L = { "t=" .. e.t }
+  local w = {} for n in pairs(e.wanted) do w[#w + 1] = n end table.sort(w)
+  L[#L + 1] = "wanted=" .. table.concat(w, ",")
+  local sh = {} for n, t in pairs(e.short) do for who, v in pairs(t) do sh[#sh + 1] = ("%s:%s:%d:%d"):format(n, who, v.H, v.B) end end
+  L[#L + 1] = "short=" .. table.concat(sh, ",")
+  for who, l in pairs(e.sell) do L[#L + 1] = "sell_" .. who .. "=" .. table.concat(l, ",") end
+  for who, l in pairs(e.move) do L[#L + 1] = "move_" .. who .. "=" .. table.concat(l, ",") end
+  pcall(writefile, ECON, table.concat(L, "\n"))
+  return e
+end
+T.econCompute = econCompute
+local function econ()
+  if T.role ~= "main" then return T.econ end
+  if T.econBusy or (T.econ and not T.econ.dirty and os.time() - (T.econ.t or 0) < 90) then return T.econ end
+  T.econBusy = true
+  local ok, e = pcall(econCompute)
+  T.econBusy = false
+  if ok and e then T.econ = e elseif not ok then note("TEAM PETS: working out the pets failed: " .. tostring(e)) end
+  return T.econ
+end
+T.econNow = function() if T.econ then T.econ.dirty = true end return econ() end
+
+-- selling (every account, its own pets only): what the main's list says, checked again here first
+T.sold = { n = 0, at = 0, cash = 0 }
+local function sellTick()
+  if not T.sellOn or T.tr.active or os.clock() < T.sold.at then return end
+  T.sold.at = os.clock() + 40
+  local e = T.role == "main" and T.econ or econRead()
+  if not (e and e.t and os.time() - e.t < 300) then return end
+  local list = e.sell[T.me]
+  if not list or #list == 0 then return end
+  local S0 = SABx()
+  local d = petD()
+  if not d then return end
+  local keep = teamSet(d)
+  local byId = {}
+  for _, p in ipairs(d.pets or {}) do byId[tostring(p.id)] = p end
+  local mine = bestIds(petList(d), S0.FU.slots())
+  local ids, what = {}, {}
+  for _, id in ipairs(list) do
+    local p = byId[tostring(id)]
+    -- never: in a team / worn, named, Exotic or Cosmic, an unknown pet, or one this account's teams would take
+    if p and #ids < 20 and not keep[tostring(id)] and not mine[tostring(id)] and not p.named and not (p.nickname and p.nickname ~= "")
+      and rarityRank(p.name) and not isHigh(p.name) then
+      ids[#ids + 1] = tostring(id)
+      local k = S0.PX.nice(p.name, p.variant or "")
+      what[k] = (what[k] or 0) + 1
+    end
+  end
+  if #ids == 0 then return end
+  local before = money()
+  local r = S0.PX.call("sellMany", { ids = ids })
+  if type(r) == "table" and r.ok then
+    T.sold.n = T.sold.n + #ids
+    local parts = {} for k, c in pairs(what) do parts[#parts + 1] = c .. "x " .. k end table.sort(parts)
+    note(("TEAM PETS: sold %d spare pet(s): %s"):format(#ids, table.concat(parts, ", ")))
+    T.sold.cash = T.sold.cash + math.max(0, money() - before)
+    if T.role == "main" and T.econ then T.econ.dirty = true end
+  else
+    note("TEAM PETS: selling refused: " .. tostring(type(r) == "table" and (r.reason or r.text) or r))
+    T.sold.at = os.clock() + 300
+  end
+end
+T.sellTick = sellTick
+
+-- the main's fusing: one fuse a tick, its own spare pets only (never one in a team or its best teams)
 local function mainFuse()
   local S0 = SABx()
   local FU, PX, TM = S0.FU, S0.PX, S0.TM
   if TM.editing then return false end
   local d = PX.data()
-  if not d then return false end
+  local e = T.econ
+  if not (d and e) then return false end
   local inv = inventory(d)
   local needR, needB = FU.needFor(""), FU.needFor("Big")
   local owed = owedRead()
+  local myGoal = parseGoal(goalText())
   local function fuse(ids, name, v, nv, why)
     TM.editing, TM.editingSince = true, os.clock()
     local r = PX.call("fuse", { ids = ids })
@@ -800,35 +1057,36 @@ local function mainFuse()
     if type(r) == "table" and r.ok then
       T.pet.fused = T.pet.fused + 1
       note(("TEAM FUSE: %d %s -> %s (%s)"):format(#ids, PX.nice(name, v), PX.nice(name, nv), why))
+      T.econ.dirty = true -- (the store changed)
       return true
     end
     note(("TEAM FUSE: %s failed: %s"):format(PX.nice(name, v), type(r) == "table" and tostring(r.reason) or "no answer"))
     T.pet.nextAt = os.clock() + 30
     return false
   end
-  for name in pairs(targets()) do
-    local e = inv[name]
-    if e then
-      local g = FU.goal(name) or { [""] = 0, Big = 0, Huge = 0 }
-      -- Huge: one owed to an alt first, then one the main's own plan wants
-      if #e.spare.Big >= needB then
-        local forAlt = owedFor(owed, name) > 0 and #e.spare.Huge < owedFor(owed, name)
-        local forMe = e.all.Huge < (g.Huge or 0)
-        -- a pet no alt's plan uses: its Bigs go on to Huges (the Huge stock; also frees pet slots)
-        local altWants = false
-        for _, s in ipairs(T.peers()) do
-          if s.role == "alt" and parseGoal(s.goal)[name] then altWants = true end
-        end
-        if forAlt or forMe or not altWants then
-          local ids = {}
-          for i = 1, needB do ids[i] = e.spare.Big[i] end
-          return fuse(ids, name, "Big", "Huge", forAlt and "owed to an alt" or (forMe and "for the main's plan" or "Huge stock"))
-        end
+  for name, en in pairs(inv) do
+    local high = isHigh(name)
+    local sh = e.short[name] or {}
+    local hShort, bShort = 0, 0
+    for _, x in pairs(sh) do hShort, bShort = hShort + x.H, bShort + x.B end
+    if high or hShort + bShort > 0 then
+      local g = myGoal[name] or ZERO
+      local function spare(v)
+        local l = {}
+        local keepMore = math.max(0, (g[v] or 0) - (en.all[v] - #en.spare[v]))
+        for i, id in ipairs(en.spare[v]) do if i > keepMore and not e.mainBest[id] then l[#l + 1] = id end end
+        return l
       end
-      -- Big from spare copies: always (that is what the copies come for)
-      if #e.spare[""] >= needR then
+      local sP, sB, sH = spare(""), spare("Big"), spare("Huge")
+      local uncovered = math.max(0, hShort + math.max(0, owedFor(owed, name) - hShort) - #sH)
+      if #sB >= needB and (high or uncovered > 0) then
         local ids = {}
-        for i = 1, needR do ids[i] = e.spare[""][i] end
+        for i = 1, needB do ids[i] = sB[i] end
+        return fuse(ids, name, "Big", "Huge", high and (uncovered > 0 and "for an account's plan" or "Huge stock") or "for an account's plan")
+      end
+      if #sP >= needR and (high or uncovered * needB + bShort > #sB) then
+        local ids = {}
+        for i = 1, needR do ids[i] = sP[i] end
         return fuse(ids, name, "", "Big", "copies from the team")
       end
     end
@@ -837,90 +1095,75 @@ local function mainFuse()
 end
 T.mainFuse = mainFuse
 
--- the trade with one alt: what it gives (spare copies, 3 spare Bigs for a Huge) and what it gets
--- (the Huge it is owed, Bigs / Huges the main can spare that its plan wants)
+-- the trade with one alt. It gives what the main's list says should come to the main (material for
+-- the plans, spare Exotic / Cosmic, pets that better another account's teams); it gets the Huges and
+-- Bigs its plan lacks, and spare pets that better its teams.
 local function planTrade(s, mainInv, owed, designated)
-  local S0 = SABx()
-  local needB = S0.FU.needFor("Big")
   local d = decodePets(s.player)
   if not d then return nil end
-  local inv = inventory(d)
-  local tg = targets()
-  local give, get, hugeFor = {}, {}, nil
-  -- 1. its spare copies of target pets
-  for name in pairs(tg) do
-    local e = inv[name]
-    if e then for _, id in ipairs(e.spare[""]) do if #give < 6 then give[#give + 1] = id end end end
+  local e = T.econ
+  local keep = teamSet(d)
+  local owned = {}
+  for _, p in ipairs(d.pets or {}) do owned[tostring(p.id)] = true end
+  local give, get, gave = {}, {}, {}
+  for _, id in ipairs(e and e.move[s.name] or {}) do
+    if #give < 6 and owned[id] and not keep[id] and not gave[id] then give[#give + 1] = id gave[id] = true end
   end
-  -- 2. three spare Bigs of one pet -> a Huge for it
-  if #give <= 6 - needB then
-    for name in pairs(tg) do
-      local e = inv[name]
-      if not hugeFor and e and #e.spare.Big >= needB then
-        for i = 1, needB do give[#give + 1] = e.spare.Big[i] end
-        hugeFor = name
-      end
-    end
-  end
-  -- 2b. spare Bigs / Huges of pets this alt's plan does not use: to the main (its Huge stock)
-  local myGoal = parseGoal(s.goal)
-  for name, e in pairs(inv) do
-    if tg[name] and not myGoal[name] and name ~= hugeFor then
-      for _, v in ipairs({ "Big", "Huge" }) do
-        for _, id in ipairs(e.spare[v]) do if #give < 6 then give[#give + 1] = id end end
-      end
-    end
-  end
-  -- 3. what the main hands back: owed Huges, then pets the main can spare that this alt's plan wants
-  local mine = owed[s.name] or {}
-  for name, c in pairs(mine) do
-    local e = mainInv[name]
-    for i = 1, math.min(c, e and #e.spare.Huge or 0) do if #get < 6 then get[#get + 1] = e.spare.Huge[i] end end
-  end
-  for name, who in pairs(designated) do
-    if who.alt == s.name and #get < 6 then get[#get + 1] = who.id end
-  end
-  return { alt = s, give = give, get = get, hugeFor = hugeFor, size = #give + #get }
+  for _, x in ipairs(designated) do if #get < 6 then get[#get + 1] = x.id end end
+  return { alt = s, give = give, get = get, hugeFor = nil, size = #give + #get }
 end
--- which spare Big / Huge of the main goes to which alt: the alt with the fewest of that pet whose
--- plan wants more of it (ties: the weakest pets)
+-- which spare pets of the main go to which alt: ones that better its teams, then the Huges (and Bigs)
+-- its plan lacks - the biggest shortfall first, then the weakest pets
 local function designate(mainInv, owed)
-  local S0 = SABx()
-  local FU = S0.FU
-  local d = petD()
-  local needB = FU.needFor("Big")
-  local out = {}
-  local alts = {}
+  local e = T.econ
+  if not e then return {} end
+  local needB = SABx().FU.needFor("Big")
+  local out, taken, room, score = {}, {}, {}, {}
   for _, s in ipairs(T.peers()) do
     if s.role == "alt" and s.fresh and s.player then
       local dd = decodePets(s.player)
-      alts[#alts + 1] = { s = s, inv = dd and inventory(dd) or {}, goal = parseGoal(s.goal), n = dd and #(dd.pets or {}) or 0, max = dd and dd.maxOwned or 60 }
+      room[s.name] = dd and ((tonumber(dd.maxOwned) or 60) - #(dd.pets or {}) - 1) or 0
+      score[s.name] = tonumber(s.petScore) or 0
     end
   end
-  for name, e in pairs(mainInv) do
-    local g = FU.goal(name) or { [""] = 0, Big = 0, Huge = 0 }
-    local o = owedFor(owed, name)
-    -- the main keeps what its own plan still wants, and Bigs for Huges it owes
-    local keepH = math.max(0, (g.Huge or 0) - (e.all.Huge - #e.spare.Huge)) + o
-    local keepB = math.max(0, (g.Big or 0) + needB * math.max(0, (g.Huge or 0) - e.all.Huge) - (e.all.Big - #e.spare.Big)) + needB * math.max(0, o - #e.spare.Huge)
-    for _, v in ipairs({ "Huge", "Big" }) do
-      local free = #e.spare[v] - (v == "Huge" and keepH or keepB)
-      for i = 1, math.max(0, free) do
-        local best, bestHave
-        for _, a in ipairs(alts) do
-          local ga = a.goal[name]
-          local ai = a.inv[name] or { all = { [""] = 0, Big = 0, Huge = 0 } }
-          local units = ai.all.Big + needB * ai.all.Huge
-          local wantUnits = ga and ((ga.Big or 0) + needB * (ga.Huge or 0)) or 0
-          if ga and units < wantUnits and a.n < a.max - 1 then
-            if not best or units < bestHave or (units == bestHave and (tonumber(a.s.petScore) or 0) < (tonumber(best.s.petScore) or 0)) then best, bestHave = a, units end
-          end
+  local function hand(id, to, name, v)
+    if room[to] and room[to] > 0 and not taken[id] then
+      taken[id], room[to] = true, room[to] - 1
+      out[#out + 1] = { alt = to, id = id, name = name, v = v }
+      return true
+    end
+    return false
+  end
+  for id, to in pairs(e.useful) do hand(id, to) end
+  local myGoal = parseGoal(goalText())
+  for name, sh in pairs(e.short) do
+    local en = mainInv[name]
+    if en then
+      local g = myGoal[name] or ZERO
+      local hGiven = 0
+      local hNeed = 0
+      for who, x in pairs(sh) do if who ~= T.me then hNeed = hNeed + x.H end end
+      for _, v in ipairs({ "Huge", "Big" }) do
+        local keepMore = math.max(0, (g[v] or 0) - (en.all[v] - #en.spare[v]))
+        local free = {}
+        for i, id in ipairs(en.spare[v]) do if i > keepMore and not e.mainBest[id] and not taken[id] then free[#free + 1] = id end end
+        if v == "Big" then
+          -- the Bigs the main fuses on into the Huges still missing stay here
+          local keepB = needB * math.max(0, hNeed - hGiven)
+          for _ = 1, math.min(#free, keepB) do table.remove(free, 1) end
         end
-        if best then
-          out[#out + 1] = { alt = best.s.name, id = e.spare[v][i], name = name, v = v }
-          local ai = best.inv[name] or { all = { [""] = 0, Big = 0, Huge = 0 } }
-          best.inv[name] = ai
-          ai.all[v] = ai.all[v] + 1 -- counted, so the next one goes to whoever is lowest then
+        local list = {}
+        for who, x in pairs(sh) do
+          local n = v == "Huge" and x.H or x.B
+          if who ~= T.me and room[who] and n > 0 then list[#list + 1] = { who = who, n = n } end
+        end
+        table.sort(list, function(a, b) if a.n ~= b.n then return a.n > b.n end return (score[a.who] or 0) < (score[b.who] or 0) end)
+        local k = 1
+        for _, x in ipairs(list) do
+          for _ = 1, x.n do
+            while free[k] and taken[free[k]] do k = k + 1 end
+            if free[k] and hand(free[k], x.who, name, v) then k = k + 1 if v == "Huge" then hGiven = hGiven + 1 end end
+          end
         end
       end
     end
@@ -1066,6 +1309,8 @@ local function petTick()
     return
   end
   if T.role ~= "main" or not T.pet.auto or os.clock() < T.pet.nextAt then return end
+  if not T.econBusy and (not T.econ or T.econ.dirty or os.time() - (T.econ.t or 0) >= 90) then task.spawn(econ) end
+  if not T.econ then T.pet.msg = "working out the team's pets" return end
   for _, s in ipairs(T.peers()) do if s.fresh and isLimited(s.holding) then T.pet.msg = "waiting: " .. s.name .. " is bringing a Limited" return end end
   if isLimited(LP:GetAttribute("SquishyEquipped")) then return end
   T.pet.nextAt = os.clock() + 12
@@ -1694,6 +1939,8 @@ task.spawn(function()
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
       pcall(guildShop)
       pcall(guildJoin)
+      local okSell, errSell = pcall(T.sellTick)
+      if not okSell then note("TEAM PETS sell error: " .. tostring(errSell)) end
       local okG, didG = true, false
       if ok and T.role == "alt" and not T.tr.active then
         okG, didG = pcall(guildTick)

@@ -2637,7 +2637,7 @@ end
 function FU.wantMore(name, variant, d) -- smart buying: only what the plan still needs
     if not d then return true end
     local w = CFG.Pets[name]
-    if w and tonumber(w.f) == -1 then return true end
+    if w and (tonumber(w.f) == -1 or w.s) then return true end -- KEEP, or a stock pet (the team module's Exotic / Cosmic)
     local g, need = FU.goal(name)
     if not g then return true end -- (in no best team: bought as you ticked it)
     local _, have = FU.have(name, d, true)

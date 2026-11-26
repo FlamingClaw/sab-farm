@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 17 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 18 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -312,8 +312,13 @@ local function altTick()
   for k in pairs(Tg) do Tg[k] = nil end
   if P.need then for k in pairs(ALL) do Tg[k] = true end end
   for k in pairs(GOOD) do
-    if k == "sushi" or (need[k] and free > 0) then Tg[k] = true elseif not P.need then Tg[k] = nil end
+    -- Sushi always; another good butter for the index, or - once every upgrade is bought - for the
+    -- stack (a full stack drops its weakest earner, so it is an upgrade); else it is sold for cash
+    if k == "sushi" or ((need[k] or T.up.max) and free > 0) then Tg[k] = true elseif not P.need then Tg[k] = nil end
   end
+  -- once every upgrade is bought: UPGRADES - anything earning more than the weakest in the stack is
+  -- kept and waxed (the alt rolls its own lever below)
+  C.Best = T.up.max and 4 or 0
   for k in pairs(LIMITED) do Tg[k] = true end
   C.NoWax = false
   -- holding something with no station free (a gift to wax, an index butter): after 60 s it is sold
@@ -376,7 +381,10 @@ local function pickAlt(k)
     local a = most(function(s) return (s.free or 0) > 0 and ("," .. tostring(s.want) .. ","):find("," .. k .. ",", 1, true) ~= nil end)
     if a then return a end
   end
-  return poorest(function(s) return tostring(s.upmax) ~= "true" end)
+  local p = poorest(function(s) return tostring(s.upmax) ~= "true" end)
+  if p then return p end
+  -- everybody has bought everything: the one with most free stations waxes it (a stack upgrade)
+  return most(function(s) return (s.free or 0) > 0 end)
 end
 local function give(s)
   local SAB = G.SAB
@@ -444,13 +452,25 @@ local function mainTick()
   local sushiRoom = T.feed.on and pickAlt("sushi") ~= nil
   local changed = false
   for k in pairs(GOOD) do
-    local want = (k ~= "sushi") or sushiRoom
+    local want = ((k ~= "sushi") or sushiRoom) and not (T.feed.soldNote and held and key(held) == k)
     if (C.Targets[k] == true) ~= want then C.Targets[k] = want or nil changed = true end
   end
   if changed and os.clock() - (T.feed.syncAt or 0) > 20 then T.feed.syncAt = os.clock() pcall(SAB.IX.compute) pcall(SAB.IX.sync, true) end
   if isGood(held) and os.clock() >= (T.feed.globalWait or 0) then
     local to = T.feed.on and pickAlt(held) or nil
-    if to then give(to) return end
+    if to then give(to) T.feed.heldSince = nil return end
+  end
+  if isGood(held) then
+    T.feed.heldSince = T.feed.heldSince or os.clock()
+    if os.clock() - T.feed.heldSince > 90 then
+      -- nobody can take it: let CHURN sell it rather than block the crate and Auto Roll
+      C.Targets[key(held)] = nil
+      if not T.feed.soldNote then T.feed.soldNote = true note("TEAM: nobody can take " .. tostring(held) .. " - selling it") end
+      T.mode = "selling " .. tostring(held) .. " (no alt can take it)"
+      return
+    end
+  else
+    T.feed.heldSince, T.feed.soldNote = nil, nil
   end
   local alt = T.feed.on and pickAlt() or nil
   -- a good butter on the pad while every station of mine is busy: CHURN will not buy it (nowhere to
@@ -1096,6 +1116,30 @@ local function poorerFor(k, price)
   end
   return best
 end
+T.self = { at = 0, pulls = 0 }
+local function selfRoll()
+  -- a maxed alt with stations to spare rolls its own lever; CHURN (UPGRADES) buys and waxes what
+  -- beats the weakest butter in its stack. 6 stations stay free for the main's Sushis.
+  if T.role ~= "alt" or not T.up.max or os.clock() < T.self.at then return false end
+  local held = LP:GetAttribute("SquishyEquipped")
+  if (held and held ~= "") or freeStations() <= 6 then return false end
+  local SAB = G.SAB
+  if SAB.S.reason and tostring(SAB.S.reason):find("cash short") then T.self.at = os.clock() + 30 return false end
+  T.self.at = os.clock() + 5
+  local lp, w = SAB.QX.lever()
+  if not (lp and w) then return false end
+  SAB.S.running = false
+  standUp()
+  local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+  if hrp then hrp.CFrame = w.CFrame * CFrame.new(0, 0, -4) end
+  task.wait(0.4)
+  pcall(fireproximityprompt, lp)
+  T.self.pulls = T.self.pulls + 1
+  task.wait(1)
+  SAB.S.running = true
+  return true
+end
+T.selfRoll = selfRoll
 local function cascadeTick()
   if T.role ~= "alt" or not T.up.max then return false end
   local SAB = G.SAB
@@ -1173,6 +1217,10 @@ task.spawn(function()
       if ok and T.role == "alt" and not T.tr.active then
         local okC, errC = pcall(cascadeTick)
         if not okC then note("TEAM GIVE error: " .. tostring(errC)) end
+        if okC and not errC then
+          local okS, errS = pcall(selfRoll)
+          if not okS then note("TEAM ROLL error: " .. tostring(errS)) end
+        end
       end
       if not ok then note("TEAM error: " .. tostring(err)) end
       local okW, errW = pcall(writeMe)

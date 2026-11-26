@@ -37,7 +37,7 @@ CFG.Rejoin = false
 S.rejoining = true
 CFG.Help = true
 CFG.Quests = true
-CFG.MemLimit = 3000
+CFG.MemLimit = 1200 -- (the user's cap; Real itself is capped at 1024 MB)
 -- pets: every account's four role teams under the same names (the main's saved teams are called
 -- this; the alts' are made by AUTO BUILD the first time they have pets for them). The whole pet side
 -- (plan, buying, fusing, building, switching) works only with these set.
@@ -81,7 +81,8 @@ end
 if not HX._due0 then HX._due0 = HX.due end
 HX.due = function()
   local m = PF.mem
-  local cap = (CFG.MemLimit or 0) > 0 and math.floor(CFG.MemLimit * 0.72) or 900
+  -- helps pause at 90% of the limit on the PC (the phone's 72% would stop the main at 864 MB)
+  local cap = (CFG.MemLimit or 0) > 0 and math.floor(CFG.MemLimit * 0.9) or 900
   if m and m <= cap then PF.mem = 0 end
   local ok, r = pcall(HX._due0)
   PF.mem = m

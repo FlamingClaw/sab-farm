@@ -1,8 +1,9 @@
--- SAB BUTTER FARM v25 | Delta / Android
--- Reacts to the Auto Roll pass. It never rolls and never touches the Limited holder.
--- It buys ONLY the butters ticked in the BUTTERS tab, and it checks what is actually
--- in your hands before waxing anything, so a butter someone gifts you is never placed.
-local VERSION = "v28"
+-- CHURN v29 | butter farm for Stack A Butter Squishy | Delta (phone) and Real (PC, several accounts)
+-- It buys ONLY the butters ticked in the BUTTERS tab (or what Auto Index / Best butter want), and it
+-- checks what is actually in your hands before waxing anything, so a butter someone gifts you is never
+-- placed. It never spends Robux: every Robux prompt is dropped while it runs. Limited butters are waxed
+-- only on CFG.MainAccount. With team.lua (loaded by altboot.lua) several accounts work as one team.
+local VERSION = "v29"
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local function toast(msg)

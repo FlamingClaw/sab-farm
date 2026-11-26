@@ -1,4 +1,4 @@
-local cd="v28"local pj=game:GetService("Players")local K=pj.LocalPlayer or pj.PlayerAdded:Wait()local function jz(yS)
+local cd="v29"local pj=game:GetService("Players")local K=pj.LocalPlayer or pj.PlayerAdded:Wait()local function jz(yS)
 pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{Title="CHURN "..cd,Text=yS,Duration=6})
 end)end jz("script started")local function yT()local ag=game:GetService("ReplicatedStorage")local ak=game:GetService("Workspace")
 local pk=game:GetService("UserInputService")local c1=(type(getgenv)=="function"and getgenv())or _G if type(c1 .SAB_KILL)=="function"then pcall(c1 .SAB_KILL)end

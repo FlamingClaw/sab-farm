@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 23 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 24 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -43,8 +43,18 @@ T.GOOD = GOOD
 local function isGood(n) return n ~= nil and GOOD[key(n)] == true end
 -- Limited butters (the pass's Pecan Pie, the paid Turkey): never sold anywhere, never given to an
 -- alt; an alt hands them straight to the main
-local LIMITED = {}
+local LIMITED = { pecanpie = true, turkey = true } -- (known by heart too, should the catalogue not say)
 for n, v in pairs(SI) do if type(v) == "table" and v.rarity == "Limited" then LIMITED[key(n)] = true end end
+pcall(function() -- an event's free / paid butter (ThanksgivingConfig.freeButter = "PecanPieButter")
+  for _, m in ipairs(RS.Modules:GetChildren()) do
+    if m:IsA("ModuleScript") and m.Name:match("^%u%a+Config$") then
+      local ok, c = pcall(require, m)
+      for _, f in ipairs({ "freeButter", "paidButter" }) do
+        if ok and type(c) == "table" and type(c[f]) == "string" and c[f] ~= "" then LIMITED[key(c[f])] = true end
+      end
+    end
+  end
+end)
 local function isLimited(n) return n ~= nil and LIMITED[key(n)] == true end
 T.LIMITED = LIMITED
 
@@ -223,15 +233,20 @@ T.upgrades, T.freebies, T.money = upgrades, freebies, money
 
 ---------------------------------------------------------------- rank rewards (every account)
 T.claimed = 0
--- The pass's rank 20 reward (Pecan Pie, a Limited) goes straight into the claiming account's STACK
--- (seen on the main Nov 26) - a stacked butter cannot be given or traded. The user's rule is that
--- Limiteds belong to the main, so an alt leaves rank 20 unclaimed (until Dec 1, 01:00 UTC) unless
--- T.claimAltPecan is switched on; every other rank reward is claimed one by one.
-T.claimAltPecan = false
+-- The pass's rank 20 reward is a butter: Pecan Pie, a Limited (ThanksgivingConfig.ranks[20].free).
+-- It lands in the claiming account's HAND (the user, Nov 26; on the main CHURN then waxed it into
+-- the stack at once, which first looked like "straight into the stack"). The user's top rule: every
+-- Limited goes to o_oFlame3 and is waxed and stacked there only - never waxed, sold, given to anyone
+-- else or left to AUTO INDEX on an alt. So an alt claims rank 20 only when the main is here with its
+-- hands free and nobody else is bringing one; CHURN is paused first, the butter is walked to the
+-- main at once (limitedToMain), and CHURN stays paused for as long as it is in this alt's hands.
+-- Every other rank reward is claimed one by one as before.
+T.claimAltPecan = true
+local PASS_CLAIM_END = 1796112000 -- ThanksgivingConfig.claimEndsAt (Dec 1, 08:00 UTC)
 local function claimRanks()
   local n = tonumber(LP:GetAttribute("ThanksgivingReady")) or 0
   if n <= 0 then return end
-  if T.role == "alt" and not T.claimAltPecan then
+  if T.role == "alt" then -- (never claimAll on an alt: rank 20 only through T.claimPecan)
     local r = RS.Remotes:FindFirstChild("ThanksgivingAction")
     local ok, st = pcall(function() return r:InvokeServer("state") end)
     if not (ok and type(st) == "table") then return end
@@ -243,7 +258,8 @@ local function claimRanks()
         if okc and type(res) == "table" and res.ok then got = got + 1 end
       end
     end
-    if got > 0 then T.claimed = T.claimed + got note("TEAM: claimed " .. got .. " pass rank reward(s) (rank 20 left for you to decide)") T.refreshPass() end
+    if got > 0 then T.claimed = T.claimed + got note("TEAM: claimed " .. got .. " pass rank reward(s)") T.refreshPass() end
+    if (tonumber(st.rank) or 0) >= 20 and not claimed[20] and not claimed["20"] then T.claimPecan(r) end
     return
   end
   local r = RS.Remotes:FindFirstChild("ThanksgivingAction")
@@ -502,17 +518,42 @@ end
 local function mainTick()
   local SAB = G.SAB
   local C = SAB.CFG
-  -- keep (never sell) every good butter: they go to the alts; Limited ones stay with the main
-  for k in pairs(GOOD) do C.Targets[k] = true end
-  for k in pairs(LIMITED) do C.Targets[k] = true end
   local held = LP:GetAttribute("SquishyEquipped")
-  -- an alt is bringing a Limited (Pecan Pie): keep the hands free for it, no feeding meanwhile
-  for _, s in ipairs(T.peers()) do
-    if s.fresh and isLimited(s.holding) then
-      T.mode = s.name .. " is bringing " .. tostring(s.holding) .. " - hands kept free"
-      if held and isGood(held) then local a = pickAlt() if a then give(a) end end
+  -- keep (never sell) every good butter: they go to the alts (but one that nobody could take, being
+  -- sold); Limited ones stay with the main
+  for k in pairs(GOOD) do if not (T.feed.soldNote and held and key(held) == k) then C.Targets[k] = true end end
+  for k in pairs(LIMITED) do C.Targets[k] = true end
+  -- an alt is bringing a Limited (Pecan Pie): the hands are emptied and kept empty for it - a good
+  -- butter goes to an alt (sold after a minute if none can take it), anything else CHURN sells; with
+  -- empty hands CHURN is paused so it buys nothing before the Limited is in. Once it is, CHURN runs
+  -- and waxes it here (the only account that waxes a Limited).
+  local bringing
+  for _, s in ipairs(T.peers()) do if s.fresh and isLimited(s.holding) then bringing = s end end
+  if bringing and not isLimited(held) then
+    T.mode = bringing.name .. " is bringing " .. tostring(bringing.holding) .. " - hands kept free"
+    if held and held ~= "" then
+      SAB.S.running = true
+      if isGood(held) then
+        local a = os.clock() >= (T.feed.globalWait or 0) and pickAlt(held) or nil
+        if a then give(a) return end
+        T.feed.limHeld = T.feed.limHeld or os.clock()
+        if os.clock() - T.feed.limHeld > 60 then -- nobody takes it: CHURN sells it
+          C.Targets[key(held)] = nil
+          if not T.feed.soldNote then T.feed.soldNote = true note("TEAM: nobody can take " .. tostring(held) .. " and a Limited is waiting - selling it") end
+        end
+      end
       return
     end
+    T.feed.limHeld, T.feed.soldNote = nil, nil
+    if not T.feed.limPause then T.feed.limPause = true note("TEAM LIMITED: hands kept free for " .. bringing.name .. "'s " .. tostring(bringing.holding) .. " (farm paused)") end
+    SAB.S.running = false
+    return
+  end
+  T.feed.limHeld = nil
+  if T.feed.limPause then
+    T.feed.limPause = false
+    SAB.S.running = true
+    note("TEAM LIMITED: " .. (isLimited(held) and (tostring(held) .. " is in - waxing it here") or "nobody is bringing one any more") .. " (farm on)")
   end
   -- the main waxes nothing of its own (it all goes to the alts) - except while a battle pass or guild
   -- quest asks for waxing, and a Limited (Pecan Pie) for its own stack
@@ -1025,6 +1066,8 @@ local function petTick()
     return
   end
   if T.role ~= "main" or not T.pet.auto or os.clock() < T.pet.nextAt then return end
+  for _, s in ipairs(T.peers()) do if s.fresh and isLimited(s.holding) then T.pet.msg = "waiting: " .. s.name .. " is bringing a Limited" return end end
+  if isLimited(LP:GetAttribute("SquishyEquipped")) then return end
   T.pet.nextAt = os.clock() + 12
   if mainFuse() then T.pet.nextAt = os.clock() + 6 return end
   local d = petD()
@@ -1058,34 +1101,99 @@ trListen()
 
 ---------------------------------------------------------------- alt: a Limited in hand goes to the main
 T.toMain = 0
+T.lim = { busy = false, tries = 0, msg = "" }
+local function mainHere()
+  local main = Players:FindFirstChild(MAIN)
+  local st
+  for _, s in ipairs(T.peers()) do if s.name == MAIN then st = s end end
+  return main, st
+end
+T.mainHere = mainHere
 local function limitedToMain()
+  if T.role ~= "alt" or T.lim.busy or not isLimited(LP:GetAttribute("SquishyEquipped")) then return end
+  T.lim.busy = true
+  local SAB = G.SAB
   local held = LP:GetAttribute("SquishyEquipped")
-  if T.role ~= "alt" or not isLimited(held) then return end
+  local function say(m) if m ~= T.lim.msg then T.lim.msg = m note("TEAM LIMITED: " .. m) end end
+  local ok, err = pcall(function()
+    while T.alive and isLimited(LP:GetAttribute("SquishyEquipped")) do
+      SAB.S.running = false -- (held for the whole time: nothing of the farm's may touch it)
+      local main, st = mainHere()
+      if not main then
+        say("holding " .. tostring(held) .. " for " .. MAIN .. " - the main is not in this server, waiting")
+      elseif not (st and st.fresh) then
+        say("holding " .. tostring(held) .. " - waiting for the main's farm to report")
+      elseif st.holding and st.holding ~= "" and not isLimited(st.holding) then
+        say("holding " .. tostring(held) .. " - waiting for the main's hands to be free (" .. tostring(st.holding) .. ")")
+      elseif isLimited(st.holding) then
+        say("holding " .. tostring(held) .. " - the main is busy with another Limited, waiting")
+      else
+        standUp()
+        local th = nearTo(main)
+        task.wait(0.8)
+        local gp = th and th:FindFirstChild("GivePrompt")
+        if gp and gp.Enabled then pcall(fireproximityprompt, gp) else pcall(function() RS.Remotes.GiveSquishy:FireServer(main) end) end
+        local t0 = os.clock()
+        repeat task.wait(0.2) until not isLimited(LP:GetAttribute("SquishyEquipped")) or os.clock() - t0 > 5
+        if not isLimited(LP:GetAttribute("SquishyEquipped")) then
+          T.toMain = T.toMain + 1
+          T.lim.tries = 0
+          note("TEAM LIMITED: gave " .. tostring(held) .. " to the main (" .. MAIN .. ")")
+          T.lim.msg = ""
+          break
+        end
+        T.lim.tries = T.lim.tries + 1
+        say(("the main did not take %s yet (try %d) - trying again"):format(tostring(held), T.lim.tries))
+      end
+      task.wait(T.lim.tries > 0 and 12 or 4)
+    end
+  end)
+  if not ok then note("TEAM LIMITED error: " .. tostring(err)) end
+  T.lim.busy = false
+  -- the farm runs again only once the Limited is out of this account's hands
+  if not isLimited(LP:GetAttribute("SquishyEquipped")) then SAB.S.running = true end
+end
+T.limitedToMain = limitedToMain
+-- rank 20 (Pecan Pie) on an alt: only with the main here, its hands free and no other Limited on the way
+function T.claimPecan(r)
+  if T.role ~= "alt" or not T.claimAltPecan or os.time() >= PASS_CLAIM_END then return end
+  if os.clock() < (T.lim.claimAt or 0) then return end
+  T.lim.claimAt = os.clock() + 30
+  local held = LP:GetAttribute("SquishyEquipped")
+  local main, st = mainHere()
+  local why
+  if not main or not (st and st.fresh) then why = "the main is not here"
+  elseif st.holding and st.holding ~= "" then why = "the main's hands are full"
+  elseif T.tr.active then why = "a pet trade is on"
+  elseif held and held ~= "" then why = "this account's hands are full"
+  else
+    for _, s in ipairs(T.peers()) do if s.fresh and isLimited(s.holding) then why = s.name .. " is bringing one already" end end
+  end
+  if why then T.lim.msg = "rank 20 waits: " .. why return end
   local SAB = G.SAB
   SAB.S.running = false
-  local main = Players:FindFirstChild(MAIN)
-  if not main then note("TEAM: holding " .. tostring(held) .. " for the main, but the main is not here - holding it") return end
-  for _ = 1, 8 do
-    if not isLimited(LP:GetAttribute("SquishyEquipped")) then break end
-    standUp()
-    local th = nearTo(main)
-    task.wait(0.8)
-    local gp = th and th:FindFirstChild("GivePrompt")
-    if gp and gp.Enabled then pcall(fireproximityprompt, gp) else pcall(function() RS.Remotes.GiveSquishy:FireServer(main) end) end
-    local t0 = os.clock()
-    repeat task.wait(0.2) until not isLimited(LP:GetAttribute("SquishyEquipped")) or os.clock() - t0 > 4
-    if not isLimited(LP:GetAttribute("SquishyEquipped")) then
-      T.toMain = T.toMain + 1
-      note("TEAM: gave " .. tostring(held) .. " to the main (" .. MAIN .. ")")
-      break
-    end
-    task.wait(10)
-  end
-  if isLimited(LP:GetAttribute("SquishyEquipped")) then
-    note("TEAM: the main would not take " .. tostring(held) .. " - holding it (CHURN paused so it is not waxed here)")
+  local t0 = os.clock()
+  while SAB.S.busy and os.clock() - t0 < 15 do task.wait(0.2) end
+  held = LP:GetAttribute("SquishyEquipped")
+  if SAB.S.busy or (held and held ~= "") then SAB.S.running = true T.lim.msg = "rank 20 waits: the farm was busy" return end
+  local ok, res = pcall(function() return r:InvokeServer("claim", 20, "free") end)
+  if not (ok and type(res) == "table" and res.ok) then
+    SAB.S.running = true
+    note("TEAM LIMITED: rank 20 claim refused: " .. tostring(type(res) == "table" and (res.reason or res.text) or res))
     return
   end
-  SAB.S.running = true
+  T.claimed = T.claimed + 1
+  t0 = os.clock()
+  repeat task.wait(0.2) until isLimited(LP:GetAttribute("SquishyEquipped")) or os.clock() - t0 > 8
+  local got = LP:GetAttribute("SquishyEquipped")
+  if isLimited(got) then
+    note("TEAM LIMITED: claimed rank 20 - " .. tostring(got) .. " is in hand, taking it to the main")
+    limitedToMain()
+  else
+    note("TEAM LIMITED: claimed rank 20 - the butter did not come to the hand (" .. tostring(got) .. ")")
+    SAB.S.running = true
+  end
+  T.refreshPass()
 end
 T.conns = T.conns or {}
 T.conns[#T.conns + 1] = LP:GetAttributeChangedSignal("SquishyEquipped"):Connect(function()
@@ -1564,7 +1672,16 @@ task.spawn(function()
   note("TEAM v" .. T.version .. ": " .. T.me .. " as " .. T.role)
   while T.alive and G.SAB_TEAM == T do
     local SAB = G.SAB
-    if SAB and SAB.S and SAB.S.alive then
+    if SAB and SAB.S and SAB.S.alive and T.role == "alt" and isLimited(LP:GetAttribute("SquishyEquipped")) then
+      -- a Limited in hand: the farm stays paused and the one job is taking it to the main
+      SAB.S.running = false
+      T.mode = "holding " .. tostring(LP:GetAttribute("SquishyEquipped")) .. " for the main: " .. (T.lim.msg ~= "" and T.lim.msg or "on the way")
+      if not T.lim.busy then task.spawn(limitedToMain) end
+      pcall(writeMe)
+      pcall(popupTick)
+      local U = SAB.U
+      if U and U.alt and U.alt.Visible then pcall(T.paint) end
+    elseif SAB and SAB.S and SAB.S.alive then
       pcall(passState)
       pcall(clanState)
       pcall(claimRanks)

@@ -3656,11 +3656,15 @@ end
 IX.disc, IX.need, IX.best, IX.waxing, IX.order, IX.placedAt = nil, {}, {}, {}, {}, {}
 IX.discAt, IX.modAt, IX.sentAt, IX.msg, IX.nNeed, IX.nWax, IX.fails = -100, -100, -100, "", 0, 0, 0
 function IX.on() return CFG.AutoIndex or (CFG.Best or 0) > 0 or CFG.BestCrate end
--- Limited (Robux / event / pass reward): by the game's own catalogue, or CHURN's
+-- Limited (Robux / event / pass reward): by the game's own catalogue, or CHURN's - and, should
+-- neither be read yet, by name: the event's own free and paid butters (its *Config modules'
+-- freeButter / paidButter, read with the catalogue) and the ones known by heart. A pass reward
+-- lands straight in your hand: this must never miss one (Nov 26).
+IX.limNames = { pecanpie = true, turkey = true }
 function IX.isLimited(name)
     if type(name) ~= "string" then return false end
     local k = key(name)
-    if CAT.rar[k] == "Limited" then return true end
+    if IX.limNames[k] or CAT.rar[k] == "Limited" then return true end
     pcall(IX.mods)
     for n, e in pairs(IX.si or {}) do
         if type(e) == "table" and e.rarity == "Limited" and key(n) == k then return true end
@@ -3683,6 +3687,16 @@ function IX.mods()
     end
     IX.si, IX.arm, IX.ci = req("SquishyInfo"), req("AutoRollRules"), req("CrateInfo")
     IX.modAt = now()
+    pcall(function() -- an event's free / paid butter (ThanksgivingConfig.freeButter = "PecanPieButter"...)
+        for _, m in ipairs(M:GetChildren()) do
+            if m:IsA("ModuleScript") and m.Name:match("^%u%a+Config$") then
+                local c = req(m.Name)
+                for _, f in ipairs({ "freeButter", "paidButter" }) do
+                    if c and type(c[f]) == "string" and c[f] ~= "" then IX.limNames[key(c[f])] = true end
+                end
+            end
+        end
+    end)
     if not IX.si then return false end
     local roll = {} -- what Auto Roll can stop on: every rarity of the roll table but the first
     if IX.arm and type(IX.arm.tierOf) == "table" then

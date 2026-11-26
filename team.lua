@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 8 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 9 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -328,6 +328,9 @@ local function mainTick()
   local pn = padName()
   if alt and not held and isGood(pn) then
     local b = buyPrompt()
+    -- never without the money: a short buy makes the server offer the butter for Robux
+    local price = SI[pn] and tonumber(SI[pn].price)
+    if price and money() < price then b = nil T.mode = "saving for the " .. tostring(pn) end
     if b and b.Enabled then
       SAB.S.running = false
       standUp()

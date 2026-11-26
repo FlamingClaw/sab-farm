@@ -137,6 +137,9 @@ local function parseMoney(s)
     return nil
 end
 local function cash()
+    -- the wallet itself first: BoardValueMoney is what the board shows and can run ahead of it
+    local mv = plr:FindFirstChild("MoneyValue")
+    if mv and type(mv.Value) == "number" then return mv.Value end
     local v = plr:GetAttribute("BoardValueMoney")
     if type(v) == "number" then return v end
     local ls = plr:FindFirstChild("leaderstats")
@@ -812,11 +815,14 @@ local function carriedName()
 end
 local function carried() local _, inst = carriedName() return inst end
 -- price shown on the pad vs cash. Only a clear shortfall counts.
+-- Short = cash below the price. A buy the server refuses for money opens a Robux "buy cash" prompt,
+-- so the farm never presses Buy without the money: a price it cannot read counts as short too.
 local function cashShort()
     local pi = padInfo()
     local price = pi and parseMoney(pi.price)
     local have = cash()
-    if price and have and have < price * 0.5 then return have, price end
+    if price and have and have < price then return have, price end
+    if pi and type(pi.price) == "string" and pi.price:find("%d") and not price then return have or 0, math.huge end
 end
 
 ---------------------------------------------------------------- remote events
@@ -1024,6 +1030,15 @@ end
 local function doBuy(forced)
     local bp = buyPrompt()
     if not bp or not bp.Enabled then note("buy: nothing on the pad") return false end
+    do -- never without the money (the server answers a short buy with a Robux prompt)
+        local have, price = cashShort()
+        if have then
+            S.cashFails = (S.cashFails or 0) + 1
+            S.noCashUntil = now() + math.min(8 * 2 ^ (S.cashFails - 1), 60)
+            note(("not buying: have $%s, price %s"):format(fmt(have), price == math.huge and "unreadable" or ("$" .. fmt(price))))
+            return false
+        end
+    end
     local part = partOf(bp)
     if not part then note("buy: pad part missing") return false end
     S.lastBuyAt = now()
@@ -4064,6 +4079,13 @@ local function decide()
             fmt(cash()), math.ceil(S.noCashUntil - t)), cashShort() and "bad" or "wait"
     end
     if t - S.lastBuyAt < CFG.BuyGap then return nil, "cooldown after last buy", "wait" end
+    do -- not even a first try without the money
+        local have, price = cashShort()
+        if have then
+            S.noCashUntil = t + 8
+            return nil, ("cash short: have $%s, price %s - not buying"):format(fmt(have), price == math.huge and "unreadable" or ("~$" .. fmt(price))), "bad"
+        end
+    end
     S.matchSince = S.matchSince or t
     local w = t - S.matchSince
     if w < CFG.Confirm then return nil, ("confirming %s (%.2fs)"):format(id.shown, w), "ok" end
@@ -5982,6 +6004,7 @@ local function kill()
     pcall(saveLearn)
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     if CRATE.oldNC then pcall(function() hookmetamethod(game, "__namecall", CRATE.oldNC) end) end
+    if S.hidPurchaseApp then pcall(function() S.hidPurchaseApp.Enabled = true end) end
     pcall(function() sg:Destroy() end)
     pcall(function() tg:Destroy() end)
     if genv.SAB_KILL == kill then genv.SAB_KILL = nil end
@@ -6313,6 +6336,18 @@ pcall(function()
         closer("PromptBundlePurchaseRequested", function(a, b) MPS:SignalPromptBundlePurchaseFinished(a, b, false) end)
         closer("PromptPremiumPurchaseRequested", function() MPS:SignalPromptPremiumPurchaseFinished(false) end)
     end
+    -- last line: Roblox's own purchase window stays hidden while the farm runs (back on at KILL)
+    pcall(function()
+        local cg = game:GetService("CoreGui")
+        local function hide(g)
+            if g and g.Name == "PurchasePromptApp" and g:IsA("ScreenGui") and g.Enabled then
+                g.Enabled = false
+                S.hidPurchaseApp = g
+            end
+        end
+        hide(cg:FindFirstChild("PurchasePromptApp"))
+        track(cg.ChildAdded:Connect(hide))
+    end)
     task.spawn(function() -- the log says when one was stopped
         local seen = G.SAB_NOROBUX.n
         while S.alive do

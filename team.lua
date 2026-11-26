@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 27 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 28 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -615,7 +615,8 @@ local function mainTick()
     end
   end
   for k in pairs(GOOD) do
-    local want = ((k == "sushi" and sushiRoom) or (k ~= "sushi" and (takers[k] or poor))) and not (T.feed.soldNote and held and key(held) == k)
+    -- (a Sushi is always kept: rolled away it is gone, held it waits a few minutes for a station)
+    local want = (k == "sushi" or takers[k] or poor) and not (T.feed.soldNote and held and key(held) == k)
     if (C.Targets[k] == true) ~= want then C.Targets[k] = want or nil changed = true end
   end
   -- index butters an alt misses (not the good ones): kept and brought too
@@ -631,7 +632,11 @@ local function mainTick()
     local to = T.feed.on and pickAlt(held) or nil
     if to then give(to) T.feed.heldSince = nil return end
   end
-  if T.isFeed(held) then
+  if T.isFeed(held) and key(held) == "sushi" then
+    -- a Sushi is never sold: it waits in hand for the next free station (alts free one every few minutes)
+    T.feed.heldSince = T.feed.heldSince or os.clock()
+    T.mode = ("holding a Sushi for the next free station (%d s)"):format(math.floor(os.clock() - T.feed.heldSince))
+  elseif T.isFeed(held) then
     T.feed.heldSince = T.feed.heldSince or os.clock()
     if os.clock() - T.feed.heldSince > 90 then
       -- nobody can take it: let CHURN sell it rather than block the crate and Auto Roll
@@ -692,7 +697,7 @@ local function mainTick()
       return
     end
     if not C.Campfire then C.Campfire = true SAB.CF.nextAt = 0 end
-    T.mode = T.isFeed(held) and ("holding " .. tostring(held) .. ", no alt has room") or "campfire"
+    T.mode = (held and key(held) == "sushi") and T.mode or (T.isFeed(held) and ("holding " .. tostring(held) .. ", no alt has room") or "campfire")
   end
 end
 

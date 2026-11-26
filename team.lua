@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 11 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 12 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 G.SAB_ALT_LOOP = (G.SAB_ALT_LOOP or 0) + 1 -- retire the older live alt rule (its loop checks this)
@@ -96,8 +96,9 @@ local function writeMe()
     "rank=" .. tostring(P.rank or ""), "points=" .. tostring(P.points or ""),
     "boost=" .. tostring(LP:GetAttribute("FriendBoost") or 0), "gifts=" .. T.gifts,
     "mode=" .. tostring(T.mode or ""), "ready=" .. tostring(LP:GetAttribute("ThanksgivingReady") or 0),
-    "cash=" .. tostring(money()), "upmax=" .. tostring(T.up.max == true),
-    "want=" .. (T.role == "alt" and table.concat(wantIdx(), ",") or ""),
+    -- (these two are defined further down: reached through T)
+    "cash=" .. tostring(T.money()), "upmax=" .. tostring(T.up.max == true),
+    "want=" .. (T.role == "alt" and table.concat(T.wantIdx(), ",") or ""),
     "guild=" .. (T.clan.n > 0 and (T.clan.done .. "/" .. T.clan.n) or "none"),
   }
   pcall(writefile, DIR .. "/" .. T.me .. ".txt", table.concat(L, "\n"))
@@ -206,7 +207,7 @@ local function freebies()
     if r then pcall(function() r:FireServer() end) end
   end
 end
-T.upgrades, T.freebies = upgrades, freebies
+T.upgrades, T.freebies, T.money = upgrades, freebies, money
 
 ---------------------------------------------------------------- rank rewards (every account)
 T.claimed = 0
@@ -604,7 +605,8 @@ task.spawn(function()
       pcall(freebies)
       local ok, err = pcall(T.role == "main" and mainTick or altTick)
       if not ok then note("TEAM error: " .. tostring(err)) end
-      pcall(writeMe)
+      local okW, errW = pcall(writeMe)
+      if not okW and T.lastWriteErr ~= tostring(errW) then T.lastWriteErr = tostring(errW) note("TEAM status write error: " .. T.lastWriteErr) end
       local U = SAB.U
       if U and U.alt and (U.alt.Visible or not T.ui.built) then pcall(T.paint) end
     end

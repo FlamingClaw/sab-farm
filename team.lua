@@ -15,7 +15,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local MAIN = "o_oFlame3"
 local DIR = "SAB/team"
-local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 29 }
+local T = { alive = true, me = LP.Name, role = LP.Name == MAIN and "main" or "alt", gifts = 0, log = {}, version = 30 }
 G.SAB_TEAM = T
 function T.stop() T.alive = false end
 T.conns = {}
@@ -264,6 +264,8 @@ T.claimed = 0
 -- main at once (limitedToMain), and CHURN stays paused for as long as it is in this alt's hands.
 -- Every other rank reward is claimed one by one as before.
 T.claimAltPecan = true
+T.PASS_TOP = 20 -- the pass's last rank (ThanksgivingConfig.ranks)
+pcall(function() local c = require(RS.Modules.ThanksgivingConfig) local n = 0 for _ in pairs(c.ranks or {}) do n = n + 1 end if n > 0 then T.PASS_TOP = n end end)
 local PASS_CLAIM_END = 1796112000 -- ThanksgivingConfig.claimEndsAt (Dec 1, 08:00 UTC)
 local function claimRanks()
   local n = tonumber(LP:GetAttribute("ThanksgivingReady")) or 0
@@ -599,7 +601,8 @@ local function mainTick()
   -- the main waxes nothing of its own (it all goes to the alts) - except while a battle pass or guild
   -- quest asks for waxing, and a Limited (Pecan Pie) for its own stack
   local P, Cn = T.pass, clanState()
-  local questWax = (P.live and P.need) or Cn.need
+  -- (a pass quest is worth waxing for only below the pass's top rank: the main is at 20 of 20)
+  local questWax = (P.live and P.need and (tonumber(P.rank) or 0) < T.PASS_TOP) or Cn.need
   C.NoWax = not (isLimited(held) or questWax)
   -- its Auto Roll stops on Sushi only while some alt has a free station for one, on another butter
   -- only while an alt takes it now (or misses it in its index, or still buys upgrades and sells it)
